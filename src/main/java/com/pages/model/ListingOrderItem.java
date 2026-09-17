@@ -42,6 +42,7 @@ public class ListingOrderItem extends LogEntity {
             nullable = false
     )
     private InventoryItem inventoryItem;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ShippingMethod shippingMethod;

@@ -3,6 +3,7 @@ package com.pages.service;
 import com.pages.dto.*;
 import com.pages.enums.InventoryStatus;
 import com.pages.enums.OrderStatus;
+import com.pages.enums.ShipmentStatus;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.model.*;
 import com.pages.repository.*;
@@ -37,35 +38,28 @@ public class ListingOrderService {
 
     private final ListingOrderItemRepo listingOrderItemRepo;
 
-    private final ListingTransactionRepo transactionRepo;
 
     private final AppUserDetailsService appUserDetailsService;
 
     private final CartService cartService;
-
-
-    private final ShippingProperties shippingProperties;
-
+    private final ShipmentService shipmentService;
 
     private final InventoryItemRepo inventoryItemRepo;
     private final InventoryItemPriceService inventoryItemPriceService;
 
-
     private final SellerProfileService sellerProfileService;
 
-    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo,
-                               ListingTransactionRepo transactionRepo, AppUserDetailsService appUserDetailsService, CartService cartService, ShippingProperties shippingProperties,
-                               InventoryItemRepo inventoryItemRepo,InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService) {
+    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService, ShipmentService shipmentService, InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService) {
         this.listingOrderRepo = listingOrderRepo;
         this.listingOrderItemRepo = listingOrderItemRepo;
-        this.transactionRepo = transactionRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.cartService = cartService;
-        this.shippingProperties = shippingProperties;
+        this.shipmentService = shipmentService;
         this.inventoryItemRepo = inventoryItemRepo;
         this.inventoryItemPriceService = inventoryItemPriceService;
         this.sellerProfileService = sellerProfileService;
     }
+
 
     @Transactional
     public ListingOrder createBuyerOrder(Jwt jwt) {
@@ -328,10 +322,12 @@ public class ListingOrderService {
 
             Page<OrderDto> orders =listingOrderItemRepo.findBySellerId(sellerId, pageable).map(orderItem->{
 
+            InventoryItemPrice price= inventoryItemPriceService.getPrices(orderItem.getInventoryItem().getId());
+
                 return OrderDto.builder()
                         .id(orderItem.getListingOrder().getId())
                         .orderNumber(orderItem.getListingOrder().getOrderNumber())
-                        .orderTotal(orderItem.getFinalizedPrice())
+                        .orderTotal(price.getSellerNewPrice())
                         .shipping(orderItem.getShippingCost())
                         .orderStatus(orderItem.getListingOrder().getOrderStatus())
                         .currency(orderItem.getListingOrder().getCurrency())
@@ -356,6 +352,44 @@ public class ListingOrderService {
                 .build();
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<OrderDto> myBuyingDetails(Jwt jwt,Long orderId){
+
+        if(jwt!=null){
+
+           List<OrderDto> dataToSend = new ArrayList<>();
+
+
+            ListingOrder order =listingOrderRepo.findById(orderId).orElse(null);
+
+            if(order!=null){
+
+                String user = appUserDetailsService.getUsernameById(order.getBuyerId());
+
+                for(ListingOrderItem item :order.getItems()){
+
+                  OrderDto dto= OrderDto.builder()
+                            .id(item.getId())
+                            .orderNumber(order.getOrderNumber())
+                            .orderTotal(item.getSubtotal())
+                            .shipping(item.getShippingCost())
+                            .orderStatus(order.getOrderStatus())
+                            .currency(order.getCurrency())
+                            .createdAt(item.getCreatedAt())
+                            .deliveryStatus(shipmentService.shipmentStatus(item)!=null?shipmentService.shipmentStatus(item).name():null)
+                            .seller("Store")
+                            .buyer(user)
+                            .paidAt(order.getPaidAt())
+                            .build();
+                  dataToSend.add(dto);
+                }
+            }
+            return dataToSend;
+        }
+
+        return List.of();
+    }
+
     public Long totalOrders(Jwt jwt){
         if(jwt!=null){
             return listingOrderRepo.count();
@@ -364,15 +398,61 @@ public class ListingOrderService {
     }
 
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Long totalUserOrders(Jwt jwt){
         if(jwt!=null){
             Long currentUserId = appUserDetailsService.getAppUserByUsername(jwt.getSubject()).getId();
-           return listingOrderRepo.countByBuyerId(currentUserId);
+           return listingOrderRepo.countByBuyerIdAndOrderStatus(currentUserId,OrderStatus.PAID);
+        }
+        return 0L;
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Long mySalesCount(Jwt jwt){
+        if(jwt!=null){
+          AppUser appUser=  appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+
+          SellerProfile seller = sellerProfileService.getSellerProfile(appUser.getId());
+
+          return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.PAID);
+        }
+      return 0L;
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Long mySalesCancelledCount(Jwt jwt){
+        if(jwt!=null){
+            AppUser appUser=  appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+
+            SellerProfile seller = sellerProfileService.getSellerProfile(appUser.getId());
+
+            return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.CANCELLED);
+        }
+        return 0L;
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Long myPurchaseCount(Jwt jwt){
+        if(jwt!=null){
+            AppUser appUser=  appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+
+            return listingOrderRepo.countByBuyerIdAndOrderStatus(appUser.getId(),OrderStatus.PAID);
         }
         return 0L;
     }
 
     public ListingOrder getOrderById(Long id){
        return listingOrderRepo.findById(id).orElse(null);
+    }
+
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ListingOrderItem getRecentSaleBySeller(Long sellerId) {
+
+        // Pass the explicit SOLD enum context to gather matching transactions
+        return listingOrderItemRepo.findFirstBySellerIdAndInventoryItemStatusOrderByCreatedAtDesc(
+                sellerId,
+                InventoryStatus.SOLD
+        ).orElse(null);
     }
 }

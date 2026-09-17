@@ -3,6 +3,7 @@ package com.pages.impl;
 import com.pages.exception.PhotoStorageException;
 import com.pages.interfaces.MediaUtil;
 import com.pages.util.MediaStorageLocation;
+import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -49,7 +50,9 @@ public class MediaUtilImpl implements MediaUtil {
                 throw new PhotoStorageException("Failed to store empty file");
             }
 
-            Path destination = root.resolve(Paths.get(String.valueOf(username+"-"+file.getOriginalFilename()))).normalize().toAbsolutePath();
+            String formatedFilename = UtilService.formatMediaName(file.getOriginalFilename());
+
+            Path destination = root.resolve(Paths.get(String.valueOf(username+"-"+formatedFilename))).normalize().toAbsolutePath();
 
 
             if(!destination.getParent().equals(this.root.toAbsolutePath())){
@@ -90,7 +93,9 @@ public class MediaUtilImpl implements MediaUtil {
                 throw new PhotoStorageException("Failed to store empty file");
             }
 
-            Path destination = root.resolve(Paths.get(String.valueOf(id+"-"+file.getOriginalFilename()))).normalize().toAbsolutePath();
+            String formatedFilename = UtilService.formatMediaName(file.getOriginalFilename());
+
+            Path destination = root.resolve(Paths.get(String.valueOf(id+"-"+formatedFilename))).normalize().toAbsolutePath();
 
 
             if(!destination.getParent().equals(this.root.toAbsolutePath())){

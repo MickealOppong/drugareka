@@ -19,7 +19,8 @@ public interface ListingOrderRepo extends JpaRepository<ListingOrder,Long> {
 
 
    Page<ListingOrder> findByBuyerId(Long buyerId, Pageable pageable);
+    List<ListingOrder> findAllById(Long buyerId);
 
     List<ListingOrder> findByOrderStatusAndCreatedAtBefore(OrderStatus status, Instant time);
-    Long countByBuyerId(Long buyerId);
+    Long countByBuyerIdAndOrderStatus(Long buyerId,OrderStatus orderStatus);
 }

@@ -44,15 +44,18 @@ public class WishListService {
     public ResponseDto<Object> toggleWishList(Long listingId, Jwt jwt){
             try {
 
+                if(jwt==null){
+                    throw  new EntityNotFoundException("User does not exist");
+                }
+
                 //USER PROFILE
-                String username = jwt.getSubject();
-                AppUser currentUser = appUserDetailsService.getAppUserByUsername(username);
+                AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
                 //LISTING ITEM
                 ListingTransaction listing= listingTransactionService.getListingTransaction(listingId,ListingStatus.PUBLISHED);
 
-                if(listing==null || currentUser ==null){
-                    throw  new EntityNotFoundException("Item or user does not exist");
+                if(listing==null || listing.getInventory().getStatus().equals(InventoryStatus.SOLD)){
+                    throw  new EntityNotFoundException("Item is not available");
                 }
 
                 Long currentUserId = currentUser.getId();
@@ -64,28 +67,26 @@ public class WishListService {
 
 
                 //FIND OR CREATE WISHLIST FOR USER
-                Optional<WishList> existingWishlist = wishListRepo.findByListingIdAndUserId(listing.getId(), currentUserId);
+                Optional<WishList> existingWishlist = wishListRepo.findByUserIdAndListingTransactionId(currentUserId,listing.getId());
 
 
                 if (existingWishlist.isPresent()) {
-                    log.info("{}",existingWishlist.get().getListingId());
                     wishListRepo.delete(existingWishlist.get());
                     return null;
                 } else {
 
                     WishList newWishList = WishList.builder()
-                            .userId(currentUserId)
-                            .listingId(listing.getId())
+                            .user(currentUser)
+                            .listingTransaction(listing)
                             .build();
 
-                   WishList savedItem= wishListRepo.save(newWishList);
+                   wishListRepo.save(newWishList);
                     return ResponseDto.builder()
-                            .data(false)
-                            .httpStatus(HttpStatus.BAD_REQUEST.value())
-                            .message("Error adding item to wishlist")
+                            .data(true)
+                            .httpStatus(HttpStatus.OK.value())
+                            .message("Added to wishlist")
                             .build();
                 }
-
             }catch (Exception e){
                 return ResponseDto.builder()
                         .httpStatus(HttpStatus.BAD_REQUEST.value())
@@ -109,20 +110,21 @@ public class WishListService {
             return wishListRepo.findByUserId(userId).stream().map(item->{
 
 
-                //Listing
-                ListingTransaction currentListing =listingTransactionService.getListingTransaction(item.getListingId(),ListingStatus.PUBLISHED);
 
-                InventoryItem inventoryItem =currentListing.getInventory();
+
+                InventoryItem inventoryItem =item.getListingTransaction().getInventory();
                 InventoryItemPrice priceService = inventoryItemPriceService.getPrices(inventoryItem.getId());
                 // retrieve product image
                 MediaResponse mediaResponse = mediaService.getListingMainImage(inventoryItem.getId());
 
                 return  WishListResponse.builder()
-                        .listingId(currentListing.getId())
+                        .listingId(item.getListingTransaction().getId())
                         .id(item.getId())
-                        .inventoryStatus(currentListing.getInventory().getStatus().name())
+                        .createAt(item.getCreatedAt())
+                        .productName(inventoryItem.getProductCatalog().getName())
+                        .inventoryStatus(inventoryItem.getStatus().name())
                         .sellerPrice(priceService.getStoreNewPrice())
-                        .image(mediaResponse.getImage())
+                        .image(mediaResponse!=null?mediaResponse.getImage():null)
                         .build();
             }).toList();
         }

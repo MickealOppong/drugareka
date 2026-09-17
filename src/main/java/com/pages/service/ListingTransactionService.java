@@ -1,10 +1,7 @@
 package com.pages.service;
 
 import com.pages.dto.*;
-import com.pages.enums.InventoryStatus;
-import com.pages.enums.ListingStatus;
-import com.pages.enums.SellerStatus;
-import com.pages.enums.ShippingMethod;
+import com.pages.enums.*;
 import com.pages.model.*;
 import com.pages.repository.ListingTransactionRepo;
 import com.pages.specs.ListingSpecs;
@@ -37,7 +34,7 @@ public class ListingTransactionService {
     private final SellerProfileService sellerProfileService;
     private final ProductCatalogService productCatalogService;
     private final PricingService pricingService;
-    private final InventoryItemService  inventoryItemService;
+    private final InventoryItemService inventoryItemService;
     private final CategoryService categoryService;
     private final BrandService brandService;
     private final ProductConditionService productConditionService;
@@ -56,12 +53,12 @@ public class ListingTransactionService {
         this.productConditionService = productConditionService;
     }
 
-    public void CreateListing(ListTransRequest dto){
+    public void CreateListing(ListTransRequest dto) {
         ListingTransaction newTransaction = new ListingTransaction(dto);
         listingTransactionRepo.save(newTransaction);
     }
 
-    private ListingStatus getListingStatus(String status){
+    private ListingStatus getListingStatus(String status) {
         String cleanStatus = status.trim().toUpperCase();
         return switch (cleanStatus) {
             case "PUBLISH" -> ListingStatus.PUBLISHED;
@@ -72,7 +69,6 @@ public class ListingTransactionService {
         };
 
     }
-
 
 
     @Transactional
@@ -203,14 +199,14 @@ public class ListingTransactionService {
                 throw new IllegalStateException("Product catalog not found");
             }
 
-            Brand newBrand = brandService.findByName(productData.getBrand());
+            Brand retreivedBrand = brandService.findByNameOrCreate(productData.getBrand());
 
-            if(!productCatalog.getBrand().getName().equalsIgnoreCase(newBrand.getName())){
-                productCatalog.setBrand(newBrand);
+            if (!productCatalog.getBrand().getName().equalsIgnoreCase(retreivedBrand.getName())) {
+                productCatalog.setBrand(retreivedBrand);
             }
-            Category newCategory =categoryService.getCategoryBySlug(UtilService.formatNameToSlug(productData.getCategory()));
+            Category newCategory = categoryService.getCategoryBySlug(UtilService.formatNameToSlug(productData.getCategory()));
 
-            if(!productCatalog.getCategory().getName().equalsIgnoreCase(newCategory.getName())){
+            if (!productCatalog.getCategory().getName().equalsIgnoreCase(newCategory.getName())) {
                 productCatalog.setCategory(newCategory);
             }
 
@@ -235,7 +231,7 @@ public class ListingTransactionService {
 
             ProductCondition newCondition = productConditionService.getConditionByName(productData.getCondition());
 
-            if(!inventoryItem.getProductCondition().getName().equalsIgnoreCase(newCondition.getName())){
+            if (!inventoryItem.getProductCondition().getName().equalsIgnoreCase(newCondition.getName())) {
                 inventoryItem.setProductCondition(newCondition);
             }
 
@@ -251,7 +247,7 @@ public class ListingTransactionService {
 
             InventoryItemPrice currentPrice = inventoryItemPriceService.getPrices(inventoryItem.getId());
 
-            BigDecimal oldPrice =  currentPrice.getSellerNewPrice();
+            BigDecimal oldPrice = currentPrice.getSellerNewPrice();
 
             BigDecimal newPrice = productData.getPrice();
 
@@ -272,12 +268,12 @@ public class ListingTransactionService {
                 BigDecimal newStorePrice =
                         pricingService.calculateStorePrice(newPrice);
 
-                                 currentPrice.setSellerOldPrice(oldPrice);
-                                currentPrice.setSellerNewPrice(newPrice);
-                                currentPrice.setStoreOldPrice(currentPrice.getStoreNewPrice());
-                                currentPrice.setStoreNewPrice(newStorePrice);
-                                currentPrice.setInventoryItem(inventoryItem);
-                                currentPrice.setReason("Listing price updated");
+                currentPrice.setSellerOldPrice(oldPrice);
+                currentPrice.setSellerNewPrice(newPrice);
+                currentPrice.setStoreOldPrice(currentPrice.getStoreNewPrice());
+                currentPrice.setStoreNewPrice(newStorePrice);
+                currentPrice.setInventoryItem(inventoryItem);
+                currentPrice.setReason("Listing price updated");
 
 
                 inventoryItemPriceService.savePrice(currentPrice);
@@ -335,10 +331,10 @@ public class ListingTransactionService {
 
 
     @jakarta.transaction.Transactional
-    public ResponseDto<Object> addSellerProduct(Jwt jwt, ProductData productData){
-        try{
+    public ResponseDto<Object> addSellerProduct(Jwt jwt, ProductData productData) {
+        try {
 
-            if(jwt==null){
+            if (jwt == null) {
                 return ResponseDto.builder()
                         .httpStatus(HttpStatus.BAD_REQUEST.value())
                         .message("Not Authorised")
@@ -351,9 +347,9 @@ public class ListingTransactionService {
             String username = jwt.getSubject();
             AppUser appUser = appUserDetailsService.getAppUserByUsername(username);
 
-            SellerProfileDto sellerProfileDto= SellerProfileDto.builder()
+            SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
-                    .status(appUser.isEnabled()? SellerStatus.ACTIVE:SellerStatus.PENDING)
+                    .status(appUser.isEnabled() ? SellerStatus.ACTIVE : SellerStatus.PENDING)
                     .build();
 
             SellerProfile sellerProfile = sellerProfileService.findOrCreateSellerProfile(sellerProfileDto);
@@ -384,7 +380,7 @@ public class ListingTransactionService {
 
             InventoryItem savedInventoryItem = inventoryItemService.addNewInventory(inventoryItemRequest);
 
-            log.info("Saved inventory {}",savedInventoryItem);
+            log.info("Saved inventory {}", savedInventoryItem);
 
                  /*
                     ITEM PRICE
@@ -398,13 +394,13 @@ public class ListingTransactionService {
                     .reason("Initial listing price")
                     .build();
 
-        inventoryItemPriceService.addNewPrice(inventoryItemPriceDto);
+            inventoryItemPriceService.addNewPrice(inventoryItemPriceDto);
 
 
               /*
                         PRODUCT IMAGES
                */
-            mediaService.saveMedia(productData.getImages(),productData.getImageSortOrder(),savedInventoryItem);
+            mediaService.saveMedia(productData.getImages(), productData.getImageSortOrder(), savedInventoryItem);
 
 
             //LISTING TRANSACTION UPDATE
@@ -412,7 +408,7 @@ public class ListingTransactionService {
                     .inventory(savedInventoryItem)
                     .listingStatus(getListingStatus(productData.getStatus()))
                     .build();
-          CreateListing(listTrans);
+            CreateListing(listTrans);
 
             //return
             return ResponseDto.builder()
@@ -420,7 +416,7 @@ public class ListingTransactionService {
                     .message("Listing created")
                     .httpStatus(HttpStatus.OK.value())
                     .build();
-        }catch (Exception e){
+        } catch (Exception e) {
             return ResponseDto.builder()
                     .data(false)
                     .message(e.getMessage())
@@ -431,11 +427,8 @@ public class ListingTransactionService {
 
 
     @Transactional(readOnly = true)
-    public ListPageDto getMarketplaceCatalogFeed(Jwt jwt,String categoryQuery,int page, int size) {
-        Long appUserId = null;
-        if(jwt!=null){
-        appUserId = appUserDetailsService.getAppUserByUsername(jwt.getSubject()).getId();
-        }
+    public ListPageDto getMarketplaceCatalogFeed( String categoryQuery, int page, int size) {
+
         /*
          * =====================================================
          * CATEGORY FILTER
@@ -456,7 +449,7 @@ public class ListingTransactionService {
          * =====================================================
          */
         Pageable pageable = PageRequest.of(
-                page==0?page:page-1,
+                page == 0 ? page : page - 1,
                 size,
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
@@ -471,7 +464,6 @@ public class ListingTransactionService {
                 Specification
                         .where(ListingSpecs.hasListingStatus(ListingStatus.PUBLISHED))
                         .and(ListingSpecs.hasCategory(targetCategory))
-                        .and(ListingSpecs.excludeSeller(appUserId))
                         .and(ListingSpecs.isNotSold());
 
 
@@ -523,7 +515,6 @@ public class ListingTransactionService {
          */
 
 
-
         return ListPageDto.builder()
                 .listings(listings.getContent())
                 .page(listings.getNumber())
@@ -537,9 +528,9 @@ public class ListingTransactionService {
 
 
     @Transactional(readOnly = true)
-    public ListPageDto storeCatalogFeed(Jwt jwt,int page, int size) {
+    public ListPageDto storeCatalogFeed(Jwt jwt, int page, int size) {
 
-        if(jwt==null){
+        if (jwt == null) {
             return ListPageDto.builder()
                     .build();
         }
@@ -550,7 +541,7 @@ public class ListingTransactionService {
          * =====================================================
          */
         Pageable pageable = PageRequest.of(
-                page==0?page:page-1,
+                page == 0 ? page : page - 1,
                 size,
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
@@ -604,6 +595,83 @@ public class ListingTransactionService {
          */
 
 
+        return ListPageDto.builder()
+                .listings(listings.getContent())
+                .page(listings.getNumber())
+                .pageSize(listings.getSize())
+                .totalPages(listings.getTotalPages())
+                .totalElements(listings.getTotalElements())
+                .build();
+
+
+    }
+
+    @Transactional(readOnly = true)
+    public ListPageDto myCatalogFeed(Jwt jwt, int page, int size) {
+
+        if (jwt == null) {
+            return ListPageDto.builder()
+                    .build();
+        }
+
+        AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+        Long currentUserId = currentUser.getId();
+        /*
+         * =====================================================
+         * PAGINATION
+         * =====================================================
+         */
+        Pageable pageable = PageRequest.of(
+                page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+
+
+        /*
+         * =====================================================
+         * FETCH + MAP PAGE
+         * =====================================================
+         */
+        Page<ListTransResponse> listings =
+                listingTransactionRepo
+                        .findByInventorySellerUserId(currentUserId, pageable)
+                        .map(listing -> {
+                            Long inventoryId =
+                                    listing.getInventory().getId();
+
+                            /*
+                             * PRODUCT IMAGE
+                             */
+                            List<MediaResponse> media =
+                                    mediaService.getImageList(inventoryId);
+
+
+                            /*
+                             * PRICE
+                             */
+                            InventoryItemPriceResponse price =
+                                    inventoryItemPriceService
+                                            .getPrices(inventoryId)
+                                            .toPriceDto();
+
+
+                            /*
+                             * RESPONSE DTO
+                             */
+                            return ListingTransaction.toListTransResponse(
+                                    listing,
+                                    media,
+                                    price
+                            );
+                        });
+
+        /*
+         * =====================================================
+         * PAGE RESPONSE
+         * =====================================================
+         */
 
         return ListPageDto.builder()
                 .listings(listings.getContent())
@@ -617,152 +685,96 @@ public class ListingTransactionService {
     }
 
     @Transactional(readOnly = true)
-    public ListPageDto myCatalogFeed(Jwt jwt,int page, int size) {
-
-            if(jwt==null){
-                return ListPageDto.builder()
-                        .build();
-            }
-
-            AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
-            Long currentUserId = currentUser.getId();
-            /*
-             * =====================================================
-             * PAGINATION
-             * =====================================================
-             */
-            Pageable pageable = PageRequest.of(
-                    page-1,
-                    size,
-                    Sort.by(Sort.Direction.DESC, "createdAt")
-            );
-
-
-
-            /*
-             * =====================================================
-             * FETCH + MAP PAGE
-             * =====================================================
-             */
-            Page<ListTransResponse> listings =
-                    listingTransactionRepo
-                            .findByInventorySellerUserId(currentUserId,pageable)
-                            .map(listing -> {
-                                Long inventoryId =
-                                        listing.getInventory().getId();
-
-                                /*
-                                 * PRODUCT IMAGE
-                                 */
-                                List<MediaResponse> media =
-                                        mediaService.getImageList(inventoryId);
-
-
-                                /*
-                                 * PRICE
-                                 */
-                                InventoryItemPriceResponse price =
-                                        inventoryItemPriceService
-                                                .getPrices(inventoryId)
-                                                .toPriceDto();
-
-
-                                /*
-                                 * RESPONSE DTO
-                                 */
-                                return ListingTransaction.toListTransResponse(
-                                        listing,
-                                        media,
-                                        price
-                                );
-                            });
-
-            /*
-             * =====================================================
-             * PAGE RESPONSE
-             * =====================================================
-             */
-
-            return ListPageDto.builder()
-                    .listings(listings.getContent())
-                    .page(listings.getNumber())
-                    .pageSize(listings.getSize())
-                    .totalPages(listings.getTotalPages())
-                    .totalElements(listings.getTotalElements())
-                    .build();
-
-
-
-    }
-
-    @Transactional(readOnly = true)
-    public ListingTransaction getListingTransaction(Long listingId,ListingStatus listingStatus){
-        return listingTransactionRepo.findByIdAndListingStatus(listingId,listingStatus).orElse(null);
+    public ListingTransaction getListingTransaction(Long listingId, ListingStatus listingStatus) {
+        return listingTransactionRepo.findByIdAndListingStatus(listingId, listingStatus).orElse(null);
     }
 
     @Transactional(readOnly = true)
     public List<ListTransResponse> getProductListings() {
 
-            return listingTransactionRepo
-                    .findByListingStatus(ListingStatus.PUBLISHED).stream().map(listing->{
+        return listingTransactionRepo
+                .findByListingStatus(ListingStatus.PUBLISHED).stream().map(listing -> {
                           /*
                     PRODUCT IMAGES
                      */
-                        Long inventoryId = listing.getInventory()!=null?listing.getInventory().getId():null;
-                        List<MediaResponse> media= mediaService.getImageList(inventoryId);
+                    Long inventoryId = listing.getInventory() != null ? listing.getInventory().getId() : null;
+                    List<MediaResponse> media = mediaService.getImageList(inventoryId);
                     /*
                     PRICE DATA
                      */
-                        InventoryItemPriceResponse price =inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
+                    InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
 
-                        return   ListingTransaction.toListTransResponse(listing,media,price);
-                    }).toList();
+                    return ListingTransaction.toListTransResponse(listing, media, price);
+                }).toList();
 
 
     }
 
     @Transactional(readOnly = true)
-    public ListTransResponse getProductByListingId(Long listingId){
-        ListingTransaction listingTransaction= listingTransactionRepo.findById(listingId).orElse(null);
-        if(listingTransaction!=null){
+    public ListTransResponse getProductByListingId(Long listingId) {
+        ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
+        if (listingTransaction != null) {
 
               /*
                     MEDIA DATA
                      */
-            List<MediaResponse> mediaList= mediaService.getImageList(listingTransaction.getInventory().getId());
+            List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
 
               /*
                     PRICE DATA
                      */
-            InventoryItemPriceResponse price =inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId()).toPriceDto();
-            return   ListingTransaction.toListTransResponse(listingTransaction,mediaList,price);
+            InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId()).toPriceDto();
+            return ListingTransaction.toListTransResponse(listingTransaction, mediaList, price);
         }
         return ListTransResponse.builder().build();
     }
 
     @Transactional(readOnly = true)
-    public Long getSellerPublishedListingCount(Long sellerId){
-        return listingTransactionRepo.countByInventorySellerIdAndListingStatus(sellerId,ListingStatus.PUBLISHED);
+    public Long getSellerPublishedListingCount(Long sellerId) {
+        return listingTransactionRepo.countByInventorySellerIdAndInventoryStatusAndListingStatus(sellerId, InventoryStatus.AVAILABLE, ListingStatus.PUBLISHED);
     }
 
     @Transactional(readOnly = true)
-    public List<ListTransResponse> getRecentViews(List<Long> ids,Jwt jwt){
-        if(jwt!=null){
+    public List<ListTransResponse> getRecentViews(List<Long> ids, Jwt jwt) {
+        if (jwt != null) {
             AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
             return listingTransactionRepo.findAllById(ids).stream()
-                    .filter(item->!item.getInventory().getSeller().getUser().getId().equals(currentUser.getId()))
-                    .map(listing->{
+                    .filter(item -> !item.getInventory().getSeller().getUser().getId().equals(currentUser.getId()))
+                    .map(listing -> {
 
                      /*
                     PRICE DATA
                      */
-                InventoryItemPriceResponse price =inventoryItemPriceService.getPrices(listing.getInventory().getId()).toPriceDto();
+                        InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(listing.getInventory().getId()).toPriceDto();
 
-                List<MediaResponse> mediaList= mediaService.getImageList(listing.getInventory().getId());
-                return   ListingTransaction.toListTransResponse(listing,mediaList,price);
-            }).toList();
+                        List<MediaResponse> mediaList = mediaService.getImageList(listing.getInventory().getId());
+                        return ListingTransaction.toListTransResponse(listing, mediaList, price);
+                    }).toList();
         }
         return null;
+    }
+
+    public void deleteListing(Jwt jwt, Long listing) {
+        if (jwt != null) {
+            listingTransactionRepo.findById(listing)
+                    .ifPresent(listingTransactionRepo::delete);
+        }
+    }
+
+
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ListingTransaction recentListing(Jwt jwt) {
+
+        if (jwt == null) {
+            return null;
+
+        }
+
+        AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+        SellerProfile seller = sellerProfileService.getSellerProfile(currentUser.getId());
+        return listingTransactionRepo.findFirstByInventorySellerIdAndListingStatusOrderByCreatedAtDesc(seller.getId(),ListingStatus.PUBLISHED)
+                .orElse(null);
     }
 }

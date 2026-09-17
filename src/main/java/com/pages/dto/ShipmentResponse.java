@@ -16,6 +16,7 @@ import java.time.Instant;
 @Builder
 public class ShipmentResponse {
     private Long id;
+    private String orderNumber;
     private Long listingOrderId;
     private String seller;
     private String deliveryAddress;

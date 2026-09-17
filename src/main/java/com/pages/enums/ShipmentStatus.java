@@ -1,9 +1,9 @@
 package com.pages.enums;
 
 public enum ShipmentStatus {
-    AWAITING_COLLECTION,
-    PICKED_UP,
+    RETURNED,
     DELIVERED,
-    CANCELLED,
+    SHIPPED,
+    AWAITING_SHIPMENT,
     CREATED
 }

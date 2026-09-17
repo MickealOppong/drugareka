@@ -16,7 +16,11 @@ public class WishList  extends LogEntity {
 
     @Id @GeneratedValue
     private Long id;
-    private Long userId;
-    private Long listingId;
+    @ManyToOne
+    @JoinColumn(name = "user_id",nullable = false)
+    private AppUser user;
+    @ManyToOne
+    @JoinColumn(name = "listing_id",nullable = false)
+    private ListingTransaction listingTransaction;
 
 }

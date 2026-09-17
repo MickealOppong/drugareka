@@ -105,6 +105,11 @@ public class ProductController {
         );
     }
 
+    @DeleteMapping("/listing/delete")
+    public void deleteListing(@AuthenticationPrincipal Jwt jwt,Long listingId){
+        log.info("Deleting id:{}",listingId);
+        listingTransactionService.deleteListing(jwt,listingId);
+    }
 
 
 }

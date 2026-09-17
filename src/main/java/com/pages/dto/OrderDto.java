@@ -29,6 +29,7 @@ public class OrderDto {
     private String seller;
     private String orderNumber;
     private BigDecimal shipping;
+    private String deliveryStatus;
 
 
     @Column(nullable = false, precision = 12, scale = 2)

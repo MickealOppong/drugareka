@@ -5,18 +5,17 @@ import com.pages.model.ListingOrder;
 import com.pages.model.SellerProfile;
 import jakarta.persistence.*;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.Instant;
+import java.time.LocalDate;
+
 @Data
 public class ShipmentRequest {
 
-    private Long listingOrderId;
-    private Long sellerId;
-
-    @Enumerated(EnumType.STRING)
-    private ShipmentStatus status;
-
-    private Instant shippedAt;
-
-    private Instant deliveredAt;
+    private Long shipmentId;
+    private String comment;
+    private String status;
+    private String trackingNumber;
+    private LocalDate createdAt;
 }

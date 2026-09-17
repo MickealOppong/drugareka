@@ -196,7 +196,7 @@ Retrieves images metadata using inventory item id from repository and actual ima
     }
 
     public MediaResponse getListingMainImage(Long inventoryItemId)  {
-        Media media= mediaRepo.findByInventoryItemIdAndSortOrder(inventoryItemId,0).orElse(null);
+        Media media= mediaRepo.findFirstByInventoryItemId(inventoryItemId).orElse(null);
 
         if(media!=null){
 

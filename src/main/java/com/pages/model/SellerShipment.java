@@ -30,6 +30,7 @@ public class SellerShipment extends LogEntity {
     private SellerProfile seller;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "shipment_status", nullable = false,length = 200)
   private ShipmentStatus shipmentStatus;
 
     private String shippingAddress;
@@ -37,4 +38,9 @@ public class SellerShipment extends LogEntity {
     private Instant shippedAt;
 
     private Instant deliveredAt;
+
+    @Column(length = 1024)
+    private String comment;
+
+    private String trackingNumber;
 }

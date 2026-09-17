@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,4 +45,12 @@ public class CartController {
     public void deleteItem(@AuthenticationPrincipal Jwt jwt,Long listingId){
         cartService.removeItemFromCart(listingId,jwt);
     }
+
+
+    @PostMapping("/merge")
+    public ResponseDto<Object> mergeGuestCart(@AuthenticationPrincipal Jwt jwt, @RequestParam Long[] guestItemIds) {
+      return   cartService.mergeGuestCart(jwt, guestItemIds);
+
+    }
+
 }

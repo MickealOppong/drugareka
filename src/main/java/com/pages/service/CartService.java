@@ -58,6 +58,68 @@ public class CartService {
 
 
     /**
+     * Merges the client-side localStorage guest cart items into the permanent database user cart upon login.
+     * This method leverages the core bulk array append architecture of addItemToCart.
+     */
+    @Transactional
+    public ResponseDto<Object> mergeGuestCart(Jwt jwt,Long[] guestListingIds) {
+        // 1. Structural Security Validation Guard
+        if (jwt == null) {
+            return ResponseDto.builder()
+                    .data(false)
+                    .message("Authentication required for merging carts")
+                    .httpStatus(HttpStatus.UNAUTHORIZED.value())
+                    .build();
+        }
+
+        // 2. Empty Payload Handler: If guest storage was empty, exit with clean positive trace states
+        if (guestListingIds == null || guestListingIds.length == 0) {
+            return ResponseDto.builder()
+                    .data(true)
+                    .message("No guest items present to merge")
+                    .httpStatus(HttpStatus.OK.value())
+                    .build();
+        }
+
+        try {
+            log.info("Executing kasoa.pl Cart Merge Protocol for buyer: {}. Total item tracks: {}",
+                    jwt.getSubject(), guestListingIds.length);
+
+
+            // pricing tier services, and reservation windows are instantly applied.
+            ResponseDto<Object> mergeResult = addItemToCart(guestListingIds, jwt);
+
+            // 3. Evaluate outcomes to return descriptive status payloads back to your frontend
+            if (mergeResult.getHttpStatus() == HttpStatus.OK.value()) {
+                return ResponseDto.builder()
+                        .data(true)
+                        .message("Guest cart items successfully merged into your account dashboard.")
+                        .httpStatus(HttpStatus.OK.value())
+                        .build();
+            }
+
+            // Handle case where items in local storage are no longer published or available
+            if (mergeResult.getHttpStatus() == HttpStatus.NOT_FOUND.value()) {
+                return ResponseDto.builder()
+                        .data(true) // Return true so frontend clears the local storage anyway
+                        .message("Guest items are no longer available on the storefront catalog.")
+                        .httpStatus(HttpStatus.OK.value())
+                        .build();
+            }
+
+            return mergeResult;
+
+        } catch (Exception e) {
+            log.error("Fatal exception intercepted during database cart merge protocol execution", e);
+            return ResponseDto.builder()
+                    .data(false)
+                    .message("Unable to execute account cart merging operations")
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }
+    }
+
+    /**
      * ADD ELEMENT ROW TO CART
      */
     @Transactional
@@ -107,7 +169,7 @@ public class CartService {
                 }
 
                 InventoryItem inventoryItem = listing.getInventory();
-                log.info("item {}",inventoryItem);
+
 
 
                 // Safely checks your object chain: inventory -> seller -> id
@@ -314,7 +376,7 @@ public class CartService {
                             .inventoryId(cartItem.getInventoryItemId())
                             .shipping(assignedItemShipping)
                             .shippingMethod(cartItem.getShippingMethod().name())
-                            .image(media.getImage())
+                            .image(media!=null?media.getImage():null)
                             .productName(productName)
                             .reservedUntil(cartItem.getReservedUntil())
                             .build();

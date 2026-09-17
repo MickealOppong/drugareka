@@ -58,7 +58,7 @@ public class ListingTransaction extends LogEntity {
                 .productCondition(listing.getInventory().getProductCondition().getName())
                 .listingStatus(listing.getListingStatus())
                 .priceDto(priceDto)
-                .sellerId(listing.getInventory().getSeller().getId())
+                .sellerId(listing.getInventory().getSeller().getUser().getId())
                 .media(media)
                 .build();
     }
@@ -81,7 +81,7 @@ public class ListingTransaction extends LogEntity {
                 .shippingMethod(listing.getInventory().getShippingMethod().name())
                 .inventoryId(listing.getInventory().getId())
                 .listingStatus(listing.getListingStatus())
-                .sellerId(listing.getInventory().getSeller().getId())
+                .sellerId(listing.getInventory().getSeller().getUser().getId())
                 .priceDto(priceDto)
                 .media(List.of(media))
                 .build();

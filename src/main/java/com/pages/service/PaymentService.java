@@ -32,14 +32,16 @@ public class PaymentService {
     private final SellerPayoutService sellerPayoutService;
     private final InventoryItemRepo inventoryItemRepo;
     private final ShipmentService shipmentService;
+    private final SellerProfileService sellerProfileService;
 
-    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService) {
+    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
         this.sellerPayoutService = sellerPayoutService;
         this.inventoryItemRepo = inventoryItemRepo;
         this.shipmentService = shipmentService;
+        this.sellerProfileService = sellerProfileService;
     }
 
 
@@ -148,6 +150,7 @@ public class PaymentService {
         listingOrderRepo.save(order);
 
         sellerPayoutService.createPayouts(order);
+        sellerProfileService.updateSellerTotalPayout(order.getItems());
 
         shipmentService.createShipment(order.getItems());
          cartService.deleteCartById(order.getBuyerId());

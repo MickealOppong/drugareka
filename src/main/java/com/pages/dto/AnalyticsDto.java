@@ -17,6 +17,7 @@ public class AnalyticsDto {
     private Long wishlistCount;
     private Long listingCount;
     private Long itemSoldCount;
+    private Long itemSoldCancelledCount;
     private Long awaitingShipmentCount;
     private BigDecimal outstandingPayout;
 }

@@ -29,6 +29,10 @@ public class OrderController {
         return listingOrderService.mySales(jwt,page,size);
     }
 
+    @GetMapping("/buying/details")
+    public List<OrderDto> buyingDetails(@AuthenticationPrincipal Jwt jwt, @RequestParam Long id){
+        return listingOrderService.myBuyingDetails(jwt, id);
+    }
     @GetMapping("/selling")
     public OrderPageDto selling(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page , Integer size){
         return listingOrderService.myPurchases(jwt,page,size);
@@ -43,7 +47,6 @@ public class OrderController {
 
     @PostMapping("/complaints/new")
     public ResponseDto<Boolean> newComplaints(@AuthenticationPrincipal Jwt jwt, ComplaintRequest dto){
-        log.info("{}",dto);
        return complaintService.createComplaint(jwt,dto);
     }
 

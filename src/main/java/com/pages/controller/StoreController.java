@@ -64,8 +64,8 @@ public class StoreController {
 
 
     @GetMapping("/store-listing")
-    public ListPageDto getStoreProductListing(@AuthenticationPrincipal Jwt jwt, String queryCategory, @RequestParam(defaultValue = "0") Integer page, Integer size){
-        return listingTransactionService.getMarketplaceCatalogFeed(jwt,queryCategory,page,size);
+    public ListPageDto getStoreProductListing( String queryCategory, @RequestParam(defaultValue = "0") Integer page, Integer size){
+        return listingTransactionService.getMarketplaceCatalogFeed(queryCategory,page,size);
     }
 
 

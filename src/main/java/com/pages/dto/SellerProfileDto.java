@@ -22,7 +22,7 @@ public class SellerProfileDto {
 
     private Instant verifiedAt;
 
-    private BigDecimal totalSales;
+    private BigDecimal totalSales =BigDecimal.ZERO;
 
     private Integer successfulOrders;
 
