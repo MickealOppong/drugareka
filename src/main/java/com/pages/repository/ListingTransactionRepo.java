@@ -40,6 +40,8 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
     );
 
 
+    List<ListingTransaction> findTop8ByInventoryStatusAndListingStatusOrderByCreatedAtDesc(InventoryStatus inventoryStatus,ListingStatus listingStatus);
+
     List<ListingTransaction> findTop10ByOrderByCreatedAtDesc();
     Optional<ListingTransaction> findFirstByInventorySellerIdAndListingStatusOrderByCreatedAtDesc(Long sellerId,ListingStatus listingStatus);
     Long countByInventorySellerIdAndInventoryStatusAndListingStatus(Long sellerId,InventoryStatus inventoryStatus,ListingStatus listingStatus);

@@ -218,6 +218,10 @@ public class AppUserDetailsService implements UserDetailsService {
         return appUserRepo.findByUsername(username).orElseThrow(()->new UsernameNotFoundException(username+ " "+"does not exist"));
     }
 
+    public AppUser getAppUserId(Long id){
+        return appUserRepo.findById(id).orElseThrow(()->new UsernameNotFoundException(id+ " "+"does not exist"));
+    }
+
     public ResponseDto<Object> getAppUser(String username){
        AppUser appUser= appUserRepo.findByUsername(username)
                 .orElseThrow(()->new UsernameNotFoundException("User does not exist"));

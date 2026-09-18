@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
@@ -20,7 +21,7 @@ public class CheckoutController {
     private final CheckoutService checkoutService;
 
     @PostMapping
-    public ResponseDto<String> createCheckout(@AuthenticationPrincipal Jwt jwt) {
-        return checkoutService.createCheckout(jwt);
+    public ResponseDto<String> createCheckout(@AuthenticationPrincipal Jwt jwt,@RequestParam String locale) {
+        return checkoutService.createCheckout(jwt,locale);
     }
 }

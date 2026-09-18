@@ -6,6 +6,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+
 @Entity
 @Getter
 @Setter
@@ -46,4 +48,14 @@ public class ListingOrderItem extends LogEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ShippingMethod shippingMethod;
+
+    @Column(name = "receipt_confirmation_token", unique = true)
+    private String receiptConfirmationToken;
+
+    @Column(name = "receipt_confirmation_token_expires_at")
+    private Instant receiptConfirmationTokenExpiresAt;
+
+    @Column(name = "receipt_confirmed_at")
+    private Instant receiptConfirmedAt;
+
 }

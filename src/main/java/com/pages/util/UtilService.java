@@ -4,7 +4,9 @@ import org.apache.catalina.Role;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.text.Normalizer;
+import java.util.Base64;
 import java.util.Locale;
 
 public class UtilService {
@@ -39,6 +41,16 @@ public class UtilService {
         return "ROLE_" + formatted;
     }
 
+    public static String generateReceiptConfirmationToken() {
+        byte[] randomBytes = new byte[32];
+
+        SecureRandom secureRandom = new SecureRandom();
+        secureRandom.nextBytes(randomBytes);
+
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(randomBytes);
+    }
 
 
     public static String formatMediaName(String name) {

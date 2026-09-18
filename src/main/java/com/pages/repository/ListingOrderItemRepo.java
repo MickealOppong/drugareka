@@ -22,4 +22,5 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
     Long countBySellerIdAndListingOrderOrderStatus(Long userId, OrderStatus orderStatus);
     Long countBySellerId(Long userId);
     Optional<ListingOrderItem> findFirstBySellerIdAndInventoryItemStatusOrderByCreatedAtDesc(Long sellerId, InventoryStatus inventoryStatus);
+    Optional<ListingOrderItem> findByReceiptConfirmationToken(String token);
 }

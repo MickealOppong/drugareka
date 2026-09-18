@@ -46,12 +46,26 @@ public class StripePaymentProviderService {
 
 
     // REMOVED: @Transactional is completely removed to prevent proxy rollback hijacking and connection pooling lag
-    public Session createEmbeddedCheckoutSession(ListingOrder order) throws Exception {
+    public Session createEmbeddedCheckoutSession(ListingOrder order,String userLocale) throws Exception {
         try {
             // Validation Guard: Protect against NullPointerException unboxing before hitting Stripe
             if (order == null || order.getItems()== null || order.getItems().isEmpty()) {
                 throw new IllegalArgumentException("Cannot create a checkout session for an empty order wrapper.");
             }
+
+            SessionCreateParams.Locale stripeLocale = SessionCreateParams.Locale.AUTO;
+
+            if ("pl".equalsIgnoreCase(userLocale)) {
+                stripeLocale = SessionCreateParams.Locale.PL;
+            } else if ("en".equalsIgnoreCase(userLocale)) {
+                stripeLocale = SessionCreateParams.Locale.EN;
+            }
+
+            SessionCreateParams.CustomText customText = SessionCreateParams.CustomText.builder()
+                    .setSubmit(SessionCreateParams.CustomText.Submit.builder()
+                            .setMessage(userLocale.equalsIgnoreCase("pl")?"Zapłać i zabezpiecz zamówienie (Escrow)":"Pay and secure your order (Escrow)")
+                            .build())
+                    .build();
 
             StripeClient client = new StripeClient(stripeSecretKey);
 
@@ -60,9 +74,13 @@ public class StripePaymentProviderService {
                     .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.PAYMENT)
                     .setCurrency("pln")
                     .setReturnUrl(successUrl)
+                    .setCustomText(customText)
+                    .setLocale(stripeLocale)
                     .setExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES).getEpochSecond())
                     .setClientReferenceId(order.getOrderNumber())
                     .putMetadata("orderId",order.getId() != null ? order.getId().toString() : "");
+
+
 
             for (ListingOrderItem item :order.getItems()) {
                 log.info("Processing checkout item line properties for: {}", item);

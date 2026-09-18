@@ -42,22 +42,23 @@ public class ListingOrderService {
     private final AppUserDetailsService appUserDetailsService;
 
     private final CartService cartService;
-    private final ShipmentService shipmentService;
+
 
     private final InventoryItemRepo inventoryItemRepo;
     private final InventoryItemPriceService inventoryItemPriceService;
 
     private final SellerProfileService sellerProfileService;
+    private final SellerShipmentRepo sellerShipmentRepo;
 
-    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService, ShipmentService shipmentService, InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService) {
+    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService, InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, SellerShipmentRepo sellerShipmentRepo) {
         this.listingOrderRepo = listingOrderRepo;
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.cartService = cartService;
-        this.shipmentService = shipmentService;
         this.inventoryItemRepo = inventoryItemRepo;
         this.inventoryItemPriceService = inventoryItemPriceService;
         this.sellerProfileService = sellerProfileService;
+        this.sellerShipmentRepo = sellerShipmentRepo;
     }
 
 
@@ -163,6 +164,44 @@ public class ListingOrderService {
     }
 
 
+    public boolean validateDelivery(String token) {
+
+        ListingOrderItem orderItem =
+                listingOrderItemRepo
+                        .findByReceiptConfirmationToken(token)
+                        .orElse(null);
+
+        if (orderItem == null) {
+            return false;
+        }
+
+        Instant now = Instant.now();
+
+        // Token expired
+        if (orderItem.getReceiptConfirmationTokenExpiresAt() == null
+                || orderItem.getReceiptConfirmationTokenExpiresAt().isBefore(now)) {
+            return false;
+        }
+
+        // Already confirmed
+        if (orderItem.getReceiptConfirmedAt() != null) {
+            return false;
+        }
+
+        // Confirm receipt
+        orderItem.setReceiptConfirmedAt(now);
+
+        // Invalidate token
+        orderItem.setReceiptConfirmationTokenExpiresAt(now);
+
+        listingOrderItemRepo.save(orderItem);
+
+        return true;
+    }
+
+    public void save(ListingOrderItem listingOrderItem){
+        listingOrderItemRepo.save(listingOrderItem);
+    }
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     private OrderPageDto getStoreOrders(Jwt jwt, int page , int size){
         if(jwt!=null){
@@ -368,6 +407,10 @@ public class ListingOrderService {
 
                 for(ListingOrderItem item :order.getItems()){
 
+               SellerShipment shipment= sellerShipmentRepo.findByListingOrderItemId(item.getId()).orElse(null);
+               String trackingNumber  =shipment!=null?shipment.getTrackingNumber():null;
+               String deliveryStatus = shipment!=null?shipment.getShipmentStatus().name():null;
+
                   OrderDto dto= OrderDto.builder()
                             .id(item.getId())
                             .orderNumber(order.getOrderNumber())
@@ -376,7 +419,8 @@ public class ListingOrderService {
                             .orderStatus(order.getOrderStatus())
                             .currency(order.getCurrency())
                             .createdAt(item.getCreatedAt())
-                            .deliveryStatus(shipmentService.shipmentStatus(item)!=null?shipmentService.shipmentStatus(item).name():null)
+                          .trackingNumber(trackingNumber)
+                          .deliveryStatus(deliveryStatus)
                             .seller("Store")
                             .buyer(user)
                             .paidAt(order.getPaidAt())

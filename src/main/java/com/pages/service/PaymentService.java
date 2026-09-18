@@ -1,11 +1,13 @@
 package com.pages.service;
 
+import com.pages.dto.EmailProductItemDto;
 import com.pages.dto.ResponseDto;
 import com.pages.enums.InventoryStatus;
 import com.pages.enums.OrderStatus;
 import com.pages.enums.PaymentStatus;
 import com.pages.model.*;
 import com.pages.repository.InventoryItemRepo;
+import com.pages.repository.ListingOrderItemRepo;
 import com.pages.repository.ListingOrderRepo;
 import com.pages.repository.PaymentRepo;
 import com.stripe.exception.StripeException;
@@ -20,6 +22,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -33,8 +38,12 @@ public class PaymentService {
     private final InventoryItemRepo inventoryItemRepo;
     private final ShipmentService shipmentService;
     private final SellerProfileService sellerProfileService;
+    private final EmailNotificationService emailNotificationService;
+    private final AppUserDetailsService appUserDetailsService;
+    private final ListingOrderItemRepo listingOrderItemRepo;
+    private final InventoryItemPriceService inventoryItemPriceService;
 
-    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService) {
+    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService, AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, InventoryItemPriceService inventoryItemPriceService) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
@@ -42,6 +51,10 @@ public class PaymentService {
         this.inventoryItemRepo = inventoryItemRepo;
         this.shipmentService = shipmentService;
         this.sellerProfileService = sellerProfileService;
+        this.emailNotificationService = emailNotificationService;
+        this.appUserDetailsService = appUserDetailsService;
+        this.listingOrderItemRepo = listingOrderItemRepo;
+        this.inventoryItemPriceService = inventoryItemPriceService;
     }
 
 
@@ -154,6 +167,54 @@ public class PaymentService {
 
         shipmentService.createShipment(order.getItems());
          cartService.deleteCartById(order.getBuyerId());
+
+         //buyer notification
+        AppUser buyer = appUserDetailsService.getAppUserId(order.getBuyerId());
+
+
+        String buyerName = buyer.getFirstName()+" "+buyer.getLastName();
+        List<EmailProductItemDto> emailDto =listingOrderItemRepo.findByListingOrderId(order.getId())
+                .stream().map(item->{
+
+                    return EmailProductItemDto.builder()
+                            .amount(item.getFinalizedPrice())
+                            .productName(item.getInventoryItem().getProductCatalog().getName())
+                            .build();
+                }).toList();
+
+        emailNotificationService.sendBulkOrderConfirmationToBuyer(buyer.getUsername(),buyerName,order.getOrderNumber(),emailDto,order.getOrderTotal());
+
+         //send action to seller
+       //address
+        String address = String.join(",","kasoa.pl",order.getShippingAddress());
+
+        Map<SellerProfile, List<ListingOrderItem> > itemsGroupedBySeller = listingOrderItemRepo.findByListingOrderId(order.getId()).stream()
+                .collect(Collectors.groupingBy(ListingOrderItem::getSeller));
+
+
+
+        itemsGroupedBySeller.forEach((key, value) -> {
+            String sellerName = key.getUser().getFirstName()+" "+key.getUser().getLastName();
+
+            List<EmailProductItemDto> dto = value.stream().map(item -> {
+
+                BigDecimal toPay = inventoryItemPriceService.getPrices(item.getInventoryItem().getId()).getSellerNewPrice();
+
+                return EmailProductItemDto.builder()
+                        .productName(item.getInventoryItem().getProductCatalog().getName())
+                        .amount(toPay)
+                        .shippingCost(item.getShippingCost())
+                        .quantity(1L)
+                        .build();
+            }).toList();
+            String sellerEmail = key.getUser().getUsername();
+            String buyerAddress = String.join(",",order.getOrderNumber(),order.getShippingAddress());
+            String corporateAddress = String.join(",","Corporate Headquarters","Ul Polna 1A","00-903","Piotrkow Trybunalski","Poland");
+
+            emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,buyerAddress,corporateAddress);
+            //update buyer of product awaiting shipment
+
+        });
     }
 
     @Transactional

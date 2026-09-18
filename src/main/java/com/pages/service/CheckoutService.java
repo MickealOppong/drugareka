@@ -40,7 +40,7 @@ public class CheckoutService {
 
 
     @Transactional
-    public ResponseDto<String> createCheckout(Jwt jwt) {
+    public ResponseDto<String> createCheckout(Jwt jwt,String locale) {
 
 
 
@@ -66,7 +66,7 @@ public class CheckoutService {
 
             Session session =
                     stripePaymentProviderService
-                            .createEmbeddedCheckoutSession(order);
+                            .createEmbeddedCheckoutSession(order,locale);
 
             return paymentService.createPayment(session, order);
 

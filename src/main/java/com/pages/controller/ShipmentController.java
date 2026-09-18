@@ -33,7 +33,6 @@ public class ShipmentController {
 
     @PutMapping("/update-status")
     public ResponseDto<Boolean> updateStatus(@AuthenticationPrincipal Jwt jwt,ShipmentRequest request) {
-        log.info("Request {}",request);
             return shipmentService.updateShippingStatus(jwt,request);
     }
 

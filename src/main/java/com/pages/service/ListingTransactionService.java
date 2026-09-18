@@ -38,8 +38,9 @@ public class ListingTransactionService {
     private final CategoryService categoryService;
     private final BrandService brandService;
     private final ProductConditionService productConditionService;
+    private final EmailNotificationService emailNotificationService;
 
-    public ListingTransactionService(ListingTransactionRepo listingTransactionRepo, AppUserDetailsService appUserDetailsService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, ProductCatalogService productCatalogService, PricingService pricingService, InventoryItemService inventoryItemService, CategoryService categoryService, BrandService brandService, ProductConditionService productConditionService) {
+    public ListingTransactionService(ListingTransactionRepo listingTransactionRepo, AppUserDetailsService appUserDetailsService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, ProductCatalogService productCatalogService, PricingService pricingService, InventoryItemService inventoryItemService, CategoryService categoryService, BrandService brandService, ProductConditionService productConditionService, EmailNotificationService emailNotificationService) {
         this.listingTransactionRepo = listingTransactionRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.mediaService = mediaService;
@@ -51,6 +52,7 @@ public class ListingTransactionService {
         this.categoryService = categoryService;
         this.brandService = brandService;
         this.productConditionService = productConditionService;
+        this.emailNotificationService = emailNotificationService;
     }
 
     public void CreateListing(ListTransRequest dto) {
@@ -409,6 +411,8 @@ public class ListingTransactionService {
                     .listingStatus(getListingStatus(productData.getStatus()))
                     .build();
             CreateListing(listTrans);
+            emailNotificationService.sendProductCreatedNotification(appUser.getUsername(),
+                  appUser.getFirstName()+" "+appUser.getLastName(),  productData.getName(),BigDecimal.valueOf(Long.parseLong(String.valueOf(productData.getPrice()))));
 
             //return
             return ResponseDto.builder()
@@ -425,6 +429,43 @@ public class ListingTransactionService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<ListTransResponse> getShopLandingListing(){
+       return listingTransactionRepo
+                .findTop8ByInventoryStatusAndListingStatusOrderByCreatedAtDesc(InventoryStatus.AVAILABLE,ListingStatus.PUBLISHED).stream()
+                .map(listing -> {
+
+                    Long inventoryId =
+                            listing.getInventory().getId();
+
+
+                    /*
+                     * PRODUCT IMAGE
+                     */
+                    List<MediaResponse> media =
+                            mediaService.getImageList(inventoryId);
+
+
+                    /*
+                     * PRICE
+                     */
+                    InventoryItemPriceResponse price =
+                            inventoryItemPriceService
+                                    .getPrices(inventoryId)
+                                    .toPriceDto();
+
+
+                    /*
+                     * RESPONSE DTO
+                     */
+                    return ListingTransaction.toListTransResponse(
+                            listing,
+                            media,
+                            price
+                    );
+                }).toList();
+
+    }
 
     @Transactional(readOnly = true)
     public ListPageDto getMarketplaceCatalogFeed( String categoryQuery, int page, int size) {

@@ -1,15 +1,14 @@
 package com.pages.service;
 
-import com.pages.dto.ListPageShipment;
-import com.pages.dto.ResponseDto;
-import com.pages.dto.ShipmentRequest;
-import com.pages.dto.ShipmentResponse;
+import com.pages.dto.*;
 import com.pages.enums.ListingStatus;
 import com.pages.enums.ShipmentStatus;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.SellerShipmentRepo;
+import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -31,11 +32,15 @@ public class ShipmentService {
     private final SellerShipmentRepo sellerShipmentRepo;
     private final AppUserDetailsService appUserDetailsService;
     private final SellerProfileService sellerProfileService;
+    private final EmailNotificationService emailNotificationService;
+    private final ListingOrderService listingOrderService;
 
-    public ShipmentService(SellerShipmentRepo sellerShipmentRepo,AppUserDetailsService appUserDetailsService, SellerProfileService sellerProfileService) {
+    public ShipmentService(SellerShipmentRepo sellerShipmentRepo, AppUserDetailsService appUserDetailsService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService, ListingOrderService listingOrderService) {
         this.sellerShipmentRepo = sellerShipmentRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.sellerProfileService = sellerProfileService;
+        this.emailNotificationService = emailNotificationService;
+        this.listingOrderService = listingOrderService;
     }
 
     public SellerShipment findOrCreateShipment(ListingOrderItem listingOrderItem){
@@ -62,11 +67,12 @@ public class ShipmentService {
                    .seller(item.getSeller())
                     .deliveredAt(null)
                     .shippingAddress(item.getListingOrder().getShippingAddress())
-                    .shipmentStatus(ShipmentStatus.CREATED)
+                    .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
                     .shippedAt(null)
-                    .build();
-             sellerShipmentRepo.save(shipment);
+                    .build();sellerShipmentRepo.save(shipment);
+
         });
+
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +116,10 @@ public class ShipmentService {
         return sellerShipmentRepo.findByListingOrderItemId(listingOrderItem.getId()).map(SellerShipment::getShipmentStatus).orElse(null);
     }
 
+    public SellerShipment shipment(ListingOrderItem listingOrderItem){
+        return sellerShipmentRepo.findByListingOrderItemId(listingOrderItem.getId()).orElse(null);
+    }
+
     private ShipmentStatus getShippingStatus(String status){
         String cleanStatus = status.trim().toUpperCase();
         return switch (cleanStatus) {
@@ -122,6 +132,7 @@ public class ShipmentService {
 
     }
 
+    @Transactional
     public ResponseDto<Boolean> updateShippingStatus(Jwt jwt, ShipmentRequest request) {
         if (jwt != null) {
          SellerShipment shipment=   sellerShipmentRepo.findById(request.getShipmentId()).orElse(null);
@@ -168,7 +179,38 @@ public class ShipmentService {
              shipment.setComment(request.getComment());
              shipment.setTrackingNumber(request.getTrackingNumber());
 
-             sellerShipmentRepo.save(shipment);
+
+             SellerShipment sellerShipment = sellerShipmentRepo.save(shipment);
+             ListingOrderItem listingOrderItem  = sellerShipment.getListingOrderItem();
+             String token = "";
+             if (request.getStatus().equalsIgnoreCase(ShipmentStatus.SHIPPED.name()) || request.getStatus().equalsIgnoreCase(ShipmentStatus.DELIVERED.name())) {
+
+                  token = UtilService.generateReceiptConfirmationToken();
+
+                 listingOrderItem.setReceiptConfirmationToken(token);
+
+                 // Token valid for 14 days
+                 listingOrderItem.setReceiptConfirmationTokenExpiresAt(
+                        Instant.now().plus(3, ChronoUnit.DAYS)
+                 );
+
+                 listingOrderItem.setReceiptConfirmedAt(null);
+
+                 listingOrderService.save(listingOrderItem);
+             }
+
+             ListingOrder listingOrder = listingOrderItem.getListingOrder();
+
+             AppUser buyer = appUserDetailsService.getAppUserId(listingOrder.getBuyerId());
+
+             String buyerName = buyer.getFirstName()+" "+buyer.getLastName();
+             String product = listingOrderItem.getInventoryItem().getProductCatalog().getName();
+
+             String shippingMethod = listingOrderItem.getInventoryItem().getShippingMethod().name();
+
+
+             emailNotificationService.sendShipmentStatusToBuyer(buyer.getUsername(),buyerName,listingOrder.getOrderNumber()
+                     ,product,sellerShipment.getShipmentStatus().name(),sellerShipment.getTrackingNumber(),shippingMethod,token);
          }
 
             return ResponseDto.<Boolean>builder()
@@ -257,5 +299,7 @@ public class ShipmentService {
         }
         return null;
     }
+
+
 }
 
