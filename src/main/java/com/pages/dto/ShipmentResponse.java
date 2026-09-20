@@ -20,6 +20,7 @@ public class ShipmentResponse {
     private Long listingOrderId;
     private String seller;
     private String deliveryAddress;
+    private String trackingNumber;
 
     @Enumerated(EnumType.STRING)
     private ShipmentStatus status;

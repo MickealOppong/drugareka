@@ -16,7 +16,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 // Safely allows your local server, your current frontend, and any potential backup subdomains
-                .setAllowedOriginPatterns("http://localhost:5173","https://drugareka-production.up.railway.app","https://store-drugareka-production.up.railway.app");
+                .setAllowedOriginPatterns("http://localhost:5173","https://www.kasoa.pl","https://store-drugareka-production.up.railway.app");
     }
 
 

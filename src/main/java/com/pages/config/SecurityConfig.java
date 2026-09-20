@@ -82,7 +82,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource(){
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of( "http://localhost:5173","https://store-drugareka-production.up.railway.app"));
+        config.setAllowedOrigins(List.of( "http://localhost:5173","https://kasoa.pl","https://www.kasoa.pl"));
         config.setAllowedMethods(Arrays.asList("POST","GET","DELETE","PUT","PATCH","OPTIONS","HEADER","HEAD"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

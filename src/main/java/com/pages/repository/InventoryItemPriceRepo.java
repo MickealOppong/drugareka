@@ -1,5 +1,6 @@
 package com.pages.repository;
 
+import com.pages.model.InventoryItem;
 import com.pages.model.InventoryItemPrice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -12,4 +13,5 @@ public interface InventoryItemPriceRepo extends JpaRepository<InventoryItemPrice
 
     Optional<InventoryItemPrice> findByInventoryItemId(Long id);
 
+    void deleteByInventoryItem(InventoryItem item);
 }

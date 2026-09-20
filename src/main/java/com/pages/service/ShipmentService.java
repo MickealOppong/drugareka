@@ -98,6 +98,7 @@ public class ShipmentService {
                                 .listingOrderId(shipment.getListingOrderItem().getListingId())
                                 .seller(shipment.getSeller().getUser().getFirstName()+" "+shipment.getSeller().getUser().getLastName())
                                 .shippedAt(shipment.getShippedAt())
+                                .trackingNumber(shipment.getTrackingNumber())
                                 .status(shipment.getShipmentStatus())
                                 .build();
                     });
@@ -107,6 +108,7 @@ public class ShipmentService {
                     .totalPages(shipments.getTotalPages())
                     .page(shipments.getNumber())
                     .totalElements(shipments.getTotalElements())
+                    .pageSize(shipments.getSize())
                     .build();
         }
         return ListPageShipment.builder().build();
@@ -248,6 +250,7 @@ public class ShipmentService {
                                 .listingOrderId(shipment.getListingOrderItem().getListingId())
                                 .seller(shipment.getSeller().getUser().getFirstName()+" "+shipment.getSeller().getUser().getLastName())
                                 .shippedAt(shipment.getShippedAt())
+                                .trackingNumber(shipment.getTrackingNumber())
                                 .status(shipment.getShipmentStatus())
                                 .build();
                     });

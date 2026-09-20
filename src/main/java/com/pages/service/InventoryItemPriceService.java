@@ -28,6 +28,10 @@ public class InventoryItemPriceService {
         return inventoryItemPriceRepo.save(newPrice);
     }
 
+    public void deleteInventoryPrice(InventoryItem item){
+        inventoryItemPriceRepo.deleteByInventoryItem(item);
+    }
+
     public void savePrice(InventoryItemPrice price){
         inventoryItemPriceRepo.save(price);
     }

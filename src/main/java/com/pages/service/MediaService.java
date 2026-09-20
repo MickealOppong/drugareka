@@ -250,6 +250,9 @@ Retrieves images metadata using inventory item id from repository and actual ima
             mediaRepo.deleteByPath(item);
         }
     }
+    private void deleteMediaFromDatabase(InventoryItem item){
+        mediaRepo.deleteByInventoryItem(item);
+    }
 
     public void delete(String path)throws IOException {
         deleteMediaFromDatabase(path);
@@ -260,6 +263,15 @@ Retrieves images metadata using inventory item id from repository and actual ima
     public void deleteAll(List<String> media) throws IOException{
        deleteMediaFromDatabase(media);
         mediaUtil.delete(media);
+
+    }
+
+    public void deleteAllByInventoryItem(InventoryItem item) throws IOException{
+       List<Media> media= mediaRepo.findAllByInventoryItemId(item.getId());
+        deleteMediaFromDatabase(item);
+      for(Media image :media){
+          mediaUtil.delete(image.getFileName());
+      }
 
     }
 }

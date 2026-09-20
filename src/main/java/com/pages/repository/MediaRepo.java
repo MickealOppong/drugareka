@@ -1,6 +1,7 @@
 package com.pages.repository;
 
 
+import com.pages.model.InventoryItem;
 import com.pages.util.Media;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -12,6 +13,7 @@ import java.util.Optional;
 @Repository
 public interface MediaRepo extends JpaRepository<Media,Long> {
 
+    void deleteByInventoryItem(InventoryItem item);
     Optional<Media> findByFileName(String fileName);
 
     Optional<Media> findByPath(String path);

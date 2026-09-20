@@ -2,6 +2,7 @@ package com.pages.service;
 
 import com.pages.dto.*;
 import com.pages.enums.*;
+import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.ListingTransactionRepo;
 import com.pages.specs.ListingSpecs;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -796,10 +798,36 @@ public class ListingTransactionService {
         return null;
     }
 
+    @Transactional
     public void deleteListing(Jwt jwt, Long listing) {
         if (jwt != null) {
+
             listingTransactionRepo.findById(listing)
-                    .ifPresent(listingTransactionRepo::delete);
+                    .ifPresent(item->{
+
+                        InventoryItem inventoryItem = item.getInventory();
+                        if(inventoryItem.getStatus().equals(InventoryStatus.RESERVED)){
+                            throw new InvalidOperationException("Product has been reserved");
+                        }
+                        if(inventoryItem.getStatus().equals(InventoryStatus.SOLD)){
+                            throw new InvalidOperationException("Product already sold");
+                        }
+                        listingTransactionRepo.delete(item);
+
+                        inventoryItemPriceService.deleteInventoryPrice(inventoryItem);
+                        try {
+                            mediaService.deleteAllByInventoryItem(inventoryItem);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        //productCatalogService.deleteCatalog(inventoryItem.getProductCatalog());
+                        inventoryItem.setProductCatalog(null);
+
+                        inventoryItemService.deleteInventory(inventoryItem);
+
+
+
+                    });
         }
     }
 

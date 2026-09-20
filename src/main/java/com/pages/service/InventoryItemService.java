@@ -20,15 +20,13 @@ public class InventoryItemService {
 private final InventoryItemRepo inventoryItemRepo;
 private final ProductConditionService productConditionService;
 private final AppUserDetailsService appUserDetailsService;
-private final InventoryItemPriceRepo inventoryItemPriceRepo;
 
 
     public InventoryItemService(InventoryItemRepo inventoryItemRepo, ProductConditionService productConditionService,
-                                AppUserDetailsService appUserDetailsService, InventoryItemPriceRepo inventoryItemPriceRepo) {
+                                AppUserDetailsService appUserDetailsService) {
         this.inventoryItemRepo = inventoryItemRepo;
         this.productConditionService = productConditionService;
         this.appUserDetailsService = appUserDetailsService;
-        this.inventoryItemPriceRepo = inventoryItemPriceRepo;
     }
 
     public InventoryItem findAndUpdate(InventoryItemRequest dto){
@@ -36,6 +34,9 @@ private final InventoryItemPriceRepo inventoryItemPriceRepo;
         ProductCondition savedCondition =productConditionService.findByNameOrCreate(dto.getCondition());
 
         return null;
+    }
+    public void deleteInventory(InventoryItem item){
+        inventoryItemRepo.delete(item);
     }
 
     public ShippingMethod getShippingMethod(String method){

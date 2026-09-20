@@ -25,6 +25,10 @@ public class ProductCatalogService {
         this.categoryService = categoryService;
     }
 
+    public void deleteCatalog(ProductCatalog productCatalog){
+        productCatalogRepo.delete(productCatalog);
+    }
+
     public ProductCatalog findOrCreateProduct(ProductRequest productRequest){
 
         /*
