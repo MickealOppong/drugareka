@@ -16,6 +16,7 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
 
     void deleteByInventoryItem(InventoryItem item);
     void deleteByCategory(Category category);
+    Optional<Media> findByCategory(Category category);
     Optional<Media> findByFileName(String fileName);
 
     Optional<Media> findByPath(String path);
@@ -26,7 +27,7 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
 
     List<Media> findAllByInventoryItemId(Long inventoryItemId);
     Optional<Media> findFirstByInventoryItemId(Long inventoryItemId);
-    Optional<Media> findByCategoryIdAndSortOrder(Long categoryId,Integer sortOrder);
+
     Optional<Media> findByCategoryId(Long categoryId);
 }
 

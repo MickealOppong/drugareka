@@ -7,15 +7,16 @@ import com.pages.util.UtilService;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.Category;
 import com.pages.repository.CategoryRepo;
-import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static com.pages.util.UtilService.formatNameToSlug;
@@ -115,13 +116,23 @@ public class CategoryService {
 
 
 
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public CategoryResponse getCategory(Long id){
-       Category category = categoryRepo.getReferenceById(id);
+       Category category = categoryRepo.findById(id).orElse(null);
+       if(category==null){
+           return null;
+       }
+      MediaResponse media= mediaService.getCategoryImage(category);
+       String image = media!=null?media.getImage():null;
+       String parent = category.getParent()!=null?category.getParent().getName():null;
+
         return CategoryResponse.builder()
                 .slug(category.getName())
                 .active(category.getIsActive())
                 .sortOrder(category.getSortOrder())
-                .parent(category.getParent()!=null?category.getParent().getName():null)
+                .image(image)
+                .parent(parent)
                 .name(category.getName())
                 .build();
     }
@@ -134,6 +145,7 @@ public class CategoryService {
         return categoryRepo.findBySlug(slug).orElseThrow(()->new EntityNotFoundException(slug+" does not exist"));
     }
 
+    @Transactional
     public ResponseDto<Object> editCategory(CategoryRequest categoryDto){
 
         try{
@@ -142,12 +154,25 @@ public class CategoryService {
             }
             Category retreivedCategory = categoryRepo.getReferenceById(categoryDto.getId());
 
+           Media media = mediaService.categoryImage(retreivedCategory);
+
             if(categoryDto.getName()!=null && !categoryDto.getName().isEmpty()){
                 retreivedCategory.setName(categoryDto.getName());
-                retreivedCategory.setSlug(categoryDto.getName());
+                retreivedCategory.setSlug(UtilService.formatNameToSlug(categoryDto.getSlug()));
             }
-            Category newParentCategory = categoryRepo.findByName(categoryDto.getParent()).orElse(null);
-            retreivedCategory.setParent(newParentCategory);
+            if(media==null){
+                mediaService.saveMedia(categoryDto.getImage(),retreivedCategory);
+            }else if(!media.getFileName().equalsIgnoreCase(categoryDto.getImage().getName())){
+                mediaService.deleteByCategory(retreivedCategory.getId());
+                mediaService.saveMedia(categoryDto.getImage(),retreivedCategory);
+            }
+
+
+            if(categoryDto.getParent()!=null && !categoryDto.getParent().isEmpty()){
+                Category newParentCategory = categoryRepo.findByName(categoryDto.getParent()).orElse(null);
+                retreivedCategory.setParent(newParentCategory);
+            }
+
             retreivedCategory.setIsActive(categoryDto.isActive());
             retreivedCategory.setSortOrder(categoryDto.getSortOrder());
 
@@ -170,13 +195,13 @@ public class CategoryService {
     }
 
 
-    @Transactional
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseDto<Object> deleteCategory(Long id) {
         try{
             categoryRepo.findById(id).ifPresent(cat->{
 
                 try {
-                    mediaService.deleteAllByCategory(id);
+                    mediaService.deleteByCategory(id);
                     categoryRepo.deleteById(id);
 
                 } catch (IOException e) {

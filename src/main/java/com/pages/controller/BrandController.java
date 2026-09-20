@@ -2,9 +2,12 @@ package com.pages.controller;
 
 import com.pages.dto.BrandRequest;
 import com.pages.dto.BrandResponse;
+import com.pages.dto.ListPageBrand;
 import com.pages.dto.ResponseDto;
 import com.pages.service.BrandService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,8 +27,12 @@ public class BrandController {
        return brandService.addBrand(brand);
     }
     @GetMapping("/all")
-    public List<BrandResponse> all(){
-        return brandService.allBrands();
+    public ListPageBrand all(@AuthenticationPrincipal Jwt jwt, int page, int size){
+        return brandService.allBrands(jwt,page,size);
+    }
+    @GetMapping("/list")
+    public List<BrandResponse>  brandList(@AuthenticationPrincipal Jwt jwt){
+        return brandService.allBrands(jwt);
     }
 
     @GetMapping("/{id}")

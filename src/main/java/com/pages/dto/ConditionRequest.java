@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ConditionRequest {
 
+    private Long id;
     @NotNull(message = "Name cannot be null")
     @NotBlank(message = "Name is required")
     private String name;

@@ -53,8 +53,9 @@ public class CategoryController {
     }
 
 
-    @PutMapping("/edit")
-    public ResponseDto<Object> editCategory(@RequestBody @Valid CategoryRequest categoryDto){
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PutMapping(value = "/edit",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseDto<Object> editCategory(@ModelAttribute @Valid CategoryRequest categoryDto){
         return categoryService.editCategory(categoryDto);
     }
 

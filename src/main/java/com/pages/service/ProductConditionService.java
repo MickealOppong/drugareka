@@ -10,6 +10,7 @@ import com.pages.repository.ProductConditionRepo;
 import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -106,6 +107,35 @@ public class ProductConditionService {
         }).toList();
     }
 
+    public ResponseDto<ConditionResponse> productCondition(Jwt jwt,Long id){
+      if(jwt!=null){
+          ProductCondition productCondition = productConditionRepo.findById(id).orElse(null);
+          if(productCondition!=null){
+              ConditionResponse response=   ConditionResponse.builder()
+                      .id(productCondition.getId())
+                      .name(productCondition.getName())
+                      .description(productCondition.getDescription())
+                      .sortOrder(productCondition.getSortOrder())
+                      .slug(productCondition.getSlug())
+                      .active(productCondition.isActive())
+                      .build();
+              return ResponseDto.<ConditionResponse>builder()
+                      .data(response)
+                      .httpStatus(HttpStatus.OK.value())
+                      .build();
+          }
+          return ResponseDto.<ConditionResponse>builder()
+                  .data(null)
+                  .message(id+"does not exist")
+                  .httpStatus(HttpStatus.BAD_REQUEST.value())
+                  .build();
+      }
+        return ResponseDto.<ConditionResponse>builder()
+                .data(null)
+                .httpStatus(HttpStatus.FORBIDDEN.value())
+                .build();
+    }
+
     public ProductCondition getConditionByName(String name){
         return productConditionRepo.findByName(name).orElseThrow(()->new EntityNotFoundException(name+" does not exist"));
     }
@@ -114,24 +144,32 @@ public class ProductConditionService {
         return  productConditionRepo.findByName(name).orElseThrow(()->new EntityNotFoundException("Product condition does not exist"));
     }
 
-    public ResponseDto<Boolean> editCondition(ConditionResponse conditionResponse){
+    public ResponseDto<Boolean> editCondition(Jwt jwt,ConditionRequest request){
+
+        if(jwt==null){
+            return ResponseDto.<Boolean>builder()
+                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .message("Unauthorised request")
+                    .data(false)
+                    .build();
+        }
         try{
-            ProductCondition productCondition = productConditionRepo.findById(conditionResponse.getId()).orElse(null);
+            ProductCondition productCondition = productConditionRepo.findById(request.getId()).orElse(null);
             if(productCondition !=null){
-                if(StringUtils.hasText(conditionResponse.getName().trim())){
-                    productCondition.setName(conditionResponse.getName());
+                if(StringUtils.hasText(request.getName().trim())){
+                    productCondition.setName(request.getName());
                 }
-                if(StringUtils.hasText(conditionResponse.getDescription().trim())){
-                    productCondition.setDescription(conditionResponse.getDescription());
+                if(StringUtils.hasText(request.getDescription().trim())){
+                    productCondition.setDescription(request.getDescription());
                 }
-                if(StringUtils.hasText(conditionResponse.getSlug().trim())){
-                    productCondition.setSlug(UtilService.formatNameToSlug(conditionResponse.getSlug()));
+                if(StringUtils.hasText(request.getSlug().trim())){
+                    productCondition.setSlug(UtilService.formatNameToSlug(request.getSlug()));
                 }
-                if(!conditionResponse.isActive()){
+                if(!request.isActive()){
                     productCondition.setActive(false);
                 }
-                if(conditionResponse.getSortOrder()!= productCondition.getSortOrder()){
-                    productCondition.setSortOrder(conditionResponse.getSortOrder());
+                if(request.getSortOrder()!= productCondition.getSortOrder()){
+                    productCondition.setSortOrder(request.getSortOrder());
                 }
                 productConditionRepo.save(productCondition);
                 return ResponseDto.<Boolean>builder()

@@ -2,6 +2,7 @@ package com.pages.service;
 
 import com.pages.dto.BrandRequest;
 import com.pages.dto.BrandResponse;
+import com.pages.dto.ListPageBrand;
 import com.pages.dto.ResponseDto;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
@@ -10,7 +11,12 @@ import com.pages.repository.BrandRepo;
 import com.pages.util.UtilService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -79,17 +85,53 @@ public class BrandService {
             return brandRepo.save(newBrand);
         });
     }
-    public List<BrandResponse> allBrands(){
-      return   brandRepo.findAll().stream().map(brand->{
+    public ListPageBrand allBrands(Jwt jwt, int page , int size){
+        if(jwt==null){
+                ListPageBrand.builder().build();
+        }
+
+        /*
+         * =====================================================
+         * PAGINATION
+         * =====================================================
+         */
+        Pageable pageable = PageRequest.of(
+                page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+      Page<BrandResponse> brands= brandRepo.findAll(pageable).map(brand->{
           return BrandResponse.builder()
                  .id(brand.getId())
                  .name(brand.getName())
                  .slug(brand.getSlug())
                   .sortOrder(brand.getSortOrder())
                  .build();
-        }).toList();
+        });
+      return ListPageBrand.builder()
+              .brands(brands.getContent())
+              .page(brands.getNumber())
+              .pageSize(brands.getSize())
+              .totalElements(brands.getTotalElements())
+              .build();
     }
 
+    public List<BrandResponse> allBrands(Jwt jwt){
+        if(jwt==null){
+            ListPageBrand.builder().build();
+        }
+
+
+       return  brandRepo.findAll().stream().map(brand->{
+            return BrandResponse.builder()
+                    .id(brand.getId())
+                    .name(brand.getName())
+                    .slug(brand.getSlug())
+                    .sortOrder(brand.getSortOrder())
+                    .build();
+        }).toList();
+    }
     public ResponseDto<Object> editBrand(BrandResponse brandResponse) {
 
         try{

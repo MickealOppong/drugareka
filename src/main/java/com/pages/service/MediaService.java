@@ -180,7 +180,7 @@ public class MediaService {
 Retrieves images metadata using inventory item id from repository and actual image from local directory
 */
     public MediaResponse getCategoryImage(Category category)  {
-            Media media= mediaRepo.findByCategoryIdAndSortOrder(category.getId(), category.getSortOrder()).orElse(null);
+            Media media= mediaRepo.findByCategory(category).orElse(null);
 
             if(media!=null){
 
@@ -193,6 +193,10 @@ Retrieves images metadata using inventory item id from repository and actual ima
 
         }
         return null;
+    }
+
+    public Media categoryImage(Category category)  {
+       return mediaRepo.findByCategory(category).orElse(null);
     }
 
     public MediaResponse getListingMainImage(Long inventoryItemId)  {
@@ -275,12 +279,13 @@ Retrieves images metadata using inventory item id from repository and actual ima
 
     }
 
-    public void deleteAllByCategory(Long category) throws IOException{
+    @Transactional
+    public void deleteByCategory(Long category) throws IOException{
        Media media= mediaRepo.findByCategoryId(category).orElse(null);
-
         if(media !=null){
             media.setCategory(null);
             mediaRepo.delete(media);
+            mediaRepo.flush();
             mediaUtil.delete(media.getFileName());
         }
 

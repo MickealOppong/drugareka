@@ -6,6 +6,8 @@ import com.pages.dto.ResponseDto;
 import com.pages.service.ProductConditionService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,8 +35,9 @@ public class ConditionController {
     }
 
     @PutMapping("/edit")
-    public ResponseDto<Boolean> editCondition(ConditionResponse conditionResponse){
-        return productConditionService.editCondition(conditionResponse);
+    public ResponseDto<Boolean> editCondition(@AuthenticationPrincipal Jwt jwt, ConditionRequest dto){
+        log.info("{}",dto);
+        return productConditionService.editCondition(jwt,dto);
     }
 
 
@@ -42,4 +45,10 @@ public class ConditionController {
     public List<ConditionResponse> all(){
         return productConditionService.AllProductConditions();
     }
+
+    @GetMapping("/{id}")
+    public ResponseDto<ConditionResponse> condition(@AuthenticationPrincipal Jwt jwt, Long id){
+        return productConditionService.productCondition(jwt,id);
+    }
 }
+
