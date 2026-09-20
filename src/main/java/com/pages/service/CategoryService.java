@@ -195,7 +195,7 @@ public class CategoryService {
     }
 
 
-    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Transactional
     public ResponseDto<Object> deleteCategory(Long id) {
         try{
             categoryRepo.findById(id).ifPresent(cat->{
