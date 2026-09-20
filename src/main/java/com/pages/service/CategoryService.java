@@ -14,13 +14,14 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import static com.pages.util.UtilService.formatNameToSlug;
 
 @Slf4j
-@Transactional
+
 @Service
 public class CategoryService {
 
@@ -168,10 +169,20 @@ public class CategoryService {
 
     }
 
+
+    @Transactional
     public ResponseDto<Object> deleteCategory(Long id) {
         try{
             categoryRepo.findById(id).ifPresent(cat->{
-                categoryRepo.deleteById(id);
+
+                try {
+                    mediaService.deleteAllByCategory(id);
+                    categoryRepo.deleteById(id);
+
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+
             });
             return ResponseDto.builder()
                     .httpStatus(HttpStatus.BAD_REQUEST.value())

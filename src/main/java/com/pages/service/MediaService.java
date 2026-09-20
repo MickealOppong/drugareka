@@ -274,5 +274,16 @@ Retrieves images metadata using inventory item id from repository and actual ima
       }
 
     }
+
+    public void deleteAllByCategory(Long category) throws IOException{
+       Media media= mediaRepo.findByCategoryId(category).orElse(null);
+
+        if(media !=null){
+            media.setCategory(null);
+            mediaRepo.delete(media);
+            mediaUtil.delete(media.getFileName());
+        }
+
+    }
 }
 
