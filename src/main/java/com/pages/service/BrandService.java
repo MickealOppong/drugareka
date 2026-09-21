@@ -114,6 +114,7 @@ public class BrandService {
               .page(brands.getNumber())
               .pageSize(brands.getSize())
               .totalElements(brands.getTotalElements())
+              .totalPages(brands.getTotalPages())
               .build();
     }
 

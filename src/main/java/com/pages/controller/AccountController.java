@@ -3,9 +3,11 @@ package com.pages.controller;
 import com.pages.dto.*;
 import com.pages.service.*;
 
+import jakarta.mail.Multipart;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,14 +26,12 @@ public class AccountController {
     private final WishListService wishListService;
     private final AppUserDetailsService appUserDetailsService;
     private final ListingTransactionService listingTransactionService;
-    private final ListingOrderService listingOrderService;
     private final SellerPayoutService sellerPayoutService;
 
-    public AccountController(WishListService wishListService, AppUserDetailsService appUserDetailsService, ListingTransactionService listingTransactionService, ListingOrderService listingOrderService, SellerPayoutService sellerPayoutService, SellerPayoutService sellerPayoutService1) {
+    public AccountController(WishListService wishListService, AppUserDetailsService appUserDetailsService, ListingTransactionService listingTransactionService,  SellerPayoutService sellerPayoutService1) {
         this.wishListService = wishListService;
         this.appUserDetailsService = appUserDetailsService;
         this.listingTransactionService = listingTransactionService;
-        this.listingOrderService = listingOrderService;
         this.sellerPayoutService = sellerPayoutService1;
     }
 
@@ -43,7 +43,7 @@ public class AccountController {
 
 
     @PostMapping("/new")
-    public ResponseDto<Object> createUser(@RequestBody @Valid UserDetailsUpdateDto request){
+    public ResponseDto<Object> createUser(@RequestBody @Valid UserRegistrationRequest request){
         return appUserDetailsService.addUser(request);
     }
 
@@ -53,13 +53,13 @@ public class AccountController {
     }
 
     @GetMapping("/user")
-    public ResponseDto<Object> getUser(String username){
-        return appUserDetailsService.getAppUser(username);
+    public ResponseDto<Object> getUser(@AuthenticationPrincipal Jwt jwt){
+        return appUserDetailsService.getAppUser(jwt);
     }
 
-    @PutMapping("/edit")
-    public ResponseDto<Object> editUser(@RequestBody @Valid UserDetailsUpdateDto userDetailsDto){
-        return appUserDetailsService.updateUser(userDetailsDto);
+    @PutMapping(value = "/edit",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseDto<Object> editUser(@AuthenticationPrincipal Jwt jwt,@ModelAttribute @Valid UserDetailsUpdateDto userDetailsDto){
+        return appUserDetailsService.updateUser(jwt,userDetailsDto);
     }
 
     @GetMapping("/roles")
@@ -91,6 +91,11 @@ public class AccountController {
     @GetMapping("/payouts")
     public ListPagePayout myPayouts(@AuthenticationPrincipal Jwt jwt,int page,int size){
      return sellerPayoutService.payouts(jwt,page,size);
+    }
+
+    @PutMapping("/change-password")
+    public ResponseDto<Object> changePassword(@AuthenticationPrincipal Jwt jwt,ChangePasswordDto dto){
+        return appUserDetailsService.changePassword(jwt,dto);
     }
 
 }

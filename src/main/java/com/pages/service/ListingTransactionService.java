@@ -825,8 +825,6 @@ public class ListingTransactionService {
 
                         inventoryItemService.deleteInventory(inventoryItem);
 
-
-
                     });
         }
     }

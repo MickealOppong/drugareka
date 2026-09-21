@@ -252,6 +252,7 @@ public class ShipmentService {
                                 .shippedAt(shipment.getShippedAt())
                                 .trackingNumber(shipment.getTrackingNumber())
                                 .status(shipment.getShipmentStatus())
+                                .orderNumber(shipment.getListingOrderItem().getListingOrder().getOrderNumber())
                                 .build();
                     });
 
@@ -260,6 +261,7 @@ public class ShipmentService {
                     .totalPages(shipments.getTotalPages())
                     .page(shipments.getNumber())
                     .totalElements(shipments.getTotalElements())
+                    .pageSize(shipments.getSize())
                     .build();
         }
         return ListPageShipment.builder().build();

@@ -65,6 +65,7 @@ public class AppUser extends LogEntity implements UserDetails {
     @Column(nullable = false)
     @Builder.Default
     private boolean credentialsNonExpired =true;
+    private String accountNumber;
 
 
     //User role

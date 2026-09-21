@@ -21,14 +21,10 @@ public class UserDetailsDto {
     private Long userId;
     private String firstName;
     private String lastName;
-    private LocalDate dob;
     private String email;
-    private boolean isTermsAccepted;
     private Set<String> roles;
-    private String city;
-    private String country;
-    private String postCode;
-    private Set<GlobalAddress> globalAddressSet;
+    private AddressResponse address;
+    private String accountNumber;
 
 
 

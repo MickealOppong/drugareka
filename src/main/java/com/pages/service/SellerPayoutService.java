@@ -92,6 +92,7 @@ public class SellerPayoutService {
                     .totalPages(payouts.getTotalPages())
                     .page(payouts.getNumber())
                     .pageSize(payouts.getSize())
+                    .totalElements(payouts.getTotalElements())
                     .build();
         }
         return ListPagePayout.builder().build();
@@ -125,6 +126,7 @@ public class SellerPayoutService {
                     .totalPages(payouts.getTotalPages())
                     .page(payouts.getNumber())
                     .pageSize(payouts.getSize())
+                    .totalElements(payouts.getTotalElements())
                     .build();
         }
         return ListPagePayout.builder().build();

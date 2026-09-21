@@ -18,7 +18,7 @@ import java.util.Set;
 @AllArgsConstructor
 public class UserDetailsUpdateDto {
 
-    private Long userId;
+    private Long id;
     @NotNull(message = "first name cannot be null")
     @NotBlank(message = "First name cannot be empty")
     private String firstName;
@@ -27,27 +27,29 @@ public class UserDetailsUpdateDto {
     @NotBlank(message = "Last name cannot be empty")
     private String lastName;
 
-    @NotNull(message = "Username/Email cannot be null")
-    @NotBlank(message = "Username/Email cannot be empty")
+
+    @NotNull(message = "account cannot be empty")
+    @NotBlank(message = "account cannot be empty")
+    private String accountNumber;
+
+    @NotBlank(message = "Miejscowość nie może być pusta")
+    private String city;
+
+    @NotBlank(message = "Ulica i numer domu nie mogą być puste")
+    private String street;
+
+    // Optional field - tracking parameters can remain standard string values
+    private String country;
+
+    @NotBlank(message = "Kod pocztowy nie może być pusty")
     @Pattern(
-            regexp = "^[a-zA-Z0-9_!#$%&'*+/=?`{|}~^-]+(?:\\.[a-zA-Z0-9_!#$%&'*+/=?`{|}~^-]+)*@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*$",
-            message = "Please provide a valid email address as your username"
+            regexp = "\\d{2}-\\d{3}",
+            message = "Nieprawidłowy format kodu pocztowego. Wymagany format to XX-XXX (np. 97-300)"
     )
-    private String email;
+    private String postalCode;
 
-    @NotNull(message = "Date of birth cannot be null")
-    @IsAdult
-    @Past(message = "Birth date must be a past date")
-    private LocalDate dob;
+    @NotBlank(message = "Numer telefonu nie może być pusty")
+    private String contact;
 
-    @ToString.Exclude
-    private String password;
 
-    @NotNull(message = "You must provide a value for terms acceptance")
-    @AssertTrue(message = "You must accept the Terms and Conditions to proceed")
-    private boolean isTermsAccepted;
-
-    @NotNull(message = "Role cannot be null")
-    @NotBlank(message = "Role name cannot be empty")
-    private String role;
 }

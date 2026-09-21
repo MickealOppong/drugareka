@@ -8,6 +8,7 @@ import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.*;
+import com.pages.util.GlobalAddress;
 import com.pages.util.Media;
 import com.pages.util.Notification;
 import jakarta.transaction.Transactional;
@@ -46,10 +47,13 @@ public class AppUserDetailsService implements UserDetailsService {
 
     private final AppUserRepo appUserRepo;
     private final AppUserRoleRepo appUserRoleRepo;
+    private final GlobalAddressRepo globalAddressRepo;
 
-    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo) {
+    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo) {
         this.appUserRepo = appUserRepo;
         this.appUserRoleRepo = appUserRoleRepo;
+
+        this.globalAddressRepo = globalAddressRepo;
     }
 
 
@@ -120,29 +124,6 @@ public class AppUserDetailsService implements UserDetailsService {
 
 
 
-    public void changePassword(String username, ChangePasswordDto dto) {
-
-        AppUser user = appUserRepo.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User profile not found."));
-
-        if (!passwordConfig.passwordEncoder().matches(dto.getCurrentPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("The current password you entered is incorrect.");
-        }
-
-
-        if (!dto.getNewPassword().equals(dto.getConfirmNewPassword())) {
-            throw new IllegalArgumentException("New password and confirmation password do not match.");
-        }
-
-
-        if (passwordConfig.passwordEncoder().matches(dto.getNewPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("New password cannot be the same as your old password.");
-        }
-
-        String encryptedPassword = passwordConfig.passwordEncoder().encode(dto.getNewPassword());
-        user.setPassword(encryptedPassword);
-       appUserRepo.save(user); // Triggers transactional database flush
-    }
 
     @Transactional
     public ResponseDto<Object> add(UserRegistrationRequest userRegistrationRequest){
@@ -177,28 +158,28 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
     @Transactional
-    public ResponseDto<Object> addUser(UserDetailsUpdateDto userRegistrationRequest){
+    public ResponseDto<Object> addUser(UserRegistrationRequest request){
 
         try{
 
-            if(alreadyExist(userRegistrationRequest.getEmail().trim())){
+            if(alreadyExist(request.getEmail().trim())){
                 throw new InvalidOperationException("Choose a different email");
             }
 
             AppUser appUser = AppUser.builder()
-                    .firstName(userRegistrationRequest.getFirstName())
-                    .lastName(userRegistrationRequest.getLastName())
-                    .username(userRegistrationRequest.getEmail())
-                    .dateOfBirth(userRegistrationRequest.getDob())
-                    .password(passwordConfig.passwordEncoder().encode(userRegistrationRequest.getPassword()))
-                    .isTermsAccepted(userRegistrationRequest.isTermsAccepted())
-                    .enabled(userRegistrationRequest.isTermsAccepted())
-                    .accountNonExpired(userRegistrationRequest.isTermsAccepted())
-                    .accountNonLocked(userRegistrationRequest.isTermsAccepted())
-                    .credentialsNonExpired(userRegistrationRequest.isTermsAccepted())
+                    .firstName(request.getFirstName())
+                    .lastName(request.getLastName())
+                    .username(request.getEmail())
+                    .dateOfBirth(request.getDob())
+                    .password(passwordConfig.passwordEncoder().encode(request.getPassword()))
+                    .isTermsAccepted(request.isTermsAccepted())
+                    .enabled(request.isTermsAccepted())
+                    .accountNonExpired(request.isTermsAccepted())
+                    .accountNonLocked(request.isTermsAccepted())
+                    .credentialsNonExpired(request.isTermsAccepted())
                     .build();
 
-            appUserRoleRepo.findByRole(formatRoleInput(userRegistrationRequest.getRole())).ifPresent(role -> appUser.setUserRoles(Set.of(role)));
+            appUserRoleRepo.findByRole(formatRoleInput(request.getRoles())).ifPresent(role -> appUser.setUserRoles(Set.of(role)));
             appUserRepo.save(appUser);
             return ResponseDto.builder()
                     .httpStatus(HttpStatus.OK.value())
@@ -222,17 +203,38 @@ public class AppUserDetailsService implements UserDetailsService {
         return appUserRepo.findById(id).orElseThrow(()->new UsernameNotFoundException(id+ " "+"does not exist"));
     }
 
-    public ResponseDto<Object> getAppUser(String username){
-       AppUser appUser= appUserRepo.findByUsername(username)
+    public ResponseDto<Object> getAppUser(Jwt jwt){
+        if(jwt==null){
+            return ResponseDto.builder()
+                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .data(null)
+                    .message("Not authorised")
+                    .build();
+        }
+
+       AppUser appUser= appUserRepo.findByUsername(jwt.getSubject())
                 .orElseThrow(()->new UsernameNotFoundException("User does not exist"));
+
+        //address
+        GlobalAddress address =globalAddressRepo.findByAppUserId(appUser.getId()).orElse(null);
+        AddressResponse addressResponse=null;
+        if(address!=null){
+          addressResponse=  AddressResponse.builder()
+                    .contact(address.getContact())
+                    .country(address.getCountry())
+                    .city(address.getCity())
+                    .postalCode(address.getPostCode())
+                    .street(address.getStreet())
+                    .build();
+        }
        UserDetailsDto userDetailsDto = UserDetailsDto.builder()
                .userId(appUser.getId())
                .email(appUser.getUsername())
                .firstName(appUser.getFirstName())
+               .accountNumber(appUser.getAccountNumber())
                .lastName(appUser.getLastName())
-               .isTermsAccepted(appUser.isTermsAccepted())
+               .address(addressResponse)
                .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
-               .dob(appUser.getDateOfBirth())
                .build();
        return ResponseDto.builder()
                .httpStatus(HttpStatus.OK.value())
@@ -251,83 +253,15 @@ public class AppUserDetailsService implements UserDetailsService {
                     .userId(appUser.getId())
                     .firstName(appUser.getFirstName())
                     .lastName(appUser.getLastName())
-                    .dob(appUser.getDateOfBirth())
                     .email(appUser.getUsername())
                     .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                     .build();
         }).toList();
     }
 
-/*
-    public ResponseDto<Object> updateUser(UserDetailsUpdateDto userDetailsDto) {
-        try {
-
-            log.info("{}",userDetailsDto);
-            // 2. Safely verify identity data presence before running lazy mutations
-            Optional<AppUser> appUserOptional = appUserRepo.findById(userDetailsDto.getUserId());
-            if (appUserOptional.isEmpty()) {
-                return ResponseDto.builder()
-                        .data(false)
-                        .message("User profile not found in database registry")
-                        .httpStatus(HttpStatus.NOT_FOUND.value())
-                        .build();
-            }
-
-            AppUser appUser = appUserOptional.get();
-
-            // 3. StringUtils.hasText checks for null AND sweeps empty space text strings safely
-            if (StringUtils.hasText(userDetailsDto.getFirstName())) {
-                appUser.setFirstName(userDetailsDto.getFirstName().trim());
-            }
-            if (StringUtils.hasText(userDetailsDto.getLastName())) {
-                appUser.setLastName(userDetailsDto.getLastName().trim());
-            }
-
-            if (StringUtils.hasText(userDetailsDto.getEmail())) {
-                appUser.setUsername(userDetailsDto.getEmail().trim());
-            }
 
 
-            if (StringUtils.hasText(userDetailsDto.getRole())) {
-                appUserRoleRepo.findByRole(formatRoleInput(userDetailsDto.getRole().trim())).ifPresent(appUser::assignSingleRole);
 
-            }
-
-            if (StringUtils.hasText(userDetailsDto.getPassword().trim())) {
-                appUser.setPassword(passwordConfig.passwordEncoder().encode(userDetailsDto.getLastName().trim()));
-            }
-            if (userDetailsDto.getDob() != null) {
-                appUser.setDateOfBirth(userDetailsDto.getDob());
-            }
-
-
-            if (!userDetailsDto.isTermsAccepted()) {
-                appUser.setTermsAccepted(false);
-                appUser.setEnabled(false);
-                appUser.setAccountNonExpired(false);
-                appUser.setCredentialsNonExpired(false);
-                appUser.setAccountNonLocked(false);
-            }
-
-
-            appUserRepo.save(appUser);
-
-            return ResponseDto.builder()
-                    .data(true)
-                    .message("User updated successfully")
-                    .httpStatus(HttpStatus.OK.value())
-                    .build();
-
-        } catch (Exception e) {
-            return ResponseDto.builder()
-                    .data(false)
-                    .message("Update aborted: " + e.getMessage())
-                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                    .build();
-        }
-    }
-
-*/
 
     public Set<String> getRoles(){
         return appUserRoleRepo.findAll().stream().map(AppUserRole::getRole).collect(Collectors.toSet());
@@ -342,126 +276,169 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
     @Transactional
-    public ResponseDto<Object> updateUser(UserDetailsUpdateDto userDetailsDto) {
+    public ResponseDto<Object> updateUser(Jwt jwt,UserDetailsUpdateDto userDetailsDto) {
 
         try {
 
-            log.info("Updating user: {}", userDetailsDto.getUserId());
-
-            Optional<AppUser> appUserOptional =
-                    appUserRepo.findById(userDetailsDto.getUserId());
-
-            if (appUserOptional.isEmpty()) {
-
+            if(jwt==null){
                 return ResponseDto.builder()
                         .data(false)
-                        .message("User profile not found in database registry")
-                        .httpStatus(HttpStatus.NOT_FOUND.value())
+                        .message(
+                                "User not authorised to update"
+                        )
+                        .httpStatus(
+                                HttpStatus.FORBIDDEN.value()
+                        )
+                        .build();
+            }
+            log.info("Updating user: {}", userDetailsDto.getId());
+
+            AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
+            if(appUser==null){
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(
+                                "User profile not found in database registry"
+                        )
+                        .httpStatus(
+                                HttpStatus.NOT_FOUND.value()
+                        )
                         .build();
             }
 
-            AppUser appUser = appUserOptional.get();
 
+            /*
+             * ==============================
+             * PERSONAL INFORMATION
+             * ==============================
+             */
 
-
-            if (StringUtils.hasText(userDetailsDto.getFirstName())) {
-
+            if (StringUtils.hasText(
+                    userDetailsDto.getFirstName()
+            )) {
                 appUser.setFirstName(
-                        userDetailsDto.getFirstName().trim()
+                        userDetailsDto
+                                .getFirstName()
+                                .trim()
                 );
             }
 
-
-            if (StringUtils.hasText(userDetailsDto.getLastName())) {
-
+            if (StringUtils.hasText(
+                    userDetailsDto.getLastName()
+            )) {
                 appUser.setLastName(
-                        userDetailsDto.getLastName().trim()
+                        userDetailsDto
+                                .getLastName()
+                                .trim()
                 );
             }
 
+            /*
+             * ==============================
+             * SELLER ACCOUNT
+             * ==============================
+             */
 
-            if (StringUtils.hasText(userDetailsDto.getEmail())) {
-
-                appUser.setUsername(
-                        userDetailsDto.getEmail().trim()
+            if (StringUtils.hasText(
+                    userDetailsDto.getAccountNumber()
+            )) {
+                appUser.setAccountNumber(
+                        userDetailsDto
+                                .getAccountNumber()
+                                .trim()
                 );
             }
 
+            /*
+             * ==============================
+             * ADDRESS
+             * ==============================
+             */
 
+            GlobalAddress address =
+                    globalAddressRepo
+                            .findByAppUserId(appUser.getId())
+                            .orElse(null);
 
+            if (address != null) {
 
-            if (StringUtils.hasText(userDetailsDto.getRole())) {
+                if (StringUtils.hasText(
+                        userDetailsDto.getStreet()
+                )) {
+                    address.setStreet(
+                            userDetailsDto
+                                    .getStreet()
+                                    .trim()
+                    );
+                }
 
-                String roleName =
-                        userDetailsDto.getRole().trim();
+                if (StringUtils.hasText(
+                        userDetailsDto.getCity()
+                )) {
+                    address.setCity(
+                            userDetailsDto
+                                    .getCity()
+                                    .trim()
+                    );
+                }
 
-                AppUserRole newRole =
-                        appUserRoleRepo.findByRole(formatRoleInput(roleName))
-                                .orElseThrow(() ->
-                                        new RuntimeException(
-                                                "Role not found: " + roleName
-                                        )
-                                );
+                if (StringUtils.hasText(
+                        userDetailsDto.getContact()
+                )) {
+                    address.setContact(
+                            userDetailsDto
+                                    .getContact()
+                                    .trim()
+                    );
+                }
 
-                appUser.assignSingleRole(newRole);
+                if (StringUtils.hasText(
+                        userDetailsDto.getPostalCode()
+                )) {
+                    address.setPostCode(
+                            userDetailsDto
+                                    .getPostalCode()
+                                    .trim()
+                    );
+                }
+
+                if (StringUtils.hasText(
+                        userDetailsDto.getCountry()
+                )) {
+                    address.setCountry(
+                            userDetailsDto
+                                    .getCountry()
+                                    .trim()
+                    );
+                }
+
+                globalAddressRepo.save(address);
             }
-
-
-            if (StringUtils.hasText(userDetailsDto.getPassword())) {
-
-                String encodedPassword =
-                        passwordConfig
-                                .passwordEncoder()
-                                .encode(
-                                        userDetailsDto
-                                                .getPassword()
-                                                .trim()
-                                );
-
-                appUser.setPassword(encodedPassword);
-            }
-
-
-            if (userDetailsDto.getDob() != null) {
-
-                appUser.setDateOfBirth(
-                        userDetailsDto.getDob()
-                );
-            }
-
-
-
-            if (!userDetailsDto.isTermsAccepted()) {
-
-                appUser.setTermsAccepted(false);
-                appUser.setEnabled(false);
-                appUser.setAccountNonExpired(false);
-                appUser.setCredentialsNonExpired(false);
-                appUser.setAccountNonLocked(false);
-            }
-
 
             appUserRepo.save(appUser);
-
 
             return ResponseDto.builder()
                     .data(true)
                     .message("User updated successfully")
-                    .httpStatus(HttpStatus.OK.value())
+                    .httpStatus(
+                            HttpStatus.OK.value()
+                    )
                     .build();
-
 
         } catch (Exception e) {
 
             log.error(
                     "Failed to update user {}",
-                    userDetailsDto.getUserId(),
+                    userDetailsDto.getId(),
                     e
             );
 
             return ResponseDto.builder()
                     .data(false)
-                    .message("Update aborted: " + e.getMessage())
+                    .message(
+                            "Update aborted: "
+                                    + e.getMessage()
+                    )
                     .httpStatus(
                             HttpStatus.INTERNAL_SERVER_ERROR.value()
                     )
@@ -470,6 +447,108 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
 
+    @Transactional
+    public ResponseDto<Object> changePassword(Jwt jwt,ChangePasswordDto passwordDto) {
+
+        try {
+            if(jwt==null){
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("Not Authorised")
+                        .httpStatus(HttpStatus.FORBIDDEN.value())
+                        .build();
+            }
+            AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
+
+            if(appUser==null){
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("User not found")
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+            log.info("Changing password for user: {}", appUser.getId());
+
+
+            /*
+             * ==============================
+             * VALIDATION
+             * ==============================
+             */
+
+            if (!StringUtils.hasText(passwordDto.getCurrentPassword())) {
+
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("Current password is required")
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            if (!StringUtils.hasText(passwordDto.getNewPassword())) {
+
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("New password is required")
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            String newPassword = passwordDto
+                            .getNewPassword()
+                            .trim();
+
+
+            /*
+             * ==============================
+             * CHECK CURRENT PASSWORD
+             * ==============================
+             */
+
+            boolean passwordMatches =
+                    passwordConfig
+                            .passwordEncoder()
+                            .matches(passwordDto
+                                    .getCurrentPassword(), appUser.getPassword());
+
+            if (!passwordMatches) {
+
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("Current password is incorrect")
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            /*
+             * ==============================
+             * UPDATE PASSWORD
+             * ==============================
+             */
+
+            String encodedPassword =
+                    passwordConfig
+                            .passwordEncoder()
+                            .encode(newPassword);
+
+            appUser.setPassword(encodedPassword);
+
+            appUserRepo.save(appUser);
+
+            return ResponseDto.builder()
+                    .data(true)
+                    .message("Password changed successfully")
+                    .httpStatus(HttpStatus.OK.value())
+                    .build();
+
+        } catch (Exception e) {
+            return ResponseDto.builder()
+                    .data(false)
+                    .message("Password change failed: " + e.getMessage())
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }
+    }
 
 
     public ResponseDto<Object> deleteUserById(Long userId){
