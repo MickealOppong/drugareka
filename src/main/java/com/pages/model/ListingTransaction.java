@@ -45,7 +45,7 @@ public class ListingTransaction extends LogEntity {
                 .listingId(listing.getId())
                 .brand(listing.getInventory().getProductCatalog().getBrand().getName())
                 .productId(listing.getInventory().getProductCatalog().getId())
-                .productName(listing.getInventory().getProductCatalog().getSlug())
+                .productName(listing.getInventory().getProductCatalog().getName())
                 .productDescription(listing.getInventory().getProductCatalog().getDescription())
                 .category(listing.getInventory().getProductCatalog().getCategory().getSlug())
                 .productSlug(listing.getInventory().getProductCatalog().getSlug())
