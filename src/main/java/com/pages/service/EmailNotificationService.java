@@ -4,19 +4,23 @@ package com.pages.service;
 import com.pages.dto.EmailProductItemDto;
 import com.pages.enums.ShipmentStatus;
 import com.pages.model.ListingOrderItem;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 
 
@@ -24,37 +28,85 @@ import java.util.List;
 @Service
 public class EmailNotificationService {
 
-    private final JavaMailSender mailSender;
+    private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
+    private final RestTemplate restTemplate;
 
-    @Value("${spring.mail.username}")
+    @Value("${resend.api-key}")
+    private String resendApiKey;
+
+    @Value("${resend.from-email}")
     private String fromEmail;
 
-    public EmailNotificationService(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
+    @Value("${resend.from-name:kasoa.pl}")
+    private String fromName;
+
+    public EmailNotificationService() {
+        this.restTemplate = new RestTemplate();
     }
 
     /**
-     * Dispatches HTML emails asynchronously to prevent blocking your core
-     * checkout request lines or freezing frontend response threads.
+     * Sends an HTML email through the Resend HTTPS API.
+     *
+     * This deliberately does not use SMTP, because Railway Hobby blocks
+     * outbound SMTP connections. All communication with Resend is HTTPS.
      */
-    @Async
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
         try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            // True parameter states this is a multipart transaction housing attachments or HTML assets
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(resendApiKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-            helper.setFrom(fromEmail, "kasoa.pl");
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true); // True value forces HTML parser rendering engines
+            Map<String, Object> payload = Map.of(
+                    "from", fromName + " <" + fromEmail + ">",
+                    "to", List.of(to),
+                    "subject", subject,
+                    "html", htmlContent
+            );
 
-            mailSender.send(mimeMessage);
-            log.info("Successfully dispatched Kasoa notification email to target: {}", to);
+            HttpEntity<Map<String, Object>> request =
+                    new HttpEntity<>(payload, headers);
 
-        } catch (MessagingException | java.io.UnsupportedEncodingException e) {
-            log.error("Failed to compile or deliver marketplace notification email to {}", to, e);
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    RESEND_API_URL,
+                    request,
+                    String.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info(
+                        "Successfully dispatched Kasoa notification email to target: {}",
+                        to
+                );
+            } else {
+                log.error(
+                        "Resend returned HTTP {} while sending email to {}. Response: {}",
+                        response.getStatusCode().value(),
+                        to,
+                        response.getBody()
+                );
+            }
+
+        } catch (HttpStatusCodeException e) {
+            log.error(
+                    "Resend rejected email to {}. HTTP {}. Response: {}",
+                    to,
+                    e.getStatusCode().value(),
+                    e.getResponseBodyAsString(),
+                    e
+            );
+        } catch (RestClientException e) {
+            log.error(
+                    "Failed to connect to Resend while sending email to {}",
+                    to,
+                    e
+            );
+        } catch (Exception e) {
+            log.error(
+                    "Unexpected error while sending email to {} through Resend",
+                    to,
+                    e
+            );
         }
     }
 
