@@ -34,13 +34,13 @@ public class ListingOrder extends LogEntity {
     private String orderNumber;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal subTotal;
+    private BigDecimal subTotal=BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal orderTotal;
+    private BigDecimal orderTotal=BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal totalShipmentCost;
+    private BigDecimal totalShipmentCost =BigDecimal.ZERO;
 
     private String currency;
     private Instant paidAt;

@@ -26,7 +26,8 @@ public class SellerPayout extends LogEntity{
     @ManyToOne(fetch = FetchType.LAZY)
     private ListingOrderItem listingOrderItem;
 
-    private BigDecimal amount;
+    @Column( nullable = false, precision = 10, scale = 2)
+    private BigDecimal amount = BigDecimal.ZERO;
 
     private String currency;
 

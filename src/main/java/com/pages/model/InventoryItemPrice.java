@@ -25,15 +25,15 @@ public class InventoryItemPrice extends LogEntity {
     private Long id;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal sellerOldPrice;
+    private BigDecimal sellerOldPrice = BigDecimal.ZERO;
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal sellerNewPrice;
+    private BigDecimal sellerNewPrice =BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal storeOldPrice;
+    private BigDecimal storeOldPrice = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal storeNewPrice;
+    private BigDecimal storeNewPrice = BigDecimal.ZERO;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "inventory_item_id", nullable = false)
