@@ -63,7 +63,8 @@ public class SellerProfileService {
             SellerProfile sellerProfile = sellerProfileRepo.findByUserId(appUser.getId()).orElse(null);
             if(sellerProfile!=null){
                 BigDecimal settlements = sellerProfile.getTotalSettlement()!=null?sellerProfile.getTotalSettlement():BigDecimal.ZERO;
-               return sellerProfile.getTotalSales().subtract(settlements);
+              BigDecimal sales = sellerProfile.getTotalSales()!=null?sellerProfile.getTotalSales():BigDecimal.ZERO;
+               return sales.subtract(settlements);
             }
             return BigDecimal.ZERO;
         }
