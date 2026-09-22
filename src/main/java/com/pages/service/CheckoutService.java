@@ -11,6 +11,7 @@ import com.stripe.model.checkout.Session;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +41,7 @@ public class CheckoutService {
 
 
     @Transactional
-    public ResponseDto<String> createCheckout(Jwt jwt,String locale) {
+    public ResponseDto<String> createCheckout(@AuthenticationPrincipal Jwt jwt,String locale) {
 
 
 
@@ -90,6 +91,13 @@ public class CheckoutService {
         }
     }
 
-
+    @Transactional
+public  ResponseDto<String> buyNow(@AuthenticationPrincipal Jwt jwt,String locale,Long[] listingsId){
+       Boolean isAddToCart= (Boolean) cartService.addItemToCart(listingsId,jwt).getData();
+       if(isAddToCart){
+         return createCheckout(jwt,locale);
+       }
+        return null;
+}
 
 }

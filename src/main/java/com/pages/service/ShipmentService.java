@@ -305,6 +305,10 @@ public class ShipmentService {
         return null;
     }
 
+    public ShipmentStatus getShipmentStatus(String orderNumber){
+       return sellerShipmentRepo.findByListingOrderItemListingOrderOrderNumber(orderNumber)
+                .map(SellerShipment::getShipmentStatus).orElse(null);
+    }
 
 }
 

@@ -2,21 +2,30 @@ package com.pages.service;
 
 import com.pages.dto.ListPagePayout;
 import com.pages.dto.ListPageShipment;
+import com.pages.dto.ResponseDto;
 import com.pages.dto.SellerPayoutResponse;
 import com.pages.enums.PayoutStatus;
+import com.pages.enums.ShipmentStatus;
 import com.pages.model.*;
 import com.pages.repository.SellerPayoutRepo;
+import com.pages.repository.SellerProfileRepo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Objects;
 
 import static org.antlr.v4.runtime.tree.xpath.XPath.findAll;
 
@@ -27,11 +36,15 @@ public class SellerPayoutService {
     private final SellerPayoutRepo sellerPayoutRepo;
     private final InventoryItemPriceService inventoryItemPriceService;
     private final AppUserDetailsService appUserDetailsService;
+    private final ShipmentService shipmentService;
+    private final SellerProfileRepo sellerProfileRepo;
 
-    public SellerPayoutService(SellerPayoutRepo sellerPayoutRepo, InventoryItemPriceService inventoryItemPriceService, AppUserDetailsService appUserDetailsService) {
+    public SellerPayoutService(SellerPayoutRepo sellerPayoutRepo, InventoryItemPriceService inventoryItemPriceService, AppUserDetailsService appUserDetailsService, ShipmentService shipmentService, SellerProfileRepo sellerProfileRepo) {
         this.sellerPayoutRepo = sellerPayoutRepo;
         this.inventoryItemPriceService = inventoryItemPriceService;
         this.appUserDetailsService = appUserDetailsService;
+        this.shipmentService = shipmentService;
+        this.sellerProfileRepo = sellerProfileRepo;
     }
 
 
@@ -144,5 +157,55 @@ public class SellerPayoutService {
             return getMyPayouts(jwt,page,size);
         }
         return ListPagePayout.builder().build();
+    }
+
+    @Transactional
+    public ResponseDto<Object> settleAmountDue(Jwt jwt,Long payoutId,String paidAt){
+        if(jwt==null){
+            return ResponseDto.<Object>builder()
+                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .message("Not authorised")
+                    .build();
+        }
+       SellerPayout payout= sellerPayoutRepo.findById(payoutId).orElse(null);
+
+
+       if(payout!=null){
+
+           ShipmentStatus shipmentStatus =shipmentService.getShipmentStatus(payout.getListingOrderItem().getListingOrder().getOrderNumber());
+
+           if(!shipmentStatus.equals(ShipmentStatus.DELIVERED)){
+               return ResponseDto.<Object>builder()
+                       .httpStatus(HttpStatus.FORBIDDEN.value())
+                       .message("Settlement can only be initiated for completed order")
+                       .build();
+           }
+
+           payout.setStatus(PayoutStatus.PAID);
+          LocalDate inputDate = LocalDate.parse(paidAt);
+          Instant settlementDate =inputDate.atStartOfDay(ZoneId.systemDefault()).toInstant();
+
+          payout.setPaidAt(settlementDate);
+           SellerPayout updatedPayout = sellerPayoutRepo.save(payout);
+
+          SellerProfile sellerProfile= sellerProfileRepo.findByUserId(payout.getSeller().getUser().getId()).orElse(null);
+
+          if(sellerProfile!=null){
+              BigDecimal outstanding = sellerProfile.getTotalSettlement()!=null?sellerProfile.getTotalSettlement():BigDecimal.ZERO;
+              sellerProfile.setTotalSettlement(outstanding.add(updatedPayout.getAmount()));
+              sellerProfileRepo.save(sellerProfile);
+          }
+
+           return ResponseDto.<Object>builder()
+                   .httpStatus(HttpStatus.OK.value())
+                   .data(true)
+                   .message("Payment completed")
+                   .build();
+       }
+        return ResponseDto.<Object>builder()
+                .httpStatus(HttpStatus.BAD_REQUEST.value())
+                .data(false)
+                .message("Record does not exist")
+                .build();
     }
 }

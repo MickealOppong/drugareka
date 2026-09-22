@@ -36,6 +36,7 @@ public class SellerProfile extends LogEntity {
     private Instant verifiedAt;
 
     private BigDecimal totalSales;
+    private BigDecimal totalSettlement;
 
     private Integer successfulOrders;
 

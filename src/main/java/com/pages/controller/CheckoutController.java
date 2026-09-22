@@ -24,4 +24,9 @@ public class CheckoutController {
     public ResponseDto<String> createCheckout(@AuthenticationPrincipal Jwt jwt,@RequestParam String locale) {
         return checkoutService.createCheckout(jwt,locale);
     }
+
+    @PostMapping("/buy-now")
+    public ResponseDto<String> buyNow(@AuthenticationPrincipal Jwt jwt,@RequestParam String locale,Long[] listingId) {
+        return checkoutService.buyNow(jwt,locale,listingId);
+    }
 }

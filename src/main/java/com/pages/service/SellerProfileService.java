@@ -3,6 +3,7 @@ package com.pages.service;
 import com.pages.dto.ResponseDto;
 import com.pages.dto.SellerProfileDto;
 import com.pages.model.*;
+import com.pages.repository.SellerPayoutRepo;
 import com.pages.repository.SellerProfileRepo;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -15,10 +16,12 @@ public class SellerProfileService {
 
     private final SellerProfileRepo sellerProfileRepo;
     private final AppUserDetailsService appUserDetailsService;
+    private final SellerPayoutRepo sellerPayoutRepo;
 
-    public SellerProfileService(SellerProfileRepo sellerProfileRepo, AppUserDetailsService appUserDetailsService) {
+    public SellerProfileService(SellerProfileRepo sellerProfileRepo, AppUserDetailsService appUserDetailsService, SellerPayoutRepo sellerPayoutRepo) {
         this.sellerProfileRepo = sellerProfileRepo;
         this.appUserDetailsService = appUserDetailsService;
+        this.sellerPayoutRepo = sellerPayoutRepo;
     }
 
     public SellerProfile getSeller(Long id){
@@ -59,7 +62,8 @@ public class SellerProfileService {
 
             SellerProfile sellerProfile = sellerProfileRepo.findByUserId(appUser.getId()).orElse(null);
             if(sellerProfile!=null){
-               return sellerProfile.getTotalSales();
+                BigDecimal settlements = sellerProfile.getTotalSettlement()!=null?sellerProfile.getTotalSettlement():BigDecimal.ZERO;
+               return sellerProfile.getTotalSales().subtract(settlements);
             }
             return BigDecimal.ZERO;
         }

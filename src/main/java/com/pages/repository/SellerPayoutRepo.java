@@ -12,6 +12,6 @@ import java.util.List;
 @Repository
 public interface SellerPayoutRepo extends JpaRepository<SellerPayout,Long> {
 
-    List<SellerPayout> findByListingOrderItemId(Long itemId);
+    SellerPayout findByListingOrderItemId(Long itemId);
     Page<SellerPayout> findBySellerUserId(Long id, Pageable pageable);
 }

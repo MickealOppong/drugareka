@@ -22,4 +22,5 @@ public interface SellerShipmentRepo extends JpaRepository<SellerShipment,Long> {
     List<SellerShipment> findBySeller(SellerProfile sellerProfile);
     Optional<SellerShipment> findByListingOrderItemId(Long id);
     Optional<SellerShipment> findFirstBySellerIdOrderByCreatedAtDesc(Long sellerId);
+    Optional<SellerShipment> findByListingOrderItemListingOrderOrderNumber(String orderNumber);
 }

@@ -45,7 +45,11 @@ public class WishListService {
             try {
 
                 if(jwt==null){
-                    throw  new EntityNotFoundException("User does not exist");
+                    return ResponseDto.builder()
+                            .httpStatus(HttpStatus.BAD_REQUEST.value())
+                            .message("User does not exist")
+                            .data(false)
+                            .build();
                 }
 
                 //USER PROFILE
@@ -55,14 +59,22 @@ public class WishListService {
                 ListingTransaction listing= listingTransactionService.getListingTransaction(listingId,ListingStatus.PUBLISHED);
 
                 if(listing==null || listing.getInventory().getStatus().equals(InventoryStatus.SOLD)){
-                    throw  new EntityNotFoundException("Item is not available");
+                    return ResponseDto.builder()
+                            .httpStatus(HttpStatus.BAD_REQUEST.value())
+                            .message("Item is not available")
+                            .data(false)
+                            .build();
                 }
 
                 Long currentUserId = currentUser.getId();
                 Long sellerUserId = listing.getInventory().getSeller().getId();
 
                 if(currentUserId.equals(sellerUserId)){
-                    throw new IllegalStateException("You cannot add your own product to wishlist");
+                    return ResponseDto.builder()
+                            .httpStatus(HttpStatus.BAD_REQUEST.value())
+                            .message("You cannot add your own product to wishlist")
+                            .data(false)
+                            .build();
                 }
 
 
