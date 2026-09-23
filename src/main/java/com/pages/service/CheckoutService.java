@@ -91,7 +91,7 @@ public class CheckoutService {
         }
     }
 
-    @Transactional
+@Transactional(noRollbackFor = Exception.class)
 public  ResponseDto<String> buyNow(@AuthenticationPrincipal Jwt jwt,String locale,Long[] listingsId){
        Boolean isAddToCart= (Boolean) cartService.addItemToCart(listingsId,jwt).getData();
        if(isAddToCart){
