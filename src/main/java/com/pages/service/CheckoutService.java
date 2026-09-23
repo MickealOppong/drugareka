@@ -1,14 +1,14 @@
 package com.pages.service;
 
-import com.pages.dto.CartResponse;
-import com.pages.dto.CheckoutResponse;
-import com.pages.dto.ListingOrderResponse;
-import com.pages.dto.ResponseDto;
+import com.pages.dto.*;
+import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.*;
+import com.pages.util.GlobalAddress;
 import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.cfg.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,22 +28,24 @@ public class CheckoutService {
     private final PaymentService paymentService;
     private final StripePaymentProviderService stripePaymentProviderService;
     private final CartService cartService;
+    private final GlobalAddressService globalAddressService;
+    private final AppUserDetailsService appUserDetailsService;
 
     public CheckoutService(ListingOrderService listingOrderService,
                            PaymentService paymentService,
-                           StripePaymentProviderService stripePaymentProviderService, CartService cartService) {
+                           StripePaymentProviderService stripePaymentProviderService, CartService cartService, GlobalAddressService globalAddressService, AppUserDetailsService appUserDetailsService) {
         this.listingOrderService = listingOrderService;
         this.paymentService = paymentService;
         this.stripePaymentProviderService = stripePaymentProviderService;
         this.cartService = cartService;
+        this.globalAddressService = globalAddressService;
+        this.appUserDetailsService = appUserDetailsService;
     }
 
 
 
     @Transactional
     public ResponseDto<String> createCheckout(@AuthenticationPrincipal Jwt jwt,String locale) {
-
-
 
         try {
 
@@ -91,13 +93,35 @@ public class CheckoutService {
         }
     }
 
-@Transactional(noRollbackFor = Exception.class)
-public  ResponseDto<String> buyNow(@AuthenticationPrincipal Jwt jwt,String locale,Long[] listingsId){
-       Boolean isAddToCart= (Boolean) cartService.addItemToCart(listingsId,jwt).getData();
-       if(isAddToCart){
-         return createCheckout(jwt,locale);
-       }
-        return null;
+@Transactional
+public  ResponseDto<String> buyNow(@AuthenticationPrincipal Jwt jwt, String locale, Long[] listingsId){
+        if(jwt!=null){
+            AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+           AddressResponse userAddress= globalAddressService.getAddress(appUser);
+           if(userAddress==null){
+               return ResponseDto.<String>builder()
+                       .message("Proszę podać adres dostawy, aby sfinalizować zakupy"+
+                               "\nPlease add address to complete order")
+                       .httpStatus(HttpStatus.BAD_REQUEST.value())
+                       .build();
+
+           }
+            Boolean isAddToCart= (Boolean) cartService.addItemToCart(listingsId,jwt).getData();
+            if(isAddToCart){
+                return createCheckout(jwt,locale);
+            }
+            return ResponseDto.<String>builder()
+                    .message( "Oops błąd, nie udało się sfinalizować zakupy."+
+                            "\n Oops error, could not complete order")
+                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .build();
+        }
+    return ResponseDto.<String>builder()
+            .message( "Błąd podczas finalizowania zamówienia, spróbuj ponownie"+
+                    "Something went wrong, please try again")
+            .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+            .build();
+
 }
 
 }

@@ -413,6 +413,16 @@ public class AppUserDetailsService implements UserDetailsService {
                 }
 
                 globalAddressRepo.save(address);
+            }else{
+                GlobalAddress newAddress = GlobalAddress.builder()
+                        .contact(userDetailsDto.getContact())
+                        .appUser(appUser)
+                        .city(userDetailsDto.getCity())
+                        .street(userDetailsDto.getStreet())
+                        .postCode(userDetailsDto.getPostalCode())
+                        .country(userDetailsDto.getCountry())
+                        .build();
+                globalAddressRepo.save(newAddress);
             }
 
             appUserRepo.save(appUser);

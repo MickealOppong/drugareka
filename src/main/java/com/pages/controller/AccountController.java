@@ -59,6 +59,7 @@ public class AccountController {
 
     @PutMapping(value = "/edit",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseDto<Object> editUser(@AuthenticationPrincipal Jwt jwt,@ModelAttribute @Valid UserDetailsUpdateDto userDetailsDto){
+        log.info("{}",userDetailsDto);
         return appUserDetailsService.updateUser(jwt,userDetailsDto);
     }
 
