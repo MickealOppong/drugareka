@@ -294,15 +294,12 @@ public class AppUserDetailsService implements UserDetailsService {
             log.info("Updating user: {}", userDetailsDto.getId());
 
             AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
+
             if(appUser==null){
                 return ResponseDto.builder()
                         .data(false)
-                        .message(
-                                "User profile not found in database registry"
-                        )
-                        .httpStatus(
-                                HttpStatus.NOT_FOUND.value()
-                        )
+                        .message("User profile not found in database registry")
+                        .httpStatus(HttpStatus.NOT_FOUND.value())
                         .build();
             }
 
@@ -316,11 +313,9 @@ public class AppUserDetailsService implements UserDetailsService {
             if (StringUtils.hasText(
                     userDetailsDto.getFirstName()
             )) {
-                appUser.setFirstName(
-                        userDetailsDto
-                                .getFirstName()
-                                .trim()
-                );
+                appUser.setFirstName(userDetailsDto
+                        .getFirstName()
+                        .trim());
             }
 
             if (StringUtils.hasText(

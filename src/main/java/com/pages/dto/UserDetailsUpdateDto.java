@@ -28,8 +28,6 @@ public class UserDetailsUpdateDto {
     private String lastName;
 
 
-    @NotNull(message = "account cannot be empty")
-    @NotBlank(message = "account cannot be empty")
     private String accountNumber;
 
     @NotBlank(message = "Miejscowość nie może być pusta")
