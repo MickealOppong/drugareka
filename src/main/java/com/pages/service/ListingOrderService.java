@@ -457,8 +457,10 @@ public class ListingOrderService {
           AppUser appUser=  appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
           SellerProfile seller = sellerProfileService.getSellerProfile(appUser.getId());
-
-          return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.PAID);
+          if(seller!=null){
+              return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.PAID);
+          }
+        return 0L;
         }
       return 0L;
     }
@@ -469,8 +471,11 @@ public class ListingOrderService {
             AppUser appUser=  appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
             SellerProfile seller = sellerProfileService.getSellerProfile(appUser.getId());
+            if(seller!=null){
+                return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.CANCELLED);
+            }
 
-            return  listingOrderItemRepo.countBySellerIdAndListingOrderOrderStatus(seller.getId(),OrderStatus.CANCELLED);
+           return 0L;
         }
         return 0L;
     }
