@@ -9,7 +9,7 @@ import java.math.RoundingMode;
 public class PricingService {
 
 
-    static BigDecimal marginPercentage = BigDecimal.valueOf(30);
+    static BigDecimal marginPercentage = BigDecimal.valueOf(10);
 
     public BigDecimal calculateStorePrice(BigDecimal sellerPrice) {
         if (sellerPrice == null || sellerPrice.signum() < 0) {
