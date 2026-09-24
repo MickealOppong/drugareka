@@ -353,6 +353,7 @@ public class ListingTransactionService {
 
             SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
+                    .totalSales(BigDecimal.ZERO)
                     .status(appUser.isEnabled() ? SellerStatus.ACTIVE : SellerStatus.PENDING)
                     .build();
 

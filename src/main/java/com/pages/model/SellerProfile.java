@@ -35,9 +35,9 @@ public class SellerProfile extends LogEntity {
 
     private Instant verifiedAt;
 
-    @Column( nullable = false, precision = 10, scale = 2)
+    @Column(precision = 10, scale = 2)
     private BigDecimal totalSales = BigDecimal.ZERO;
-    @Column( nullable = false, precision = 10, scale = 2)
+    @Column( precision = 10, scale = 2)
     private BigDecimal totalSettlement = BigDecimal.ZERO;
 
     private Integer successfulOrders;
