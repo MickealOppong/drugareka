@@ -43,4 +43,6 @@ public class SellerShipment extends LogEntity {
     private String comment;
 
     private String trackingNumber;
+    private String inPostShipmentId;
+
 }
