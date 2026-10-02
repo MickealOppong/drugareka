@@ -42,13 +42,12 @@ public class ShipmentService {
     private final MessageSource messageSource;
     private final DpdShipmentService dpdShipmentService;
     private final PackageConfigurationService packageConfigurationService;
-    private final InPostShipmentService inPostShipmentService;
     private final SellerShipmentTokenService sellerShipmentTokenService;
 
     public ShipmentService(SellerShipmentRepo sellerShipmentRepo, AppUserDetailsService appUserDetailsService,
                            SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
                            ListingOrderService listingOrderService, ReturnShipmentRepo returnShipmentRepo,
-                           MessageSource messageSource, DpdShipmentService dpdShipmentService, PackageConfigurationService packageConfigurationService, InPostShipmentService inPostShipmentService, SellerShipmentTokenService sellerShipmentTokenService) {
+                           MessageSource messageSource, DpdShipmentService dpdShipmentService, PackageConfigurationService packageConfigurationService, SellerShipmentTokenService sellerShipmentTokenService) {
         this.sellerShipmentRepo = sellerShipmentRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.sellerProfileService = sellerProfileService;
@@ -58,7 +57,6 @@ public class ShipmentService {
         this.messageSource = messageSource;
         this.dpdShipmentService = dpdShipmentService;
         this.packageConfigurationService = packageConfigurationService;
-        this.inPostShipmentService = inPostShipmentService;
         this.sellerShipmentTokenService = sellerShipmentTokenService;
     }
 
@@ -793,7 +791,6 @@ public class ShipmentService {
         // CREATE SHIPMENT
         // ============================================================
 
-        inPostShipmentService.createAutomatedInPostCourierOrder(sellerShipment, shipmentApiRequest);
     }
 
     /*
