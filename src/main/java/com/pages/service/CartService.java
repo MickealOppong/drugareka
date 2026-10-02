@@ -9,7 +9,6 @@ import com.pages.repository.CartItemRepo;
 import com.pages.repository.CartRepo;
 import com.pages.repository.ListingTransactionRepo;
 import com.pages.repository.SellerProfileRepo;
-import com.pages.util.ShippingProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,7 +20,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,7 +32,6 @@ public class CartService {
     private final ListingTransactionRepo transactionRepository;
     private final AppUserDetailsService appUserDetailsService;
     private final MediaService mediaService;
-    private final ShippingProperties shippingProperties;
     private final InventoryItemService inventoryItemService;
     private final InventoryItemPriceService inventoryItemPriceService;
     private final GlobalAddressService globalAddressService;
