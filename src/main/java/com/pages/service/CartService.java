@@ -8,6 +8,7 @@ import com.pages.model.*;
 import com.pages.repository.CartItemRepo;
 import com.pages.repository.CartRepo;
 import com.pages.repository.ListingTransactionRepo;
+import com.pages.repository.SellerProfileRepo;
 import com.pages.util.ShippingProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,8 @@ public class CartService {
     private final InventoryItemService inventoryItemService;
     private final InventoryItemPriceService inventoryItemPriceService;
     private final GlobalAddressService globalAddressService;
+    private final ShippingOptionService shippingOptionService;
+    private final SellerProfileRepo sellerProfileRepo;
 
     private static final Duration RESERVATION_WINDOW = Duration.ofMinutes(15);
 
@@ -179,10 +182,9 @@ public class CartService {
                     continue; // Protect platform integrity and skip
                 }
 
-                Long inventoryItemId = inventoryItem.getId();
 
                 // 3. Extract the active store pricing tier matrix records
-                InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryItemId).toPriceDto();
+                InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryItem.getId()).toPriceDto();
 
                 // 4. Evaluate whether item already exists in the database user cart
                 Optional<CartItem> existingItem = cartItemRepository
@@ -199,10 +201,9 @@ public class CartService {
                     // 5. Build and persist a fresh line entry
                     CartItem cartItem = CartItem.builder()
                             .cart(cart)
-                            .inventoryItemId(inventoryItemId)
+                            .inventoryItem(inventoryItem)
                             .listingId(targetListingId)
                             .price(price.getStoreNewPrice())
-                            .shippingMethod(inventoryItem.getShippingMethod())
                             .reservedUntil(reservedUntil)
                             .build();
 
@@ -349,36 +350,44 @@ public class CartService {
             // ==========================================================================
             for (Map.Entry<Long, List<CartItem>> sellerGroup : itemsGroupedBySeller.entrySet()) {
                 List<CartItem> bundledItems = sellerGroup.getValue();
-                boolean isBundle = bundledItems.size() > 1; // Flag to check if it's a multi-item package
+                //boolean isBundle = bundledItems.size() > 1;
 
                 for (int i = 0; i < bundledItems.size(); i++) {
                     CartItem cartItem = bundledItems.get(i);
 
                     // Fetch asset information once
-                    MediaResponse media = mediaService.getListingMainImage(cartItem.getInventoryItemId());
-                   InventoryItem inventoryItem= inventoryItemService.getInventoryItem(cartItem.getInventoryItemId(), InventoryStatus.AVAILABLE);
+                    MediaResponse media = mediaService.getListingMainImage(cartItem.getInventoryItem().getId());
+
+                   InventoryItem inventoryItem= inventoryItemService.getInventoryItem(cartItem.getInventoryItem().getId(),
+                           InventoryStatus.AVAILABLE);
                    String productName = inventoryItem!=null?inventoryItem.getProductCatalog().getName():null;
+
 
                     // CLEAN CONDITIONAL ASSIGNMENT:
                     // If it's not the first item, shipping is ALWAYS zero.
                     // If it IS the first item, we choose between the single rate or group rate based on our flag!
                     BigDecimal assignedItemShipping =BigDecimal.ZERO;
 
+                    ProductCatalog catalog = inventoryItem!=null?inventoryItem.getProductCatalog():null;
+                    String category =catalog!=null?catalog.getCategory().getSlug():null;
+
+
                     if (i == 0) {
-                        assignedItemShipping = isBundle ?shippingProperties.getGroupFlatShippingCost()
-                                : shippingProperties.getSingleFlatShippingCost();
+                        assignedItemShipping =shippingOptionService.calculateStandardShippingPrice(sellerGroup.getValue());
                     }
+
+
 
                     CartItemDto dto = CartItemDto.builder()
                             .price(cartItem.getPrice())
                             .listingId(cartItem.getListingId())
                             .cartItemId(cartItem.getId())
-                            .inventoryId(cartItem.getInventoryItemId())
+                            .inventoryId(cartItem.getInventoryItem().getId())
                             .shipping(assignedItemShipping)
-                            .shippingMethod(cartItem.getShippingMethod().name())
                             .image(media!=null?media.getImage():null)
                             .productName(productName)
                             .reservedUntil(cartItem.getReservedUntil())
+                            .sellerId(cartItem.getInventoryItem().getSeller().getId())
                             .build();
 
                     flatCartItemDtoList.add(dto);
@@ -386,6 +395,7 @@ public class CartService {
 
             }
             // Return unified platform payload mapping metrics directly
+
             return CartResponse.builder()
                     .cartId(cart.getId())
                     .status(cart.getStatus())
@@ -402,6 +412,7 @@ public class CartService {
                 .build();
 
     }
+
 
 
     public List<CartItem> getCartItems(Long buyerId){

@@ -55,6 +55,22 @@ public class ListingSpecs {
                     cb.lower(inventoryJoin.get("status")), InventoryStatus.SOLD.name());
         };
     }
+    public static Specification<ListingTransaction> deliveryInfo(String info) {
+
+        return (root, query, cb) -> {
+
+            if (info == null || info.isBlank()) {
+                return cb.conjunction();
+            }
+            String searchPattern = "%" + info.trim().toLowerCase() + "%";
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+
+            return cb.like(
+                    cb.lower(inventoryJoin.get("deliveryInfo")), info.trim());
+        };
+    }
     public static Specification<ListingTransaction> excludeSeller(
             Long sellerId) {
 

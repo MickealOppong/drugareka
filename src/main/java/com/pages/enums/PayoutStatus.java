@@ -5,6 +5,6 @@ public enum PayoutStatus {
     PAID,
     FAILED,
     CANCELLED,
-    REFUNDED,
+    REFUND,
     CREATED
 }

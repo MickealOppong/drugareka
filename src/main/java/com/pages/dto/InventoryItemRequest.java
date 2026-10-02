@@ -21,4 +21,5 @@ public class InventoryItemRequest {
 
     private InventoryStatus status;
     private String shippingMethod;
+    private String itemSize;
 }

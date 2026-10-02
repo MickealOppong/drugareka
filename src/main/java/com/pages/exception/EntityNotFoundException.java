@@ -1,5 +1,7 @@
 package com.pages.exception;
 
+import org.springframework.http.HttpStatus;
+
 public class EntityNotFoundException extends RuntimeException{
 
     private String message;
@@ -12,4 +14,5 @@ public class EntityNotFoundException extends RuntimeException{
     public EntityNotFoundException(String message,Throwable cause) {
         super(message,cause);
     }
+
 }

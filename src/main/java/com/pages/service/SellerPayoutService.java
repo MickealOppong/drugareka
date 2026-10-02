@@ -48,7 +48,7 @@ public class SellerPayoutService {
     }
 
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void createPayouts(ListingOrder orderItem) {
 
         if(!orderItem.getItems().isEmpty()){
@@ -61,15 +61,20 @@ public class SellerPayoutService {
                         InventoryItemPrice inventoryItemPrice = inventoryItemPriceService.getPrices(inventoryItem.getId());
                         BigDecimal payoutAmount = inventoryItemPrice.getSellerNewPrice().add(order.getShippingCost());
 
+                        //seller name
+                        String sellerName = inventoryItem.getSeller().getUser().getFirstName()+" "
+                        + inventoryItem.getSeller().getUser().getLastName();
+
                         SellerPayout payout = SellerPayout.builder()
                                 .listingOrderItem(order)
                                 .seller(order.getSeller())
                                 .amount(payoutAmount)
+                                .sellerNameSnapshot(sellerName)
                                 .currency("PLN")
                                 .status(PayoutStatus.CREATED)
                                 .build();
 
-                        sellerPayoutRepo.save(payout);
+                    sellerPayoutRepo.save(payout);
                     });
         }
 
@@ -91,7 +96,7 @@ public class SellerPayoutService {
           Page<SellerPayoutResponse> payouts= sellerPayoutRepo.findBySellerUserId(userId,pageable).
                    map(sellerPayout->{
                return SellerPayoutResponse.builder()
-                       .seller(sellerPayout.getSeller().getUser().getFirstName()+" "+sellerPayout.getSeller().getUser().getLastName())
+                       .seller(sellerPayout.getSellerNameSnapshot())
                        .amount(sellerPayout.getAmount())
                        .id(sellerPayout.getId())
                        .status(sellerPayout.getStatus())
@@ -125,7 +130,7 @@ public class SellerPayoutService {
             Page<SellerPayoutResponse> payouts =sellerPayoutRepo.findAll(pageable).
                     map(sellerPayout->{
                         return SellerPayoutResponse.builder()
-                                .seller(sellerPayout.getSeller().getUser().getFirstName()+" "+sellerPayout.getSeller().getUser().getLastName())
+                                .seller(sellerPayout.getSellerNameSnapshot())
                                 .amount(sellerPayout.getAmount())
                                 .id(sellerPayout.getId())
                                 .status(sellerPayout.getStatus())
@@ -207,5 +212,26 @@ public class SellerPayoutService {
                 .data(false)
                 .message("Record does not exist")
                 .build();
+    }
+
+    public void createRefund(ListingOrderItem orderItem) {
+
+        if(orderItem!=null){
+
+
+            BigDecimal refundAmount =orderItem.getSellerPrice().add(orderItem.getShippingCost());
+
+            SellerPayout payout = SellerPayout.builder()
+                    .listingOrderItem(orderItem)
+                    .seller(orderItem.getSeller())
+                    .sellerNameSnapshot(orderItem.getSellerNameSnapshot())
+                    .amount(refundAmount.negate())
+                    .currency("PLN")
+                    .status(PayoutStatus.REFUND)
+                    .build();
+
+            sellerPayoutRepo.save(payout);
+        }
+
     }
 }

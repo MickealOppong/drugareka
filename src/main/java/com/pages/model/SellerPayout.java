@@ -22,6 +22,8 @@ public class SellerPayout extends LogEntity{
 
     @ManyToOne(fetch = FetchType.LAZY)
     private SellerProfile seller;
+    @Column(name = "seller_name_snapshot",nullable = false)
+    private String sellerNameSnapshot;
 
     @ManyToOne(fetch = FetchType.LAZY)
     private ListingOrderItem listingOrderItem;

@@ -1,8 +1,8 @@
 package com.pages.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.pages.dto.InventoryItemRequest;
 import com.pages.enums.InventoryStatus;
+import com.pages.enums.ItemSize;
 import com.pages.enums.ShippingMethod;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -51,11 +51,11 @@ public class InventoryItem extends LogEntity {
 
     private Instant reservedUntil;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ShippingMethod shippingMethod;
-
     private String deliveryInfo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "size_tier", nullable = false,length = 200)
+    private ItemSize itemSize = ItemSize.SMALL_UP_10KG;
 
     private String sku;
 

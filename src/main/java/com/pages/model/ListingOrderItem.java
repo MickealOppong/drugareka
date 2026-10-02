@@ -1,5 +1,6 @@
 package com.pages.model;
 
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.ShippingMethod;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -24,12 +25,28 @@ public class ListingOrderItem extends LogEntity {
     @JoinColumn(name = "listing_order_id",nullable = false)
     private ListingOrder listingOrder;
 
+
     @ManyToOne
     @JoinColumn(name = "seller_id",nullable = false)
     private SellerProfile seller;
 
+    @Column(name = "seller_name_snapshot", nullable = false)
+    private String sellerNameSnapshot;
+
+    @Column(name = "product_name_snapshot", nullable = false)
+    private String productNameSnapshot;
+
+    @Column(name = "product_condition_snapshot", nullable = false)
+    private String productConditionSnapshot;
+
+    @Column(name = "product_brand_snapshot", nullable = false)
+    private String productBrandSnapshot;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal finalizedPrice;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal sellerPrice;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal subtotal;
@@ -48,6 +65,10 @@ public class ListingOrderItem extends LogEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ShippingMethod shippingMethod;
+
+
+    @Enumerated(EnumType.STRING)
+    private OrderItemStatus orderItemStatus;
 
     @Column(name = "receipt_confirmation_token", unique = true)
     private String receiptConfirmationToken;

@@ -23,13 +23,17 @@ public class ListingOrder extends LogEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long buyerId;
+    @ManyToOne
+    @JoinColumn(name = "buyer_id",nullable = false)
+    private AppUser buyer;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus orderStatus;
 
     private String shippingAddress;
+    @Column(name = "buyer_name_snapshot", nullable = false)
+    private String buyerNameSnapshot;
 
     private String orderNumber;
 

@@ -1,5 +1,7 @@
 package com.pages.dto;
 
+import com.pages.enums.OrderItemStatus;
+import com.pages.enums.OrderStatus;
 import com.pages.model.InventoryItem;
 import com.pages.model.ListingOrder;
 import jakarta.persistence.*;
@@ -29,7 +31,11 @@ public class ListingOrderItemDto {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal shippingCost;
+
     private Long listingId;
+
+    @Enumerated(EnumType.STRING)
+    private OrderItemStatus orderItemStatus;
 
     private InventoryItem inventoryItem;
 }

@@ -60,7 +60,8 @@ public class ProductData {
     private MultipartFile[] images;
     private Integer[] imageSortOrder;
 
-    @NotNull(message = "Shipping method cannot be null")
-    @NotBlank(message = "Please provide shipping method")
-    private String shippingMethod;
+
+    @NotNull(message = "Select item size for shipment pricing")
+    @NotBlank(message = "Please provide item size")
+    private String itemSize;
 }

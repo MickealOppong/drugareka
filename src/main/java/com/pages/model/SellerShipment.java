@@ -1,5 +1,6 @@
 package com.pages.model;
 
+import com.pages.enums.ItemSize;
 import com.pages.enums.ShipmentStatus;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -33,7 +34,15 @@ public class SellerShipment extends LogEntity {
     @Column(name = "shipment_status", nullable = false,length = 200)
   private ShipmentStatus shipmentStatus;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shipment_token_id")
+    private SellerShipmentToken sellerShipmentToken;
+
     private String shippingAddress;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_size", nullable = false,length = 200)
+    private ItemSize itemSize;
 
     private Instant shippedAt;
 
@@ -42,7 +51,10 @@ public class SellerShipment extends LogEntity {
     @Column(length = 1024)
     private String comment;
 
+
     private String trackingNumber;
-    private String inPostShipmentId;
+    private String carrierShipmentId;
+    private String carrier;
+    private String labelUrl;
 
 }

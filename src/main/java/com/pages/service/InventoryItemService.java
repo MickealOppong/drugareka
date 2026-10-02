@@ -3,10 +3,10 @@ package com.pages.service;
 import com.pages.dto.InventoryItemRequest;
 import com.pages.dto.InventoryItemResponse;
 import com.pages.enums.InventoryStatus;
+import com.pages.enums.ItemSize;
 import com.pages.enums.ShippingMethod;
 import com.pages.model.InventoryItem;
 import com.pages.model.ProductCondition;
-import com.pages.repository.InventoryItemPriceRepo;
 import com.pages.repository.InventoryItemRepo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,16 +40,28 @@ private final AppUserDetailsService appUserDetailsService;
     }
 
     public ShippingMethod getShippingMethod(String method){
-
-        if(method.equals(ShippingMethod.COURIER.name())){
-            return ShippingMethod.COURIER;
-        }else if(method.equals(ShippingMethod.LOCKER.name())){
-            return ShippingMethod.LOCKER;
-        }else{
-            return null;
+        if(method.equals(ShippingMethod.INPOST_COURIER.name())){
+            return ShippingMethod.INPOST_COURIER;
+        }else if(method.equals(ShippingMethod.DPD.name())) {
+            return ShippingMethod.DPD;
+        }
+        else{
+            return ShippingMethod.OTHER;
         }
 
     }
+
+    public ItemSize getItemDimension(String size){
+
+       return switch (size.toLowerCase()) {
+           case "medium" -> ItemSize.MEDIUM_UP_20KG;
+           case "large" -> ItemSize.LARGE_UP_50KG;
+           case "heavy" -> ItemSize.HEAVY_OVER_50KG;
+           default -> ItemSize.SMALL_UP_10KG;
+       };
+
+    }
+
     public InventoryItem addNewInventory(InventoryItemRequest dto){
         /*
                 CONDITION
@@ -64,9 +76,9 @@ private final AppUserDetailsService appUserDetailsService;
                     .seller(dto.getSeller())
                     .status(dto.getStatus())
                     .deliveryInfo(dto.getShippingInfo())
-                    .shippingMethod(getShippingMethod(dto.getShippingMethod()))
                     .productCatalog(dto.getProductCatalog())
                     .sku(dto.getSku())
+                    .itemSize(getItemDimension(dto.getItemSize()))
                     .productCondition(savedCondition)
                     .build();
             appUserDetailsService.addSellerRole(dto.getSeller().getUser());

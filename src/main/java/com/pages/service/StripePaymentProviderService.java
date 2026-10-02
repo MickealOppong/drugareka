@@ -40,9 +40,6 @@ public class StripePaymentProviderService {
     private String domain_url;
 
 
-    private AppUserDetailsService appUserDetailsService;
-    private CartService cartService;
-    private PaymentRepo paymentRepo;
 
 
     // REMOVED: @Transactional is completely removed to prevent proxy rollback hijacking and connection pooling lag

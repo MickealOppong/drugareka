@@ -28,4 +28,5 @@ public class ShipmentResponse {
     private Instant shippedAt;
 
     private Instant deliveredAt;
+    private String itemSize;
 }

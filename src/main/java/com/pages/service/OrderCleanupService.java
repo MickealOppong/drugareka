@@ -1,12 +1,14 @@
 package com.pages.service;
 
 import com.pages.enums.InventoryStatus;
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.OrderStatus;
 import com.pages.enums.PaymentStatus;
 import com.pages.model.InventoryItem;
 import com.pages.model.ListingOrder;
 import com.pages.model.Payment;
 import com.pages.repository.InventoryItemRepo;
+import com.pages.repository.ListingOrderItemRepo;
 import com.pages.repository.ListingOrderRepo;
 import com.pages.repository.PaymentRepo;
 import jakarta.transaction.Transactional;
@@ -24,11 +26,13 @@ public class OrderCleanupService {
 
     private final InventoryItemRepo inventoryItemRepo;
     private final ListingOrderRepo listingOrderRepo;
+    private final ListingOrderItemRepo listingOrderItemRepo;
     private final PaymentRepo paymentRepo;
 
-    public OrderCleanupService(InventoryItemRepo inventoryItemRepo, ListingOrderRepo listingOrderRepo, PaymentRepo paymentRepo) {
+    public OrderCleanupService(InventoryItemRepo inventoryItemRepo, ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, PaymentRepo paymentRepo) {
         this.inventoryItemRepo = inventoryItemRepo;
         this.listingOrderRepo = listingOrderRepo;
+        this.listingOrderItemRepo = listingOrderItemRepo;
         this.paymentRepo = paymentRepo;
     }
 
@@ -66,7 +70,12 @@ public class OrderCleanupService {
             listingOrderRepo.save(order);
             log.info("Marked abandoned order header {} as CANCELLED.", order.getOrderNumber());
 
-            Payment payment =paymentRepo.findByListingOrderId(order.getId()).orElse(null);
+            order.getItems().forEach(lineItem->{
+                lineItem.setOrderItemStatus(OrderItemStatus.CANCELLED);
+                listingOrderItemRepo.save(lineItem);
+            });
+
+            Payment payment =paymentRepo.findByListingOrderIdAndStatus(order.getId(),PaymentStatus.PENDING).orElse(null);
             if(payment!=null){
                 payment.setStatus(PaymentStatus.CANCELLED);
                 paymentRepo.save(payment);

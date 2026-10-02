@@ -1,5 +1,6 @@
 package com.pages.dto;
 
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.OrderStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @AllArgsConstructor
@@ -21,7 +23,10 @@ public class OrderDto {
     private Long id;
     private String buyer;
     @Enumerated(EnumType.STRING)
+    private OrderItemStatus orderItemStatus;
+    @Enumerated(EnumType.STRING)
     private OrderStatus orderStatus;
+
     private String currency;
     private Instant createdAt;
     private Instant paidAt;
@@ -29,7 +34,9 @@ public class OrderDto {
     private String seller;
     private String orderNumber;
     private BigDecimal shipping;
+
     private String deliveryStatus;
+    private Instant deliveryUpdatedAt;
     private String trackingNumber;
 
 

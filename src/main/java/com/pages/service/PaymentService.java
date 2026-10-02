@@ -1,15 +1,16 @@
 package com.pages.service;
 
-import com.pages.dto.EmailProductItemDto;
-import com.pages.dto.ResponseDto;
-import com.pages.enums.InventoryStatus;
-import com.pages.enums.OrderStatus;
-import com.pages.enums.PaymentStatus;
+import com.pages.dto.*;
+import com.pages.enums.*;
+import com.pages.exception.EntityNotFoundException;
+import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.InventoryItemRepo;
 import com.pages.repository.ListingOrderItemRepo;
 import com.pages.repository.ListingOrderRepo;
 import com.pages.repository.PaymentRepo;
+import com.pages.util.Notification;
+import com.pages.util.UtilService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
@@ -17,8 +18,10 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.checkout.Session;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,7 +33,6 @@ import java.util.stream.Collectors;
 @Service
 public class PaymentService {
 
-
     private final PaymentRepo paymentRepo;
     private final ListingOrderRepo listingOrderRepo;
     private final CartService cartService;
@@ -41,9 +43,10 @@ public class PaymentService {
     private final EmailNotificationService emailNotificationService;
     private final AppUserDetailsService appUserDetailsService;
     private final ListingOrderItemRepo listingOrderItemRepo;
-    private final InventoryItemPriceService inventoryItemPriceService;
+    private final SellerShipmentTokenService sellerShipmentTokenService;
 
-    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService, AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, InventoryItemPriceService inventoryItemPriceService) {
+    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
+                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
@@ -54,7 +57,7 @@ public class PaymentService {
         this.emailNotificationService = emailNotificationService;
         this.appUserDetailsService = appUserDetailsService;
         this.listingOrderItemRepo = listingOrderItemRepo;
-        this.inventoryItemPriceService = inventoryItemPriceService;
+        this.sellerShipmentTokenService = sellerShipmentTokenService;
     }
 
 
@@ -68,7 +71,9 @@ public class PaymentService {
                     .status(PaymentStatus.PENDING)
                     .amount(listingOrder.getOrderTotal())
                     .currency("PLN")
-                    .stripeSessionId(session.getId())
+                    .providerSessionId(session.getId())
+                    .stripePaymentIntentId(session.getPaymentIntent())
+                    .provider(PaymentProvider.STRIPE)
                     .build();
 
             paymentRepo.save(payment);
@@ -98,6 +103,204 @@ public class PaymentService {
     }
 
     @Transactional
+    public ResponseDto<String> createPayUPayment(PayUOrderResponse orderResponse, ListingOrder listingOrder) {
+
+        try {
+
+            Payment payment = Payment.builder()
+                    .listingOrder(listingOrder)
+                    .status(PaymentStatus.PENDING)
+                    .amount(listingOrder.getOrderTotal())
+                    .currency("PLN")
+                    .providerSessionId(orderResponse.getOrderId())
+                    .provider(PaymentProvider.PAYU)
+                    .build();
+
+            paymentRepo.save(payment);
+
+            // -------------------------------------------------
+            // 6. Return client secret
+            // -------------------------------------------------
+
+            return ResponseDto.<String>builder()
+                    .data(orderResponse.getRedirectUri())
+                    .message("Checkout session created")
+                    .httpStatus(HttpStatus.OK.value())
+                    .build();
+
+        } catch (Exception e) {
+
+            log.error("Failed to create checkout session", e);
+
+            return ResponseDto.<String>builder()
+                    .data(null)
+                    .message("Unable to create checkout session")
+                    .httpStatus(HttpStatus.BAD_REQUEST.value())
+                    .build();
+
+
+        }
+    }
+
+    @Transactional
+    public void handlePayUCheckoutCompleted(PayUNotification notification) {
+
+
+        PayUNotificationOrder notificationOrder = notification.getOrder();
+
+        String orderId = notificationOrder.getOrderId();
+        String orderNumber = notificationOrder.getExtOrderId();
+
+
+        if (orderId == null) {
+            throw new IllegalStateException("PayU session does not contain orderId");
+        }
+
+
+        ListingOrder order =
+                listingOrderRepo
+                        .findByOrderNumber(orderNumber)
+                        .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,"Record doest not exist"));
+
+
+        Payment payment =
+                paymentRepo
+                        .findByProviderAndProviderSessionId(PaymentProvider.PAYU,orderId)
+                        .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,"Record doest not exist"));
+
+        /*
+         * Idempotency.
+         *
+         * Stripe can deliver the same webhook more than once.
+         */
+
+        if (payment.getStatus() == PaymentStatus.PAID) {
+            return;
+        }
+
+
+
+
+        payment.setStatus(PaymentStatus.PAID);
+        payment.setPaidAt(Instant.now());
+        payment.setProviderSessionId(orderId);
+
+        order.setOrderStatus(OrderStatus.PAID);
+        order.setPaidAt(Instant.now());
+
+        order.getItems().forEach(orderItem -> {
+
+            InventoryItem inventory = orderItem.getInventoryItem();
+
+            inventory.setStatus(InventoryStatus.SOLD);
+
+            inventory.setReservedUntil(null);
+
+            inventoryItemRepo.save(inventory);
+
+            orderItem.setOrderItemStatus(OrderItemStatus.PAID);
+            listingOrderItemRepo.save(orderItem);
+        });
+
+        paymentRepo.save(payment);
+
+        ListingOrder listingOrder=  listingOrderRepo.save(order);
+
+        //seller payout;
+        sellerPayoutService.createPayouts(order);
+
+        sellerProfileService.updateSellerTotalSales(order.getItems());
+
+        shipmentService.createShipment(order.getItems());
+        cartService.deleteCartById(order.getBuyer().getId());
+
+        //BUYER EMAIL NOTIFICATION
+        String buyerName = listingOrder.getBuyerNameSnapshot();
+        String buyerEmail = listingOrder.getBuyer().getUsername();
+
+        List<EmailProductItemDto> emailDto =listingOrderItemRepo.findByListingOrderId(order.getId())
+                .stream().map(item->{
+
+                    return EmailProductItemDto.builder()
+                            .amount(item.getFinalizedPrice())
+                            .productName(item.getInventoryItem().getProductCatalog().getName())
+                            .build();
+                }).toList();
+
+        emailNotificationService.sendBulkOrderConfirmationToBuyer(buyerEmail,buyerName,order.getOrderNumber(),emailDto,order.getOrderTotal());
+
+        //SELLER EMAIL NOTIFICATION
+
+        Map<SellerProfile, List<ListingOrderItem> > itemsGroupedBySeller = listingOrderItemRepo.findByListingOrderId(order.getId()).stream()
+                .collect(Collectors.groupingBy(ListingOrderItem::getSeller));
+
+        itemsGroupedBySeller.forEach((key, value) -> {
+
+            List<EmailProductItemDto> dto = value.stream().map(item -> {
+
+
+                return EmailProductItemDto.builder()
+                        .productName(item.getInventoryItem().getProductCatalog().getName())
+                        .amount(item.getSellerPrice())
+                        .shippingCost(item.getShippingCost())
+                        .quantity(1L)
+                        .build();
+            }).toList();
+            String sellerEmail = key.getUser().getUsername();
+            String sellerName =key.getUser().getUsername();
+
+            SellerShipmentToken token = UtilService.generateSellerShipmentToken();
+            sellerShipmentTokenService.createRecord(key,token,listingOrder);
+
+            emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,token.getToken());
+            //update buyer of product awaiting shipment
+
+        });
+
+    }
+    @Transactional
+    public void handlePayURejected(PayUNotification notification){
+
+    }
+
+    @Transactional
+    public void handleNotification(PayUNotification notification)  {
+
+        PayUNotificationOrder order= notification.getOrder();
+
+        Payment payment = paymentRepo
+                .findByProviderAndProviderSessionId(
+                        PaymentProvider.PAYU,
+                       order.getOrderId()
+                )
+                .orElseThrow(() -> new IllegalStateException(
+                        "Payment not found: " + order.getOrderId()
+                ));
+
+        switch (order.getStatus()) {
+
+            case "PENDING", "WAITING_FOR_CONFIRMATION" -> {
+                payment.setStatus(PaymentStatus.PENDING);
+            }
+
+            case "COMPLETED" -> {
+              handlePayUCheckoutCompleted(notification);
+            }
+
+            case "CANCELED" -> {
+                if (payment.getStatus() != PaymentStatus.PAID) {
+                    payment.setStatus(PaymentStatus.CANCELLED);
+                }
+            }
+
+            default -> {
+                // Ignore unknown status
+            }
+        }
+    }
+
+
+    @Transactional
     public void handleCheckoutCompleted(Event event)
             throws StripeException {
 
@@ -112,14 +315,16 @@ public class PaymentService {
             throw new IllegalStateException("Stripe session does not contain orderId");
         }
 
+
         ListingOrder order =
                listingOrderRepo
                         .findById(Long.valueOf(orderId))
                         .orElseThrow();
 
+
         Payment payment =
                 paymentRepo
-                        .findByStripeSessionId(session.getId())
+                        .findByProviderSessionId(session.getId())
                         .orElseThrow();
 
         /*
@@ -156,23 +361,27 @@ public class PaymentService {
             inventory.setReservedUntil(null);
 
             inventoryItemRepo.save(inventory);
+
+            orderItem.setOrderItemStatus(OrderItemStatus.PAID);
+            listingOrderItemRepo.save(orderItem);
         });
 
         paymentRepo.save(payment);
 
-        listingOrderRepo.save(order);
+      ListingOrder listingOrder=  listingOrderRepo.save(order);
 
+        //seller payout;
         sellerPayoutService.createPayouts(order);
-        sellerProfileService.updateSellerTotalPayout(order.getItems());
+
+        SellerProfile seller= sellerProfileService.updateSellerTotalSales(order.getItems());
 
         shipmentService.createShipment(order.getItems());
-         cartService.deleteCartById(order.getBuyerId());
+         cartService.deleteCartById(order.getBuyer().getId());
 
-         //buyer notification
-        AppUser buyer = appUserDetailsService.getAppUserId(order.getBuyerId());
+         //BUYER EMAIL NOTIFICATION
+        String buyerName = listingOrder.getBuyerNameSnapshot();
+        String buyerEmail = listingOrder.getBuyer().getUsername();
 
-
-        String buyerName = buyer.getFirstName()+" "+buyer.getLastName();
         List<EmailProductItemDto> emailDto =listingOrderItemRepo.findByListingOrderId(order.getId())
                 .stream().map(item->{
 
@@ -182,40 +391,81 @@ public class PaymentService {
                             .build();
                 }).toList();
 
-        emailNotificationService.sendBulkOrderConfirmationToBuyer(buyer.getUsername(),buyerName,order.getOrderNumber(),emailDto,order.getOrderTotal());
+        emailNotificationService.sendBulkOrderConfirmationToBuyer(buyerEmail,buyerName,order.getOrderNumber(),emailDto,order.getOrderTotal());
 
-         //send action to seller
-       //address
-        String address = String.join(",","kasoa.pl",order.getShippingAddress());
+         //SELLER EMAIL NOTIFICATION
 
         Map<SellerProfile, List<ListingOrderItem> > itemsGroupedBySeller = listingOrderItemRepo.findByListingOrderId(order.getId()).stream()
                 .collect(Collectors.groupingBy(ListingOrderItem::getSeller));
 
-
-
         itemsGroupedBySeller.forEach((key, value) -> {
-            String sellerName = key.getUser().getFirstName()+" "+key.getUser().getLastName();
 
             List<EmailProductItemDto> dto = value.stream().map(item -> {
 
-                BigDecimal toPay = inventoryItemPriceService.getPrices(item.getInventoryItem().getId()).getSellerNewPrice();
 
                 return EmailProductItemDto.builder()
                         .productName(item.getInventoryItem().getProductCatalog().getName())
-                        .amount(toPay)
+                        .amount(item.getSellerPrice())
                         .shippingCost(item.getShippingCost())
                         .quantity(1L)
                         .build();
             }).toList();
             String sellerEmail = key.getUser().getUsername();
-            String buyerAddress = String.join(",",order.getOrderNumber(),order.getShippingAddress());
-            String corporateAddress = String.join(",","Corporate Headquarters","Ul Polna 1A","00-903","Piotrkow Trybunalski","Poland");
+            String sellerName =key.getUser().getUsername();
 
-            emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,buyerAddress,corporateAddress);
+            SellerShipmentToken token = UtilService.generateSellerShipmentToken();
+            sellerShipmentTokenService.createRecord(key,token,listingOrder);
+
+            emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,token.getToken());
             //update buyer of product awaiting shipment
 
         });
+
     }
+
+
+    @Transactional
+    public void   createRefund(ListingOrderItem order) {
+
+       List<Payment> payments=paymentRepo.findByListingOrderId(order.getListingOrder().getId());
+       double netTotal = payments.stream()
+                .filter(record -> record.getStatus().equals(PaymentStatus.PAID)
+                        || record.getStatus().equals(PaymentStatus.REFUND))
+               .mapToDouble(record->record.getAmount().doubleValue()).sum();
+
+        if (netTotal <= 0.01) {
+            log.warn("Double-Refund Prevention: Order has already been fully refunded (Net Balance: {} PLN).", netTotal);
+            throw new InvalidOperationException("Cannot refund below zero.");
+        }
+        Payment originalPayment = paymentRepo.findByListingOrderIdAndStatus(order.getListingOrder().getId(),PaymentStatus.PAID)
+                .orElse(null);
+
+        if(originalPayment==null){
+          throw new EntityNotFoundException("Payment record does not exist for refund");
+       }
+        try {
+
+            Payment refund = Payment.builder()
+                    .listingOrder(order.getListingOrder())
+                    .status(PaymentStatus.REFUND)
+                    .amount(order.getFinalizedPrice().negate())
+                    .currency(originalPayment.getCurrency())
+                    .providerSessionId(originalPayment.getProviderSessionId())
+                    .stripePaymentIntentId(originalPayment.getStripePaymentIntentId())
+                    .build();
+
+            paymentRepo.save(refund);
+            //create refund line to reduce seller payout
+            sellerPayoutService.createRefund(order);
+
+        } catch (Exception e) {
+
+            log.error("Failed to create refund", e);
+            throw new InvalidOperationException("Failed to create refund");
+        }
+    }
+
+
 
     @Transactional
     public void handleCheckoutExpired(Event event) {
@@ -240,7 +490,7 @@ public class PaymentService {
         order.setOrderStatus(OrderStatus.CANCELLED);
 
         Payment payment = paymentRepo
-                .findByStripeSessionId(session.getId())
+                .findByProviderSessionId(session.getId())
                 .orElse(null);
 
         if (payment != null) {

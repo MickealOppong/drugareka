@@ -43,8 +43,11 @@ public class AnalyticsService {
         String username = jwt.getSubject();
         AppUser currentUser = appUserDetailsService.getAppUserByUsername(username);
         SellerProfile sellerProfile = sellerProfileService.getSellerProfile(currentUser.getId());
+        if(sellerProfile!=null){
+            return listingTransactionService.getSellerPublishedListingCount(sellerProfile.getId());
+        }
+        return 0L;
 
-        return listingTransactionService.getSellerPublishedListingCount(sellerProfile.getId());
     }
 
 
@@ -99,7 +102,10 @@ public class AnalyticsService {
         String username = jwt.getSubject();
         AppUser currentUser = appUserDetailsService.getAppUserByUsername(username);
         SellerProfile sellerProfile = sellerProfileService.getSellerProfile(currentUser.getId());
-       return listingOrderService.getRecentSaleBySeller(sellerProfile.getId());
+        if(sellerProfile!=null){
+            return listingOrderService.getRecentSaleBySeller(sellerProfile.getId());
+        }
+     return null;
     }
 
 

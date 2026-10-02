@@ -1,15 +1,23 @@
 package com.pages.util;
 
+import com.pages.model.SellerShipmentToken;
 import org.apache.catalina.Role;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.text.Normalizer;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.UUID;
 
 public class UtilService {
+
+
 
     public static String formatNameToSlug(String name) {
 
@@ -51,6 +59,14 @@ public class UtilService {
                 .withoutPadding()
                 .encodeToString(randomBytes);
     }
+
+    public static SellerShipmentToken generateSellerShipmentToken(){
+        return SellerShipmentToken.builder()
+                .token(UUID.randomUUID().toString())
+                .expiresAt(Instant.now().plus(3, ChronoUnit.DAYS))
+                .build();
+    }
+
 
 
     public static String formatMediaName(String name) {

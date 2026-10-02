@@ -1,6 +1,7 @@
 package com.pages.model;
 
 import com.pages.dto.ProductDto;
+import com.pages.enums.ItemSize;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
 import lombok.*;

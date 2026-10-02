@@ -5,10 +5,8 @@ import com.pages.exception.InvalidOperationException;
 import com.pages.model.AppUser;
 import com.pages.model.AppUserRole;
 import com.pages.model.RefreshToken;
-import com.pages.service.AppUserDetailsService;
-import com.pages.service.GlobalAddressService;
-import com.pages.service.RefreshTokenService;
-import com.pages.service.TokenService;
+import com.pages.model.SellerShipmentToken;
+import com.pages.service.*;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -24,6 +22,7 @@ import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -36,6 +35,7 @@ public class AuthController {
     private final AppUserDetailsService userDetailsService;
     private final RefreshTokenService refreshTokenService;
     private final TokenService tokenService;
+
 
 
 
@@ -67,6 +67,8 @@ public class AuthController {
         return  userDetailsService.add(userRegistrationRequest);
 
     }
+
+
 
     @PostMapping("/login")
     public ResponseDto<?> login(@RequestBody UserCredentials credentials){

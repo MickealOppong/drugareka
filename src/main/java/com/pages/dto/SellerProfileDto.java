@@ -20,6 +20,8 @@ public class SellerProfileDto {
 
     private boolean identityVerified;
 
+    private String name;
+
     private Instant verifiedAt;
 
     private BigDecimal totalSales =BigDecimal.ZERO;

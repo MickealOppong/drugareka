@@ -1,5 +1,6 @@
-
 package com.pages.model;
+
+import com.pages.enums.PaymentProvider;
 import com.pages.enums.PaymentStatus;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -20,9 +21,13 @@ public class Payment extends LogEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id", nullable = false)
     private ListingOrder listingOrder;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentProvider provider;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -31,15 +36,34 @@ public class Payment extends LogEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 3)
     private String currency;
 
-    @Column(unique = true)
-    private String stripeSessionId;
+    /**
+     * Provider-specific checkout/session identifier.
+     *
+     * Stripe:
+     *     Checkout Session ID
+     *
+     * PayU:
+     *     PayU order/session ID
+     */
+    @Column(name = "provider_session_id")
+    private String providerSessionId;
 
+    /**
+     * Stripe PaymentIntent ID.
+     */
+    @Column(name = "stripe_payment_intent_id")
     private String stripePaymentIntentId;
+
+    /**
+     * Provider transaction/order identifier when needed.
+     */
+    @Column(name = "provider_transaction_id")
+    private String providerTransactionId;
+
     private String receiptUrl;
 
     private Instant paidAt;
-
 }

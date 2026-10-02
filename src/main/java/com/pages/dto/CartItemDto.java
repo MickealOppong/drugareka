@@ -24,5 +24,5 @@ public class CartItemDto {
     private String productName;
     private String image;
     private BigDecimal shipping;
-    private String shippingMethod;
+    private Long sellerId;
 }

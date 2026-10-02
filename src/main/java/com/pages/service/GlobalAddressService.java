@@ -41,7 +41,7 @@ public class GlobalAddressService {
     }
 
     public void addAddress(AppUser buyer, AddressForm dto){
-        log.info("{} calling",buyer.getId());
+
         GlobalAddress globalAddress = GlobalAddress.builder()
                 .country(dto.getCountry())
                 .city(dto.getCity())
@@ -61,7 +61,7 @@ public class GlobalAddressService {
 
            //find address if exists
            GlobalAddress currentAddress =globalAddressRepo.findByAppUserId(buyer.getId()).orElse(null);
-log.info("{}",currentAddress);
+
            if(currentAddress ==null){
                addAddress(buyer,dto);
                return ResponseDto.builder()

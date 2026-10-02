@@ -52,6 +52,9 @@ public class StoreController {
     @Autowired
     private ListingOrderService listingOrderService;
 
+    @Autowired
+    private ShipmentService shipmentService;
+
 
 
     @GetMapping("/listings")
@@ -72,7 +75,9 @@ public class StoreController {
 
 
     @GetMapping("/store-listing")
-    public ListPageDto getStoreProductListing( String queryCategory, @RequestParam(defaultValue = "0") Integer page, Integer size){
+    public ListPageDto getStoreProductListing( String queryCategory,
+                                               @RequestParam(defaultValue = "0") Integer page, Integer size){
+
         return listingTransactionService.getMarketplaceCatalogFeed(queryCategory,page,size);
     }
 
@@ -97,5 +102,6 @@ public class StoreController {
     public ResponseEntity<Boolean> validateDelivery(@RequestParam("token") String token){
        return ResponseEntity.ok(listingOrderService.validateDelivery(token));
     }
+
 
 }

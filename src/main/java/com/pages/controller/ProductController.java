@@ -93,17 +93,13 @@ public class ProductController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN') || hasAuthority('ROLE_SELLER')")
     @PutMapping(value = "/listing/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseDto<Object> editListing(@AuthenticationPrincipal Jwt jwt, @ModelAttribute @Valid ProductData dto) {
-
         if (dto.getImages() == null || dto.getImages().length == 0) {
             throw new PhotoNotFoundException(
                     "Please add product images"
             );
         }
 
-        return listingTransactionService.editSellerProduct(
-                jwt,
-                dto
-        );
+        return listingTransactionService.editSellerProduct(jwt, dto);
     }
 
     @DeleteMapping("/listing/delete")

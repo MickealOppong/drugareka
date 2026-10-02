@@ -22,7 +22,9 @@ public class CartItem extends LogEntity{
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long inventoryItemId;
+    @ManyToOne
+    @JoinColumn(name = "inventory_item_id", nullable = false)
+    private InventoryItem inventoryItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cart_id", nullable = false)
@@ -36,7 +38,5 @@ public class CartItem extends LogEntity{
 
     private Instant reservedUntil;
 
-    @Enumerated(EnumType.STRING)
-    private ShippingMethod shippingMethod;
 
 }

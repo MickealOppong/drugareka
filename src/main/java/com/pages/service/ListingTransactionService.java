@@ -17,13 +17,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -133,11 +130,7 @@ public class ListingTransactionService {
             ListingTransaction listing =
                     listingTransactionRepo
                             .findById(productData.getId())
-                            .orElseThrow(() ->
-                                    new IllegalArgumentException(
-                                            "Listing not found"
-                                    )
-                            );
+                            .orElseThrow(() -> new IllegalArgumentException("Listing not found"));
 
 
             // =====================================================
@@ -147,9 +140,7 @@ public class ListingTransactionService {
             InventoryItem inventoryItem = listing.getInventory();
 
             if (inventoryItem == null) {
-                throw new IllegalStateException(
-                        "Inventory item not found for listing"
-                );
+                throw new IllegalStateException("Inventory item not found for listing");
             }
 
 
@@ -228,10 +219,11 @@ public class ListingTransactionService {
             // =====================================================
 
 
-            inventoryItem.setShippingMethod(inventoryItemService.getShippingMethod(productData.getShippingMethod()));
+           // inventoryItem.setShippingMethod(inventoryItemService.getShippingMethod(productData.getShippingMethod()));
 
 
             inventoryItem.setDeliveryInfo(productData.getShippingInfo());
+            inventoryItem.setItemSize(inventoryItemService.getItemDimension(productData.getItemSize()));
 
             ProductCondition newCondition = productConditionService.getConditionByName(productData.getCondition());
 
@@ -336,6 +328,7 @@ public class ListingTransactionService {
 
     @jakarta.transaction.Transactional
     public ResponseDto<Object> addSellerProduct(Jwt jwt, ProductData productData) {
+        log.info("data:{}",productData);
         try {
 
             if (jwt == null) {
@@ -354,6 +347,7 @@ public class ListingTransactionService {
             SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
                     .totalSales(BigDecimal.ZERO)
+                    .name(appUser.getFirstName()+" "+appUser.getLastName())
                     .status(appUser.isEnabled() ? SellerStatus.ACTIVE : SellerStatus.PENDING)
                     .build();
 
@@ -377,9 +371,10 @@ public class ListingTransactionService {
             InventoryItemRequest inventoryItemRequest = InventoryItemRequest.builder()
                     .seller(sellerProfile)
                     .productCatalog(savedProductCatalog)
-                    .shippingMethod(productData.getShippingMethod())
                     .condition(productData.getCondition())
                     .sku(productData.getSku())
+                    .shippingInfo(productData.getShippingInfo())
+                    .itemSize(productData.getItemSize())
                     .status(InventoryStatus.AVAILABLE)
                     .build();
 
@@ -842,7 +837,10 @@ public class ListingTransactionService {
 
         AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
         SellerProfile seller = sellerProfileService.getSellerProfile(currentUser.getId());
-        return listingTransactionRepo.findFirstByInventorySellerIdAndListingStatusOrderByCreatedAtDesc(seller.getId(),ListingStatus.PUBLISHED)
-                .orElse(null);
+        if(seller!=null){
+            return listingTransactionRepo.findFirstByInventorySellerIdAndListingStatusOrderByCreatedAtDesc(seller.getId(),ListingStatus.PUBLISHED)
+                    .orElse(null);
+        }
+      return null;
     }
 }
