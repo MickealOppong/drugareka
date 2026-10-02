@@ -124,12 +124,11 @@ public class ShippingOptionService {
         InventoryItem inventoryItem = cartItem.getInventoryItem();
 
         return shippingOptionRepo
-                .findByItemSizeAndShippingMethod(
+                .findByItemSizeAndShippingMethodAndActiveTrue(
                         inventoryItem.getItemSize(),ShippingMethod.DPD).map(ShippingOption::getPrice)
                 .orElseThrow(() -> new IllegalStateException(
                         "Shipping price not configured for "
                                 + inventoryItem.getItemSize()
-
                 ));
 
     }
