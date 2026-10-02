@@ -13,6 +13,7 @@ import java.time.Instant;
 @Getter
 @Setter
 @Builder
+@ToString
 @NoArgsConstructor
 @AllArgsConstructor
 public class Payment extends LogEntity {
@@ -62,8 +63,8 @@ public class Payment extends LogEntity {
      */
     @Column(name = "provider_transaction_id")
     private String providerTransactionId;
-
-    private String receiptUrl;
+    @Column(name = "order_number")
+    private String orderNumber;
 
     private Instant paidAt;
 }

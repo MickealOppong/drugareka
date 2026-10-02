@@ -19,6 +19,8 @@ import com.stripe.model.checkout.Session;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -44,9 +46,10 @@ public class PaymentService {
     private final AppUserDetailsService appUserDetailsService;
     private final ListingOrderItemRepo listingOrderItemRepo;
     private final SellerShipmentTokenService sellerShipmentTokenService;
+    private final MessageSource messageSource;
 
     public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
-                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService) {
+                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService, MessageSource messageSource) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
@@ -58,8 +61,15 @@ public class PaymentService {
         this.appUserDetailsService = appUserDetailsService;
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.sellerShipmentTokenService = sellerShipmentTokenService;
+        this.messageSource = messageSource;
     }
-
+    private String getMessage(String code) {
+        return messageSource.getMessage(
+                code,
+                null,
+                LocaleContextHolder.getLocale()
+        );
+    }
 
     @Transactional
     public ResponseDto<String> createPayment(Session session,ListingOrder listingOrder) {
@@ -112,6 +122,7 @@ public class PaymentService {
                     .status(PaymentStatus.PENDING)
                     .amount(listingOrder.getOrderTotal())
                     .currency("PLN")
+                    .orderNumber(orderResponse.getExtOrderId())
                     .providerSessionId(orderResponse.getOrderId())
                     .provider(PaymentProvider.PAYU)
                     .build();
@@ -259,8 +270,11 @@ public class PaymentService {
 
     }
     @Transactional
-    public void handlePayURejected(PayUNotification notification){
+    public PaymentStatus getPaymentStatus(String orderNumber){
 
+      return paymentRepo.findByOrderNumber(orderNumber).map(Payment::getStatus)
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST
+                        ,getMessage("api.errors.payment.error")));
     }
 
     @Transactional
@@ -347,7 +361,6 @@ public class PaymentService {
         payment.setStatus(PaymentStatus.PAID);
         payment.setPaidAt(Instant.now());
         payment.setStripePaymentIntentId(session.getPaymentIntent());
-        payment.setReceiptUrl(receiptUrl);
 
         order.setOrderStatus(OrderStatus.PAID);
         order.setPaidAt(Instant.now());

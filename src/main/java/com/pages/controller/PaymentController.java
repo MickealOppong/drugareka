@@ -1,6 +1,7 @@
 package com.pages.controller;
 
 import com.pages.dto.PayUNotification;
+import com.pages.enums.PaymentStatus;
 import com.pages.service.PayUService;
 import com.pages.service.PaymentService;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,10 @@ public class PaymentController {
         this.payUService = payUService;
     }
 
+    @GetMapping("/status")
+    public ResponseEntity<PaymentStatus> getStatus( String orderNumber){
+        return ResponseEntity.ok( paymentService.getPaymentStatus(orderNumber.trim()));
+    }
 
     @PostMapping("/notify")
     public void payuNotify(@RequestBody String rawBody,
