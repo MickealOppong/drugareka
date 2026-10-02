@@ -29,7 +29,7 @@ public class ShippingOption {
     @Enumerated(EnumType.STRING)
     @Column(name = "shipping_method", nullable = false)
     private ShippingMethod shippingMethod;
-
+    
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
