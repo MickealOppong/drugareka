@@ -556,7 +556,7 @@ public class EmailNotificationService {
                             text-align: center;
                         ">
                             <a
-                                href="https://kasoa.pl"
+                                href="https://www.kasoa.pl"
                                 style="
                                     display: inline-block;
                                     padding: 14px 28px;
@@ -951,7 +951,7 @@ public class EmailNotificationService {
                             text-align: center;
                         ">
                             <a
-                                href="https://kasoa.pl"
+                                href="https://www.kasoa.pl"
                                 style="
                                     display: inline-block;
                                     padding: 14px 28px;
@@ -963,7 +963,7 @@ public class EmailNotificationService {
                                     font-weight: 700;
                                 "
                             >
-                                Przejdź do kasoa.pl →
+                                Przejdź do .kasoa.pl →
                             </a>
                         </div>
                     </td>
@@ -1709,7 +1709,7 @@ public class EmailNotificationService {
                                     <tr>
                                         <td align="center">
 
-                                            <a href="https://kasoa.pl"
+                                            <a href="https://www.kasoa.pl"
                                                style="
                                                    display:inline-block;
                                                    background:#68764B;
@@ -1910,7 +1910,7 @@ public class EmailNotificationService {
         BigDecimal orderTotal = productsTotal.add(shippingTotal);
 
         String shipmentUrl =
-                "http://localhost:5173/seller/shipment/create?token="
+                "https://www.kasoa.pl/seller/shipment/create?token="
                         + URLEncoder.encode(
                         shipmentToken,
                         StandardCharsets.UTF_8
@@ -2435,7 +2435,7 @@ public class EmailNotificationService {
         if (confirmationStatus && hasConfirmationToken) {
 
             String receiptConfirmationUrl =
-                    "https://kasoa.pl/orders/"
+                    "https://www.kasoa.pl/account/orders"
                             + URLEncoder.encode(
                             orderNumber,
                             StandardCharsets.UTF_8
@@ -3020,7 +3020,7 @@ public class EmailNotificationService {
 
                                         <td align="center">
 
-                                            <a href="https://kasoa.pl"
+                                            <a href="https://www.kasoa.pl"
                                                style="
                                                    display:inline-block;
                                                    background:#68764B;
