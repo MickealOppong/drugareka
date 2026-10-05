@@ -12,7 +12,7 @@ public interface CategoryRepo extends JpaRepository<Category,Long> {
 
     Optional<Category> findByName(String name);
     Optional<Category> findBySlug(String slug);
-    List<Category> findTop6AllByAndIsActiveIsTrue();
+    List<Category> findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
     List<Category> findAllByAndIsActiveIsTrue();
     boolean existsByNameAndParentName(String name,String parent);
     Optional<Category> findByPath(String path);

@@ -283,9 +283,11 @@ public class ListingTransactionService {
             // =====================================================
 
 
-            mediaService.updateMedia(productData.getImages(),
+            mediaService.updateMediaFile(productData.getImages(),
                     productData.getImageSortOrder(),
                     inventoryItem);
+
+
 
 
             // =====================================================
@@ -402,7 +404,7 @@ public class ListingTransactionService {
               /*
                         PRODUCT IMAGES
                */
-            mediaService.saveMedia(productData.getImages(), productData.getImageSortOrder(), savedInventoryItem);
+            mediaService.uploadProductImage(productData.getImages(), productData.getImageSortOrder(), savedInventoryItem);
 
 
             //LISTING TRANSACTION UPDATE

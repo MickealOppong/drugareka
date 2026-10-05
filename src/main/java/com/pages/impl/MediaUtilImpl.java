@@ -44,16 +44,13 @@ public class MediaUtilImpl implements MediaUtil {
     }
 
     @Override
-    public void store(MultipartFile file,String username) {
+    public void store(MultipartFile file,String fileName) {
         try{
             if(file.isEmpty()){
                 throw new PhotoStorageException("Failed to store empty file");
             }
 
-            String formatedFilename = UtilService.formatMediaName(file.getOriginalFilename());
-
-            Path destination = root.resolve(Paths.get(String.valueOf(username+"-"+formatedFilename))).normalize().toAbsolutePath();
-
+            Path destination = root.resolve(Paths.get(String.valueOf(fileName))).normalize().toAbsolutePath();
 
             if(!destination.getParent().equals(this.root.toAbsolutePath())){
                 throw new PhotoStorageException("File cannot be stored outside the current directory");

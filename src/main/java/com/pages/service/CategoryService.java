@@ -66,7 +66,7 @@ public class CategoryService {
            /*
                 CATEGORY IMAGE
             */
-           mediaService.saveMedia(categoryDto.getImage(),savedCategory);
+           mediaService.uploadCategoryImage(categoryDto.getImage(),savedCategory);
 
             return ResponseDto.builder()
                     .message("Created")
@@ -209,18 +209,13 @@ public class CategoryService {
             }
             Category retreivedCategory = categoryRepo.getReferenceById(categoryDto.getId());
 
-           Media media = mediaService.categoryImage(retreivedCategory);
+
 
             if(categoryDto.getName()!=null && !categoryDto.getName().isEmpty()){
                 retreivedCategory.setName(categoryDto.getName());
                 retreivedCategory.setSlug(UtilService.formatNameToSlug(categoryDto.getSlug()));
             }
-            if(media==null){
-                mediaService.saveMedia(categoryDto.getImage(),retreivedCategory);
-            }else if(!media.getFileName().equalsIgnoreCase(categoryDto.getImage().getName())){
-                mediaService.deleteByCategory(retreivedCategory.getId());
-                mediaService.saveMedia(categoryDto.getImage(),retreivedCategory);
-            }
+
 
 
             if(categoryDto.getParent()!=null && !categoryDto.getParent().isEmpty()){
@@ -232,6 +227,7 @@ public class CategoryService {
             retreivedCategory.setSortOrder(categoryDto.getSortOrder());
 
             categoryRepo.save(retreivedCategory);
+            mediaService.updateCategoryImage(categoryDto.getImage(),retreivedCategory);
 
             return ResponseDto.builder()
                     .message("Updated")
@@ -279,7 +275,8 @@ public class CategoryService {
     }
 
     public List<CategoryResponse> top6Categories(){
-      return  categoryRepo.findTop6AllByAndIsActiveIsTrue().stream().map(category -> {
+      return  categoryRepo.findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc()
+              .stream().map(category -> {
          String image= mediaService.getCategoryImage(category).getImage();
             return CategoryResponse.builder()
                     .image(image)

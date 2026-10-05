@@ -17,6 +17,7 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
     void deleteByInventoryItem(InventoryItem item);
     void deleteByCategory(Category category);
     Optional<Media> findByCategory(Category category);
+    Optional<Media> findByCategoryParent(Category parent);
     Optional<Media> findByFileName(String fileName);
 
     Optional<Media> findByPath(String path);
