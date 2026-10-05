@@ -39,6 +39,7 @@ public class SellerShipment extends LogEntity {
     private SellerShipmentToken sellerShipmentToken;
 
     private String shippingAddress;
+    private String collectionAddress;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_size", nullable = false,length = 200)

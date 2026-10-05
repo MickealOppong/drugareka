@@ -4,9 +4,7 @@ package com.pages.specs;
 import com.pages.enums.InventoryStatus;
 import com.pages.enums.ListingStatus;
 import com.pages.model.*;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Subquery;
+import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 
 public class ListingSpecs {
@@ -36,10 +34,24 @@ public class ListingSpecs {
             Join<ProductCatalog, Category> categoryJoin =
                     product.join("category");
 
-            return cb.equal(
+            Path<Category> parentCategoryPath = categoryJoin.get("parent");
+
+            String lowerCaseCategory = category.toLowerCase().trim();
+
+            // Condition A: Direct match where the category's own slug matches the query parameter
+            Predicate directCategoryMatch = cb.equal(
                     cb.lower(categoryJoin.get("slug")),
-                    category.toLowerCase()
+                    lowerCaseCategory
             );
+
+            // Condition B: Cascading match where the category's parent slug matches the query parameter
+            // (This catches all subcategories belonging to that parent group!)
+            Predicate parentCategoryMatch = cb.equal(
+                    cb.lower(parentCategoryPath.get("slug")),
+                    lowerCaseCategory
+            );
+
+            return cb.or(directCategoryMatch,parentCategoryMatch);
         };
     }
 

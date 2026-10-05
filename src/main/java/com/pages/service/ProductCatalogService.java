@@ -39,7 +39,7 @@ public class ProductCatalogService {
         /*
                 CATEGORY
          */
-        Category category = categoryService.findByNameOrCreate(productRequest.getCategory());
+        Category category = categoryService.getCategoryByPath(productRequest.getCategoryPath());
 
         /*
             PRODUCT

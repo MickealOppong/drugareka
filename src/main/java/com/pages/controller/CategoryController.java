@@ -37,20 +37,14 @@ public class CategoryController {
         return categoryService.addCategory(dataToSend);
     }
 
-    @GetMapping("/parent-categories")
-    public List<String> allParentCategories(){
-        return categoryService.getAllParentCategories();
-    }
 
-    @GetMapping("/categories")
-    public List<CategoryResponse> allCategories(){
-        return categoryService.getAllCategories();
-    }
+
 
     @GetMapping("/{id}")
     public CategoryResponse category(Long id){
         return categoryService.getCategory(id);
     }
+
 
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")

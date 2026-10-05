@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.format.annotation.NumberFormat;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
@@ -28,8 +29,7 @@ public class ProductData {
     private String status;
 
     @NotNull(message = "Category cannot be null")
-    @NotBlank(message = "Category cannot be empty")
-    private String category;
+    private String categoryPath;
 
     @NotNull(message = "Condition cannot be null")
     @NotBlank(message = "Please set product condition")

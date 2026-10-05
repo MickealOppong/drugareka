@@ -29,16 +29,12 @@ public class ShipmentConfirmationController {
 
     @PostMapping(value = "/ship",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public void executeShipment(ShipmentConfirmationRequest request){
-        log.info("Data {}",request);
 
-        SellerShipmentToken validatedToken= sellerShipmentTokenService.validateToken(request.getToken());
-        //shipmentService.createInPostShipment(request);
         shipmentService.createDpdShipment(request);
     }
 
     @GetMapping("/token")
     public List<ShipmentItemResponse> getShipmentItems(String token){
-        log.info("token: {}",token);
         SellerShipmentToken validatedToken= sellerShipmentTokenService.validateToken(token);
         return shipmentService.getShipment(validatedToken);
     }

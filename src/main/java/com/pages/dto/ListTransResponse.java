@@ -26,7 +26,7 @@ public class ListTransResponse {
     private String brand;
     private Long sellerId;
 
-    private String category;
+    private CategoryResponse category;
 
     private String productName;
 
@@ -36,6 +36,7 @@ public class ListTransResponse {
 
 
     private String productCondition;
+    private String itemSize;
 
     private InventoryItemPriceResponse priceDto;
 

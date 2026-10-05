@@ -2,7 +2,6 @@ package com.pages.service;
 
 import com.pages.controller.MediaController;
 import com.pages.dto.MediaResponse;
-import com.pages.exception.PhotoNotFoundException;
 import com.pages.impl.MediaUtilImpl;
 import com.pages.model.Category;
 import com.pages.model.InventoryItem;
@@ -19,10 +18,8 @@ import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBui
 
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.security.MessageDigest;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -39,6 +36,55 @@ public class MediaService {
         this.mediaRepo = mediaRepo;
         this.mediaUtil = mediaUtil;
         this.mediaStorageLocation = mediaStorageLocation;
+    }
+
+
+    @org.springframework.transaction.annotation.Transactional
+    public Media uploadProductImage(MultipartFile file) {
+        // STEP 1: Calculate unique deterministic content hash fingerprint up-front
+        String fileHash = calculateSHA256(file);
+
+        // STEP 2: Check database registry index first to intercept duplicate uploads
+        Optional<Media> existingAsset = mediaRepo.findByFileHash(fileHash);
+        if (existingAsset.isPresent()) {
+            log.info("Deduplication Shield: Match found for fingerprint [{}]. Skipping file storage write.", fileHash);
+            return existingAsset.get();
+        }
+
+        // STEP 3: Fall back to format and clean the file name if it's a net-new upload pass
+        String sanitizedName = UtilService.formatMediaName(file.getOriginalFilename());
+        // Append hash block string fragment to physical key file target path names to guarantee uniqueness
+        String uniqueStorageKey = fileHash.substring(0, 8) + "-" + sanitizedName;
+
+
+        // STEP 4: Persist the fingerprint mapping into the asset table manager registry
+
+        return Media.builder()
+                .fileHash(fileHash)
+                .path(uniqueStorageKey)
+                .fileHash(file.getOriginalFilename())
+                .build();
+    }
+
+
+    public static String calculateSHA256(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Cannot calculate fingerprint hash on an empty payload file container.");
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = file.getBytes();
+            byte[] hashBytes = digest.digest(bytes);
+
+            // Convert byte array into standard safe hexadecimal string sequence
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Logistics Engine: Failed to parse structural binary matrix for file hash generation.", e);
+        }
     }
 
 

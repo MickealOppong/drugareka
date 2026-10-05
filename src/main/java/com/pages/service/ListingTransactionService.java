@@ -199,7 +199,9 @@ public class ListingTransactionService {
             if (!productCatalog.getBrand().getName().equalsIgnoreCase(retreivedBrand.getName())) {
                 productCatalog.setBrand(retreivedBrand);
             }
-            Category newCategory = categoryService.getCategoryBySlug(UtilService.formatNameToSlug(productData.getCategory()));
+
+
+            Category newCategory = categoryService.getCategoryByPath(productData.getCategoryPath());
 
             if (!productCatalog.getCategory().getName().equalsIgnoreCase(newCategory.getName())) {
                 productCatalog.setCategory(newCategory);
@@ -357,7 +359,7 @@ public class ListingTransactionService {
                  */
             ProductRequest productRequest = ProductRequest.builder()
                     .brand(productData.getBrand())
-                    .category(productData.getCategory())
+                    .categoryPath(productData.getCategoryPath())
                     .description(productData.getDescription())
                     .name(productData.getName())
                     .slug(productData.getName())

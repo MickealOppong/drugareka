@@ -9,6 +9,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.http.MediaType;
 
+import java.time.Instant;
+
 @Entity
 @Data
 @Builder
@@ -34,6 +36,7 @@ public class Media {
 
     private String contentType;
 
-
+    @Column(nullable = false, unique = true)
+    private String fileHash;
 
 }

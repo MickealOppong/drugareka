@@ -16,7 +16,7 @@ public class ProductRequest {
 
     private String brand;
 
-    private String category;
+    private String categoryPath;
 
     private String name;
 

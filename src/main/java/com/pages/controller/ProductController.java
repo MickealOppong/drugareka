@@ -98,7 +98,6 @@ public class ProductController {
                     "Please add product images"
             );
         }
-
         return listingTransactionService.editSellerProduct(jwt, dto);
     }
 

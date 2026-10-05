@@ -13,10 +13,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.pages.util.UtilService.formatNameToSlug;
@@ -35,6 +35,8 @@ public class CategoryService {
     }
 
 
+
+
     public ResponseDto<Object> addCategory(CategoryRequest categoryDto){
         try{
 
@@ -42,7 +44,7 @@ public class CategoryService {
                 throw new InvalidOperationException("Category cannot be same as parent");
             }
 
-            if(categoryRepo.existsByName(categoryDto.getName())){
+            if(categoryRepo.existsByNameAndParentName(categoryDto.getName(),categoryDto.getParent())){
                 return ResponseDto.builder()
                         .message("Category already exists")
                         .data(null)
@@ -56,6 +58,7 @@ public class CategoryService {
                     .isActive(categoryDto.isActive())
                     .sortOrder(categoryDto.getSortOrder())
                     .parent(parent)
+                    .path(UtilService.toPath(categoryDto.getParent(),categoryDto.getName()))
                     .name(categoryDto.getName())
                     .build();
            Category savedCategory= categoryRepo.save(category);
@@ -80,22 +83,32 @@ public class CategoryService {
     }
 
 
-    public Category findByNameOrCreate(String name){
-        return categoryRepo.findByName(name).orElseGet(()->{
-            Category newCategory = Category.builder()
-                    .name(name)
-                    .parent(null)
-                    .sortOrder(1)
-                    .isActive(true)
-                    .slug(UtilService.formatNameToSlug(name))
-                    .build();
-         return  categoryRepo.save(newCategory);
-
-        });
+    public Category getCategoryById(Long id){
+        return categoryRepo.findById(id)
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Category does not exist"
+                ));
     }
 
-    public List<String> getAllParentCategories(){
-        return categoryRepo.findAll().stream().map(Category::getName).toList();
+
+    public Category getCategoryByPath(String path){
+        return categoryRepo.findByPath(path)
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Category does not exist"
+                ));
+    }
+
+
+    public List<CategoryResponse> getAllParentCategories(){
+        return categoryRepo.findAll().stream().filter(category -> category.getParent()==null).map(category->{
+            return    CategoryResponse.builder()
+                    .id(category.getId())
+                    .active(category.getIsActive())
+                    .name(category.getName())
+                    .sortOrder(category.getSortOrder())
+                    .slug(category.getSlug())
+                    .build();
+        }).toList();
     }
 
     public List<CategoryResponse> getAllCategories(){
@@ -115,6 +128,48 @@ public class CategoryService {
     }
 
 
+
+    @Transactional(readOnly = true)
+    public List<CategoryTreeDto> getCategoryTree() {
+        // STEP 1: Fetch ALL categories from the database in a single query pass
+        List<Category> allCategories = categoryRepo.findAll();
+
+        // STEP 2: Isolate the main top-level parent categories (where parent is null)
+        List<Category> parents = allCategories.stream()
+                .filter(category -> category.getParent() == null)
+                .toList();
+
+        // STEP 3: Group subcategories by their parent ID in-memory to prevent N+1 queries
+        Map<Long, List<Category>> subCategoriesByParentId = allCategories.stream()
+                .filter(category -> category.getParent() != null)
+                .collect(Collectors.groupingBy(category -> category.getParent().getId()));
+
+        // STEP 4: Build the clean, type-safe DTO hierarchy tree structure
+        return parents.stream()
+                .map(parent -> {
+                    // Fetch the pre-grouped child elements safely from memory map
+                    List<Category> children = subCategoriesByParentId.getOrDefault(parent.getId(), Collections.emptyList());
+
+                    List<CategoryTreeDto.SubCategoryDto> subCategoryDtos = children.stream()
+                            .map(child -> CategoryTreeDto.SubCategoryDto.builder()
+                                    .id(child.getId())
+                                    .name(child.getName())
+                                    .parent(child.getParent().getName())
+                                    .path(child.getPath())
+                                    .slug(child.getSlug())
+                                    .build())
+                            .toList();
+
+                    return CategoryTreeDto.builder()
+                            .id(parent.getId())
+                            .name(parent.getName())
+                            .slug(parent.getSlug())
+                            .path(parent.getPath())
+                            .subCategories(subCategoryDtos)
+                            .build();
+                })
+                .toList();
+    }
 
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -172,7 +227,7 @@ public class CategoryService {
                 Category newParentCategory = categoryRepo.findByName(categoryDto.getParent()).orElse(null);
                 retreivedCategory.setParent(newParentCategory);
             }
-
+            retreivedCategory.setPath(UtilService.toPath(categoryDto.getParent(),categoryDto.getName()));
             retreivedCategory.setIsActive(categoryDto.isActive());
             retreivedCategory.setSortOrder(categoryDto.getSortOrder());
 

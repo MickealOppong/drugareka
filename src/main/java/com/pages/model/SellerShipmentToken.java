@@ -1,5 +1,6 @@
 package com.pages.model;
 
+import com.pages.enums.ShipmentConfirmationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.Instant;
@@ -25,4 +26,9 @@ public class SellerShipmentToken {
     private Instant expiresAt;
 
     private Instant usedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status",length = 50)
+    private ShipmentConfirmationStatus shipmentConfirmationStatus;
+
 }

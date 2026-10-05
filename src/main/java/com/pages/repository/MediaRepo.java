@@ -29,5 +29,8 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
     Optional<Media> findFirstByInventoryItemId(Long inventoryItemId);
 
     Optional<Media> findByCategoryId(Long categoryId);
+
+    Optional<Media> findByFileHash(String fileHash);
+    Optional<Media> findFirstByFileHashAndIsActiveTrue(String fileHash);
 }
 
