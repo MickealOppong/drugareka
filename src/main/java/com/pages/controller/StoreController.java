@@ -91,7 +91,7 @@ public class StoreController {
         return categoryService.top6Categories();
     }
     @GetMapping("/top8-categories")
-    public List<CategoryResponse> top12StoreCategories(){
+    public List<CategoryResponse> top8StoreCategories(){
         return categoryService.top8Categories();
     }
 
