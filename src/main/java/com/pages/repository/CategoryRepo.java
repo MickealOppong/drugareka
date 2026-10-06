@@ -13,7 +13,7 @@ public interface CategoryRepo extends JpaRepository<Category,Long> {
     Optional<Category> findByNameAndParentIsNull(String name);
     Optional<Category> findByName(String name);
     Optional<Category> findBySlug(String slug);
-    List<Category> findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
+    List<Category> findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrder();
     List<Category> findTop8ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
     List<Category> findAllByAndIsActiveIsTrue();
     boolean existsByNameIgnoreCaseAndParent(String name,Category parent);

@@ -300,7 +300,7 @@ public class CategoryService {
     }
 
     public List<CategoryResponse> top6Categories(){
-      return  categoryRepo.findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc()
+      return  categoryRepo.findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrder()
               .stream().map(category -> {
          String image= mediaService.getCategoryImage(category).getImage();
             return CategoryResponse.builder()
