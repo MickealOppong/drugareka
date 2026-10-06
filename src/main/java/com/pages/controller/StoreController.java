@@ -90,6 +90,10 @@ public class StoreController {
     public List<CategoryResponse> top6StoreCategories(){
         return categoryService.top6Categories();
     }
+    @GetMapping("/top12-categories")
+    public List<CategoryResponse> top12StoreCategories(){
+        return categoryService.top12Categories();
+    }
 
     @GetMapping("/parent-categories")
     public List<CategoryResponse> allStoreCategories(){

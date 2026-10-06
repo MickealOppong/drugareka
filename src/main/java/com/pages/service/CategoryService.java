@@ -314,6 +314,21 @@ public class CategoryService {
         }).toList();
     }
 
+    public List<CategoryResponse> top12Categories(){
+        return  categoryRepo.findTop12ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc()
+                .stream().map(category -> {
+                    String image= mediaService.getCategoryImage(category).getImage();
+                    return CategoryResponse.builder()
+                            .image(image)
+                            .name(category.getName())
+                            .parent(category.getParent()!=null?category.getName():null)
+                            .sortOrder(category.getSortOrder())
+                            .id(category.getId())
+                            .slug(category.getSlug())
+                            .build();
+                }).toList();
+    }
+
     public List<CategoryResponse> allCategories(){
         return  categoryRepo.findAllByAndIsActiveIsTrue().stream().map(category -> {
             String image= mediaService.getCategoryImage(category).getImage();
