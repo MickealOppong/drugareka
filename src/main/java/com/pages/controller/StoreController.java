@@ -92,7 +92,7 @@ public class StoreController {
     }
     @GetMapping("/top12-categories")
     public List<CategoryResponse> top12StoreCategories(){
-        return categoryService.top12Categories();
+        return categoryService.top8Categories();
     }
 
     @GetMapping("/parent-categories")

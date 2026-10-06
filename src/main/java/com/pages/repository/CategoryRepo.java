@@ -14,7 +14,7 @@ public interface CategoryRepo extends JpaRepository<Category,Long> {
     Optional<Category> findByName(String name);
     Optional<Category> findBySlug(String slug);
     List<Category> findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
-    List<Category> findTop12ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
+    List<Category> findTop8ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
     List<Category> findAllByAndIsActiveIsTrue();
     boolean existsByNameIgnoreCaseAndParent(String name,Category parent);
     Optional<Category> findByNameIgnoreCaseAndParent(String name,Category parent);
