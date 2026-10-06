@@ -273,28 +273,47 @@ public class CategoryService {
 
     @Transactional
     public ResponseDto<Object> deleteCategory(Long id) {
-        try{
-            categoryRepo.findById(id).ifPresent(cat->{
+        try {
+            Category targetCategory = categoryRepo.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Taxonomy Node not found for ID: " + id));
 
-                try {
-                    mediaService.deleteByCategory(id);
-                    categoryRepo.deleteById(id);
 
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+            // We run a high-performance index check to see if any other categories point to this ID as their parent.
+            boolean hasActiveChildren = categoryRepo.existsByParentId(targetCategory.getId());
 
-            });
+            if (hasActiveChildren) {
+                log.warn("Security Shield: Denied deletion request for Category [{} (ID: {})]. It still contains active subcategories.",
+                        targetCategory.getName(), targetCategory.getId());
+
+                return ResponseDto.builder()
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .data(false)
+                        .message("Action Denied: This category cannot be deleted because it contains active subcategories. Please remove or re-assign all subcategories first.")
+                        .build();
+            }
+
+            log.info("Taxonomy System: Guard checked clear. Purging isolated category node: [{} (ID: {})]",
+                    targetCategory.getName(), targetCategory.getId());
+
+         mediaService.deleteByCategory(targetCategory);
+
+            // Sever parent links and safely drop the category row entry
+            targetCategory.setParent(null);
+            categoryRepo.delete(targetCategory);
+            categoryRepo.flush();
+
             return ResponseDto.builder()
-                    .httpStatus(HttpStatus.BAD_REQUEST.value())
+                    .httpStatus(HttpStatus.OK.value())
                     .data(true)
-                    .message("Deleted")
+                    .message("Category successfully deleted.")
                     .build();
-        }catch (Exception e){
+
+        } catch (Exception e) {
+            log.error("Taxonomy System Failure: Aborting deletion workflow", e);
             return ResponseDto.builder()
-                    .httpStatus(HttpStatus.BAD_REQUEST.value())
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value()) // 500 for true unexpected runtime errors
                     .data(false)
-                    .message(e.getMessage())
+                    .message(e.getLocalizedMessage())
                     .build();
         }
     }

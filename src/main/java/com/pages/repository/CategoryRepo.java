@@ -21,4 +21,5 @@ public interface CategoryRepo extends JpaRepository<Category,Long> {
 
     boolean existsByNameIgnoreCaseAndParentIsNull(String name);
     Optional<Category> findByPath(String path);
+   boolean existsByParentId(Long id);
 }

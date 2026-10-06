@@ -525,13 +525,24 @@ Retrieves images metadata using inventory item id from repository and actual ima
     }
 
     @Transactional
-    public void deleteByCategory(Long category) throws IOException{
-       Media media= mediaRepo.findByCategoryId(category).orElse(null);
-        if(media !=null){
-            media.setCategory(null);
+    public void deleteByCategory(Category category) throws IOException{
+        Optional<Media> attachedMedia = mediaRepo.findFirstByCategory(category);
+        if (attachedMedia.isPresent()) {
+            Media media = attachedMedia.get();
+            String physicalFilePath= media.getPath();
+
+            // Evict the image mapping row from database indices first
             mediaRepo.delete(media);
             mediaRepo.flush();
-            mediaUtil.delete(media.getFileName());
+
+            // Clear the actual file bytes off your persistent Railway storage volume to prevent disk leaks
+            try {
+                log.info("Storage Volume Cleanup: Wiping image file [{}] from persistent storage drive", physicalFilePath);
+                mediaUtil.delete(physicalFilePath);
+            } catch (IOException e) {
+                log.error("Storage Exception: Failed to wipe physical file matrix for key: " + physicalFilePath, e);
+                // Catch but do not rethrow so local storage glitches never lock database transaction rollbacks
+            }
         }
 
     }
