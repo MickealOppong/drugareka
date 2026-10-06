@@ -10,10 +10,14 @@ import java.util.Optional;
 @Repository
 public interface CategoryRepo extends JpaRepository<Category,Long> {
 
+    Optional<Category> findByNameAndParentIsNull(String name);
     Optional<Category> findByName(String name);
     Optional<Category> findBySlug(String slug);
     List<Category> findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc();
     List<Category> findAllByAndIsActiveIsTrue();
-    boolean existsByNameAndParentName(String name,String parent);
+    boolean existsByNameIgnoreCaseAndParent(String name,Category parent);
+    Optional<Category> findByNameIgnoreCaseAndParent(String name,Category parent);
+
+    boolean existsByNameIgnoreCaseAndParentIsNull(String name);
     Optional<Category> findByPath(String path);
 }

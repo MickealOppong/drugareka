@@ -10,7 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "categories")
+@Table(name = "categories", uniqueConstraints = {
+        // This physically allows "Shoes" to belong to Parent ID 1 (Men) AND Parent ID 2 (Women) simultaneously!
+        @UniqueConstraint(name = "uk_category_name_per_parent", columnNames = {"name", "parent_id"}),
+        @UniqueConstraint(name = "uk_category_slug_per_parent", columnNames = {"slug", "parent_id"})
+})
 @Getter
 @Setter
 @ToString

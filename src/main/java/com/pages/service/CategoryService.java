@@ -37,50 +37,75 @@ public class CategoryService {
 
 
 
-    public ResponseDto<Object> addCategory(CategoryRequest categoryDto){
-        try{
+    @Transactional
+    public ResponseDto<Object> addCategory(CategoryRequest categoryDto) {
+        try {
+            String incomingName = categoryDto.getName() != null ? categoryDto.getName().trim() : "";
+            String incomingParent = categoryDto.getParent() != null ? categoryDto.getParent().trim() : "";
+            boolean hasParent = !incomingParent.isBlank() && !incomingParent.equalsIgnoreCase("null");
 
-            if(categoryDto.getName().equalsIgnoreCase(categoryDto.getParent())){
-                throw new InvalidOperationException("Category cannot be same as parent");
+            if (hasParent && incomingName.equalsIgnoreCase(incomingParent)) {
+                throw new IllegalArgumentException("Category cannot be assigned as its own parent container.");
             }
 
-            if(categoryRepo.existsByNameAndParentName(categoryDto.getName(),categoryDto.getParent())){
+            // Isolate parent container node safely if present
+            Category parentNode = null;
+            if (hasParent) {
+                // Find the specific parent by name (assuming parent names at the root level are unique)
+                parentNode = categoryRepo.findByNameAndParentIsNull(incomingParent)
+                        .orElseThrow(() -> new IllegalArgumentException("Parent category root node not found matching: " + incomingParent));
+            }
+
+            boolean isDuplicate;
+            if (hasParent) {
+                // Checks if "Shoes" already exists under the "Men" branch ONLY.
+                isDuplicate = categoryRepo.existsByNameIgnoreCaseAndParent(incomingName, parentNode);
+            } else {
+                // Checks if the root category "Men" already exists globally
+                isDuplicate = categoryRepo.existsByNameIgnoreCaseAndParentIsNull(incomingName);
+            }
+
+            if (isDuplicate) {
                 return ResponseDto.builder()
-                        .message("Category already exists")
+                        .message("Category already exists inside this specific structural branch level")
                         .data(null)
                         .httpStatus(HttpStatus.BAD_REQUEST.value())
                         .build();
             }
-            Category parent = categoryRepo.findByName(categoryDto.getParent()).orElse(null);
+
+            String computedPath = UtilService.toPath(incomingName, hasParent ? parentNode.getSlug() : null);
 
             Category category = Category.builder()
-                    .slug(formatNameToSlug(categoryDto.getName()))
+                    .name(incomingName)
+                    .slug(UtilService.formatNameToSlug(incomingName))
                     .isActive(categoryDto.isActive())
-                    .sortOrder(categoryDto.getSortOrder())
-                    .parent(parent)
-                    .path(UtilService.toPath(categoryDto.getParent(),categoryDto.getName()))
-                    .name(categoryDto.getName())
+                    .sortOrder(categoryDto.getSortOrder() != null ? categoryDto.getSortOrder() : 0)
+                    .parent(parentNode)
+                    .path(computedPath)
                     .build();
-           Category savedCategory= categoryRepo.save(category);
 
-           /*
-                CATEGORY IMAGE
-            */
-           mediaService.uploadCategoryImage(categoryDto.getImage(),savedCategory);
+            Category savedCategory = categoryRepo.save(category);
+
+            if (categoryDto.getImage() != null && !categoryDto.getImage().isEmpty()) {
+                mediaService.uploadCategoryImage(categoryDto.getImage(), savedCategory);
+            }
 
             return ResponseDto.builder()
                     .message("Created")
                     .data(savedCategory)
                     .httpStatus(HttpStatus.OK.value())
                     .build();
-        }catch (Exception e){
+
+        } catch (Exception e) {
+            log.error("Category Insertion Collision Error: Fail to save taxonomy node.", e);
             return ResponseDto.builder()
                     .message(e.getMessage())
                     .data(false)
-                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .httpStatus(HttpStatus.BAD_REQUEST.value())
                     .build();
         }
     }
+
 
 
     public Category getCategoryById(Long id){
