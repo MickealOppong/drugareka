@@ -31,7 +31,7 @@ public class CategoryController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PostMapping(value = "/new",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseDto<Object> newCategory(@ModelAttribute @Valid  CategoryRequest dataToSend){
-        if(dataToSend.getImage()==null){
+        if(dataToSend.getParent()==null && dataToSend.getImage()==null){
             throw new PhotoNotFoundException( "Please add category image");
         }
         return categoryService.addCategory(dataToSend);
