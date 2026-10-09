@@ -150,7 +150,7 @@ public class SellerProfileService {
 
         Long sellerUserId = orderItem.getSeller().getId();
 
-        sellerProfileRepo.findByUserId(sellerUserId).ifPresentOrElse(seller -> {
+        sellerProfileRepo.findById(sellerUserId).ifPresentOrElse(seller -> {
             log.warn("Refund Engine: Processing financial return transaction for Seller: {} [Order Item ID: {}]",
                     seller.getUser().getUsername(), orderItem.getId());
 
