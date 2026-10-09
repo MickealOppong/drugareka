@@ -2,7 +2,6 @@ package com.pages.service;
 
 import com.pages.dto.AddressResponse;
 import com.pages.dto.OrderReturnRequest;
-import com.pages.dto.ResponseDto;
 import com.pages.enums.*;
 import com.pages.exception.AccessPermissionException;
 import com.pages.exception.EntityNotFoundException;
@@ -35,7 +34,6 @@ public class OrderReturnService {
     private final SellerShipmentRepo sellerShipmentRepo;
     private final SellerProfileService sellerProfileService;
     private final SellerPayoutService sellerPayoutService;
-    private final SellerProfileRepo sellerProfileRepo;
     private final PaymentService paymentService;
     private final InventoryItemRepo inventoryItemRepo;
     private final ReturnShipmentRepo returnShipmentRepo;
@@ -46,7 +44,7 @@ public class OrderReturnService {
 
     public OrderReturnService(OrderReturnRepo orderReturnRepo, ListingOrderItemRepo listingOrderItemRepo,
                               ListingOrderRepo listingOrderRepo, SellerShipmentRepo sellerShipmentRepo,
-                              SellerPayoutService sellerPayoutService, SellerProfileRepo sellerProfileRepo,
+                              SellerPayoutService sellerPayoutService,
                               SellerProfileService sellerProfileService, PaymentService paymentService,
                               InventoryItemRepo inventoryItemRepo, ReturnShipmentRepo returnShipmentRepo,
                               GlobalAddressService globalAddressService, AppUserRepo appUserRepo,
@@ -58,7 +56,6 @@ public class OrderReturnService {
         this.sellerPayoutService = sellerPayoutService;
         this.sellerProfileService = sellerProfileService;
         this.paymentService = paymentService;
-        this.sellerProfileRepo = sellerProfileRepo;
         this.inventoryItemRepo = inventoryItemRepo;
         this.returnShipmentRepo = returnShipmentRepo;
         this.globalAddressService = globalAddressService;
@@ -78,8 +75,8 @@ public class OrderReturnService {
     }
 
     // Dynamic bundle translation shortcut helper method
-    private String getMessage(String code, Object[] args) {
-        return messageSource.getMessage(code, args, LocaleContextHolder.getLocale());
+    private String getMessage(String code) {
+        return messageSource.getMessage(code, null, LocaleContextHolder.getLocale());
     }
 
     /**
@@ -90,25 +87,25 @@ public class OrderReturnService {
     @Transactional
     public Boolean executeReturn(Jwt jwt, OrderReturnRequest request) {
         if (jwt == null) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.access_denied", null));
+            throw new AccessPermissionException(getMessage("api_errors.order_return.access_denied"));
         }
 
         AppUser appUser = appUserRepo.findByUsername(jwt.getSubject())
-                .orElseThrow(() -> new UsernameNotFoundException(getMessage("api_errors.order_return.user_not_found", null)));
+                .orElseThrow(() -> new UsernameNotFoundException(getMessage("api_errors.order_return.user_not_found")));
 
         ListingOrderItem orderItem = listingOrderItemRepo.findById(request.getOrderItemId())
-                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.item_not_found", null)));
+                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.item_not_found")));
 
         // Strict Ownership Check: Verify that the user executing the request is the actual buyer
         ListingOrder parentOrder = orderItem.getListingOrder();
         if (parentOrder == null || !parentOrder.getBuyer().getId().equals(appUser.getId())) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.not_your_order", null));
+            throw new AccessPermissionException(getMessage("api_errors.order_return.not_your_order"));
         }
 
         // Check for existing return entries to block double-filing bugs
         OrderReturn returnItem = orderReturnRepo.findByListingOrderItem(orderItem).orElse(null);
         if (returnItem != null) {
-            throw new DuplicateKeyException(getMessage("api_errors.order_return.duplicate_record", null));
+            throw new DuplicateKeyException(getMessage("api_errors.order_return.duplicate_record"));
         }
 
         // ANTI-WITHDRAWAL SHIELD RULE 1:
@@ -124,25 +121,25 @@ public class OrderReturnService {
                 //  EXPLICIT BUSINESS RULE REJECTION:
                 // Throws an error to the frontend explaining that the seller may have already shipped the package.
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        getMessage("api_errors.order_return.withdrawal_blocked",null));
+                        getMessage("api_errors.order_return.withdrawal_blocked"));
             }
         }
 
         // ANTI-WITHDRAWAL SHIELD RULE 2:
         // Ensure the order item is in an authentic state that allows returns (must not be un-paid, canceled, or pending authorization)
         if (!orderItem.getOrderItemStatus().equals(OrderItemStatus.PAID) && !orderItem.getOrderItemStatus().equals(OrderItemStatus.RETURN_REQUESTED)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.invalid_status", null));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.invalid_status"));
         }
 
         SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(request.getOrderItemId())
-                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.undelivered_item", null)));
+                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.undelivered_item")));
 
         // Enforce the 24-hour return window cutoff rule tracking from deliveredAt
         Instant deadline = sellerShipment.getDeliveredAt().plus(24, ChronoUnit.HOURS);
         Instant now = Instant.now();
 
         if (now.isAfter(deadline)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.deadline_expired", null));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.deadline_expired"));
         }
 
         // Complete Financial Reversal Aggregation Matrix
@@ -175,7 +172,7 @@ public class OrderReturnService {
     @Transactional
     public void createReturnShipment(OrderReturn orderReturn) {
         if (orderReturn == null) {
-            throw new InvalidOperationException(getMessage("api_errors.logistics.shipment_not_found", null));
+            throw new InvalidOperationException(getMessage("api_errors.logistics.shipment_not_found"));
         }
 
         SellerProfile sellerProfile = orderReturn.getListingOrderItem().getSeller();
@@ -220,7 +217,7 @@ public class OrderReturnService {
             log.error("Security Shield Alert: Attempted background refund execution on an unconfirmed return! token: {}",token);
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_return.not_confirmed", null)
+                    getMessage("api_errors.order_return.not_confirmed")
             );
         }
 
@@ -279,20 +276,20 @@ public class OrderReturnService {
         if (jwt == null) {
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
-                    getMessage("api_errors.order_cancellation.unauthorized", null)
+                    getMessage("api_errors.order_cancellation.unauthorized")
             );
         }
 
         AppUser authenticatedUser = appUserRepo.findByUsername(jwt.getSubject())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        getMessage("api_errors.order_cancellation.user_not_found", null)
+                        getMessage("api_errors.order_cancellation.user_not_found")
                 ));
 
         ListingOrderItem orderItem = listingOrderItemRepo.findById(orderItemId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        getMessage("api_errors.order_cancellation.item_not_found", null)
+                        getMessage("api_errors.order_cancellation.item_not_found")
                 ));
 
         // SELLER IDENTITY AUTHENTICATION GUARD
@@ -303,7 +300,7 @@ public class OrderReturnService {
                     authenticatedUser.getId(), orderItem.getId(), sellerProfile != null ? sellerProfile.getId() : "NULL");
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    getMessage("api_errors.order_cancellation.forbidden", null)
+                    getMessage("api_errors.order_cancellation.forbidden")
             );
         }
 
@@ -312,14 +309,14 @@ public class OrderReturnService {
         if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_cancellation.already_shipped", null)
+                    getMessage("api_errors.order_cancellation.already_shipped")
             );
         }
 
         if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_cancellation.already_cancelled", null)
+                    getMessage("api_errors.order_cancellation.already_cancelled")
             );
         }
 
@@ -375,7 +372,7 @@ public class OrderReturnService {
             log.error("Fulfillment System Error: Critical failure executing merchant cancellation for ID: {}", orderItemId, e);
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    getMessage("api_errors.order_cancellation.gateway_failure", null)
+                    getMessage("api_errors.order_cancellation.gateway_failure")
             );
         }
     }

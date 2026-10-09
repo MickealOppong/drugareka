@@ -43,14 +43,12 @@ public class PaymentService {
     private final ShipmentService shipmentService;
     private final SellerProfileService sellerProfileService;
     private final EmailNotificationService emailNotificationService;
-    private final AppUserDetailsService appUserDetailsService;
     private final ListingOrderItemRepo listingOrderItemRepo;
     private final SellerShipmentTokenService sellerShipmentTokenService;
     private final MessageSource messageSource;
     private final ServiceChargeService serviceChargeService;
 
-    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
-                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService, MessageSource messageSource, ServiceChargeService serviceChargeService) {
+    public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService, MessageSource messageSource, ServiceChargeService serviceChargeService) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
@@ -59,7 +57,6 @@ public class PaymentService {
         this.shipmentService = shipmentService;
         this.sellerProfileService = sellerProfileService;
         this.emailNotificationService = emailNotificationService;
-        this.appUserDetailsService = appUserDetailsService;
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.sellerShipmentTokenService = sellerShipmentTokenService;
         this.messageSource = messageSource;
@@ -470,6 +467,7 @@ public class PaymentService {
                     .listingOrder(order.getListingOrder())
                     .status(PaymentStatus.REFUND)
                     .amount(order.getSellerPrice().negate())
+                    .provider(originalPayment.getProvider())
                     .currency(originalPayment.getCurrency())
                     .providerSessionId(originalPayment.getProviderSessionId())
                     .stripePaymentIntentId(originalPayment.getStripePaymentIntentId())
