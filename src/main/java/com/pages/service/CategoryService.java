@@ -334,7 +334,8 @@ public class CategoryService {
     }
 
     public List<CategoryResponse> top8Categories(){
-        return  categoryRepo.findTop8ByParentIsNullAndIsActiveIsTrueOrderBySortOrderAsc()
+
+        return  categoryRepo.findAll()
                 .stream().map(category -> {
                     String image= mediaService.getCategoryImage(category).getImage();
                     return CategoryResponse.builder()

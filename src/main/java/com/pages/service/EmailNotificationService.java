@@ -35,6 +35,12 @@ public class EmailNotificationService {
     @Value("${resend.api-key}")
     private String resendApiKey;
 
+    @Value("${delivery.confirmation.url}")
+    private String deliveryConfirmationUrl;
+
+    @Value("${return.confirmation.url}")
+    private String returnConfirmationUrl;
+
     @Value("${resend.from-email}")
     private String fromEmail;
 
@@ -44,6 +50,9 @@ public class EmailNotificationService {
     public EmailNotificationService() {
         this.restTemplate = new RestTemplate();
     }
+
+
+
 
     /**
      * Sends an HTML email through the Resend HTTPS API.
@@ -1022,6 +1031,235 @@ public class EmailNotificationService {
         sendHtmlEmail(sellerEmail, subject, htmlContent);
     }
 
+
+    /**
+     * Compiles a beautiful brand confirmation email when a product goes live.
+     */
+    @Async
+    public void sendDac7RolloverUpdate(
+            String sellerEmail,
+            String firstName,
+            int archivedSalesCount,
+            BigDecimal archivedGrossVolume,
+            int currentYear
+    ) {
+        String subject =
+                "Twój roczny licznik sprzedaży kasoa.pl został zresetowany! #" + currentYear;
+
+        String htmlContent = """
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin:0; padding:0; background:#f5f5f5; font-family:Arial,sans-serif; color:#333;">
+            <div style="max-width:600px; margin:40px auto; background:#ffffff;
+                        padding:32px; border-radius:8px;">
+
+                <h2 style="margin-top:0; color:#66704A;">
+                    Cześć %s!
+                </h2>
+
+                <p>
+                    Rozpoczął się nowy rok rozliczeniowy na <strong>kasoa.pl</strong>.
+                    Twój roczny licznik sprzedaży został zresetowany.
+                </p>
+
+                <p>
+                    Dane z poprzedniego okresu zostały zachowane:
+                </p>
+
+                <div style="background:#f7f8f4; padding:20px; border-radius:6px;">
+                    <p style="margin:0 0 10px;">
+                        <strong>Sprzedaż:</strong> %d
+                    </p>
+                    <p style="margin:0;">
+                        <strong>Łączna wartość sprzedaży:</strong> %s PLN
+                    </p>
+                </div>
+
+                <p style="margin-top:24px;">
+                    Licznik dla roku <strong>%d</strong> rozpoczyna się od zera.
+                </p>
+
+                <p>
+                    Dziękujemy, że korzystasz z kasoa.pl.
+                </p>
+
+                <p style="margin-top:32px; color:#777; font-size:13px;">
+                    To jest automatyczna wiadomość. Prosimy na nią nie odpowiadać.
+                </p>
+
+            </div>
+        </body>
+        </html>
+        """.formatted(
+                firstName,
+                archivedSalesCount,
+                archivedGrossVolume.toPlainString(),
+                currentYear
+        );
+
+        // Executes using the background async thread pool
+        sendHtmlEmail(sellerEmail, subject, htmlContent);
+    }
+
+    @Async
+    public void sendDac7AnnualResetFailureAdminEmail(
+            String adminEmail,
+            int currentYear,
+            Exception exception
+    ) {
+        String subject =
+                "🚨 KASOA.PL — CRITICAL DAC7 RESET FAILURE #" + currentYear;
+
+        String errorMessage = exception.getMessage() != null
+                ? exception.getMessage()
+                : exception.getClass().getName();
+
+        String htmlContent = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+
+        <body style="margin:0; padding:0; background:#f4f4f4;
+                     font-family:Arial,Helvetica,sans-serif; color:#333;">
+
+            <div style="max-width:650px; margin:40px auto;
+                        background:#ffffff; border-radius:8px;
+                        padding:35px;">
+
+                <h2 style="margin-top:0; color:#b91c1c;">
+                    🚨 DAC7 Annual Reset Failed
+                </h2>
+
+                <p>
+                    The annual DAC7 tax-year reset for
+                    <strong>kasoa.pl</strong> failed.
+                </p>
+
+                <div style="background:#fef2f2;
+                            border:1px solid #fecaca;
+                            border-radius:6px;
+                            padding:20px;
+                            margin:25px 0;">
+
+                    <p style="margin:0 0 12px;">
+                        <strong>Tax year:</strong> %d
+                    </p>
+
+                    <p style="margin:0 0 12px;">
+                        <strong>Status:</strong>
+                        <span style="color:#b91c1c; font-weight:bold;">
+                            CRITICAL FAILURE
+                        </span>
+                    </p>
+
+                    <p style="margin:0;">
+                        <strong>Error:</strong><br>
+                        %s
+                    </p>
+
+                </div>
+
+                <p>
+                    The annual DAC7 counters may not have been reset.
+                    Please investigate the application and database
+                    immediately.
+                </p>
+
+                <p style="margin-top:30px; font-size:13px; color:#777;">
+                    This is an automated critical notification generated
+                    by the kasoa.pl tax engine.
+                </p>
+
+            </div>
+        </body>
+        </html>
+        """.formatted(
+                currentYear,
+                escapeHtml(errorMessage)
+        );
+
+        sendHtmlEmail(adminEmail, subject, htmlContent);
+    }
+
+    @Async
+    public void sendDac7AnnualResetAdminEmail(
+            String adminEmail,
+            int modifiedRowsCount,
+            int currentYear
+    ) {
+        String subject =
+                "KASOA.PL — DAC7 Annual Tax Year Reset Completed #" + currentYear;
+
+        String htmlContent = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+
+        <body style="margin:0; padding:0; background:#f4f4f4;
+                     font-family:Arial,Helvetica,sans-serif; color:#333;">
+
+            <div style="max-width:650px; margin:40px auto; background:#ffffff;
+                        border-radius:8px; padding:35px;">
+
+                <h2 style="margin-top:0; color:#66704A;">
+                    DAC7 Annual Tax Year Reset
+                </h2>
+
+                <p>
+                    The annual DAC7 tax-year rollover for
+                    <strong>kasoa.pl</strong> has been completed successfully.
+                </p>
+
+                <div style="background:#f7f8f4; border-radius:6px;
+                            padding:20px; margin:25px 0;">
+
+                    <p style="margin:0 0 12px;">
+                        <strong>Tax year:</strong> %d
+                    </p>
+
+                    <p style="margin:0 0 12px;">
+                        <strong>Seller profiles updated:</strong> %d
+                    </p>
+
+                    <p style="margin:0;">
+                        <strong>Status:</strong>
+                        <span style="color:#4d7c0f; font-weight:bold;">
+                            SUCCESS
+                        </span>
+                    </p>
+
+                </div>
+
+                <p>
+                    The annual DAC7 tax counters have been reset and are now
+                    tracking activity for the new calendar year.
+                </p>
+
+                <p style="margin-top:30px; font-size:13px; color:#777;">
+                    This is an automated administrative notification generated
+                    by the kasoa.pl tax engine.
+                </p>
+
+            </div>
+        </body>
+        </html>
+        """.formatted(
+                currentYear,
+                modifiedRowsCount
+        );
+
+        sendHtmlEmail(adminEmail, subject, htmlContent);
+    }
 
 
     /**
@@ -2435,11 +2673,753 @@ public class EmailNotificationService {
         if (confirmationStatus && hasConfirmationToken) {
 
             String receiptConfirmationUrl =
-                    "https://www.kasoa.pl/account/orders"
+                    deliveryConfirmationUrl
+                            + "/confirm-receipt?token="
                             + URLEncoder.encode(
-                            orderNumber,
+                            receiptConfirmationToken,
                             StandardCharsets.UTF_8
-                    )
+                    );
+
+            String confirmationTitle;
+
+            if ("DELIVERED".equalsIgnoreCase(shipmentStatus)) {
+                confirmationTitle = "Przesyłka została dostarczona";
+            } else {
+                confirmationTitle = "Otrzymałeś przesyłkę?";
+            }
+
+            receiptConfirmationHtml = """
+            <table width="100%%"
+                   cellpadding="0"
+                   cellspacing="0"
+                   border="0"
+                   style="
+                       width:100%%;
+                       background:#EEF1E8;
+                       border:1px solid #DDE4D1;
+                       border-radius:14px;
+                       margin:0 0 24px 0;
+                   ">
+
+                <tr>
+                    <td style="
+                        padding:26px 24px;
+                        text-align:center;
+                    ">
+
+                        <div style="
+                            font-size:30px;
+                            line-height:36px;
+                            margin-bottom:10px;
+                        ">
+                            📦
+                        </div>
+
+                        <div style="
+                            font-size:18px;
+                            line-height:26px;
+                            font-weight:700;
+                            color:#182016;
+                            margin-bottom:10px;
+                        ">
+                            %s
+                        </div>
+
+                        <div style="
+                            font-size:14px;
+                            line-height:22px;
+                            color:#596052;
+                            margin-bottom:20px;
+                        ">
+                            Otrzymałeś przesyłkę?
+                            Sprawdź przedmiot i jeśli wszystko
+                            jest zgodne z zamówieniem, potwierdź
+                            odbiór.
+                        </div>
+
+                        <a href="%s"
+                           style="
+                               display:inline-block;
+                               background:#68764B;
+                               color:#FFFFFF;
+                               text-decoration:none;
+                               font-size:15px;
+                               line-height:20px;
+                               font-weight:700;
+                               padding:14px 24px;
+                               border-radius:10px;
+                           ">
+                            ✓ Potwierdź odbiór przedmiotu
+                        </a>
+
+                        <div style="
+                            font-size:11px;
+                            line-height:18px;
+                            color:#7A8172;
+                            margin-top:16px;
+                        ">
+                            Potwierdź odbiór dopiero po otrzymaniu
+                            i sprawdzeniu przesyłki.
+                        </div>
+
+                    </td>
+                </tr>
+
+            </table>
+            """.formatted(
+                    escapeHtml(confirmationTitle),
+                    escapeHtml(receiptConfirmationUrl)
+            );
+        }
+
+
+        /*
+         * ============================================================
+         * TRACKING INFORMATION
+         * ============================================================
+         */
+
+        String trackingHtml = "";
+
+        if (trackingNumber != null && !trackingNumber.isBlank()) {
+
+            trackingHtml = """
+            <tr>
+                <td style="
+                    padding:0 0 18px 0;
+                ">
+
+                    <div style="
+                        font-size:12px;
+                        line-height:18px;
+                        color:#7A8172;
+                        margin-bottom:4px;
+                    ">
+                        NUMER PRZESYŁKI
+                    </div>
+
+                    <div style="
+                        font-size:15px;
+                        line-height:22px;
+                        font-weight:600;
+                        color:#182016;
+                    ">
+                        %s
+                    </div>
+
+                </td>
+            </tr>
+            """.formatted(
+                    safeTrackingNumber
+            );
+        }
+
+
+        /*
+         * ============================================================
+         * SHIPPING METHOD
+         * ============================================================
+         */
+
+        String shippingMethodHtml = "";
+
+        if (shippingMethod != null && !shippingMethod.isBlank()) {
+
+            shippingMethodHtml = """
+            <tr>
+                <td style="
+                    padding:0 0 18px 0;
+                ">
+
+                    <div style="
+                        font-size:12px;
+                        line-height:18px;
+                        color:#7A8172;
+                        margin-bottom:4px;
+                    ">
+                        SPOSÓB DOSTAWY
+                    </div>
+
+                    <div style="
+                        font-size:15px;
+                        line-height:22px;
+                        font-weight:600;
+                        color:#182016;
+                    ">
+                        %s
+                    </div>
+
+                </td>
+            </tr>
+            """.formatted(
+                    safeShippingMethod
+            );
+        }
+
+
+        /*
+         * ============================================================
+         * NEXT STEP
+         * ============================================================
+         */
+
+        String nextStepText = getNextStepText(shipmentStatus);
+
+
+        /*
+         * ============================================================
+         * MAIN EMAIL
+         * ============================================================
+         */
+
+        String html = """
+        <!DOCTYPE html>
+        <html>
+
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport"
+                  content="width=device-width, initial-scale=1.0">
+
+            <title>
+                Aktualizacja zamówienia - kasoa.pl
+            </title>
+        </head>
+
+
+        <body style="
+            margin:0;
+            padding:0;
+            background:#F5F6F1;
+            font-family:Arial, Helvetica, sans-serif;
+            color:#182016;
+        ">
+
+        <table width="100%%"
+               cellpadding="0"
+               cellspacing="0"
+               border="0"
+               style="
+                   width:100%%;
+                   background:#F5F6F1;
+                   padding:32px 16px;
+               ">
+
+            <tr>
+                <td align="center">
+
+                    <table width="100%%"
+                           cellpadding="0"
+                           cellspacing="0"
+                           border="0"
+                           style="
+                               width:100%%;
+                               max-width:640px;
+                               background:#FFFFFF;
+                               border-radius:18px;
+                               overflow:hidden;
+                           ">
+
+
+                        <!-- ================================================= -->
+                        <!-- HEADER -->
+                        <!-- ================================================= -->
+
+                        <tr>
+                            <td style="
+                                background:#68764B;
+                                padding:28px 32px;
+                                text-align:center;
+                            ">
+
+                                <div style="
+                                    font-size:28px;
+                                    line-height:34px;
+                                    font-weight:800;
+                                    letter-spacing:-0.5px;
+                                    color:#FFFFFF;
+                                ">
+                                    kasoa.pl
+                                </div>
+
+                                <div style="
+                                    margin-top:6px;
+                                    font-size:13px;
+                                    line-height:20px;
+                                    color:#E9EDDF;
+                                ">
+                                    Druga ręka. Dobre rzeczy. Mniej odpadów.
+                                </div>
+
+                            </td>
+                        </tr>
+
+
+                        <!-- ================================================= -->
+                        <!-- CONTENT -->
+                        <!-- ================================================= -->
+
+                        <tr>
+                            <td style="
+                                padding:36px 32px 32px 32px;
+                            ">
+
+
+                                <!-- GREETING -->
+
+                                <div style="
+                                    font-size:24px;
+                                    line-height:32px;
+                                    font-weight:700;
+                                    color:#182016;
+                                    margin-bottom:8px;
+                                ">
+                                    Cześć %s! 👋
+                                </div>
+
+                                <div style="
+                                    font-size:15px;
+                                    line-height:24px;
+                                    color:#596052;
+                                    margin-bottom:24px;
+                                ">
+                                    Mamy aktualizację dotyczącą Twojego
+                                    zamówienia.
+                                </div>
+
+
+                                <!-- ================================================= -->
+                                <!-- STATUS -->
+                                <!-- ================================================= -->
+
+                                <table cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           margin:0 0 24px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td style="
+                                            background:#EEF1E8;
+                                            border-radius:20px;
+                                            padding:8px 14px;
+                                            font-size:13px;
+                                            line-height:18px;
+                                            font-weight:700;
+                                            color:#68764B;
+                                        ">
+                                            %s
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+
+                                <!-- ================================================= -->
+                                <!-- ORDER CARD -->
+                                <!-- ================================================= -->
+
+                                <table width="100%%"
+                                       cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           width:100%%;
+                                           background:#F8F9F5;
+                                           border:1px solid #E4E7DE;
+                                           border-radius:14px;
+                                           margin:0 0 20px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td style="
+                                            padding:22px;
+                                        ">
+
+                                            <div style="
+                                                font-size:12px;
+                                                line-height:18px;
+                                                color:#7A8172;
+                                                margin-bottom:5px;
+                                            ">
+                                                ZAMÓWIENIE
+                                            </div>
+
+                                            <div style="
+                                                font-size:20px;
+                                                line-height:27px;
+                                                font-weight:700;
+                                                color:#182016;
+                                                margin-bottom:20px;
+                                            ">
+                                                #%s
+                                            </div>
+
+
+                                            <div style="
+                                                font-size:12px;
+                                                line-height:18px;
+                                                color:#7A8172;
+                                                margin-bottom:5px;
+                                            ">
+                                                PRZEDMIOT
+                                            </div>
+
+                                            <div style="
+                                                font-size:16px;
+                                                line-height:23px;
+                                                font-weight:600;
+                                                color:#182016;
+                                            ">
+                                                %s
+                                            </div>
+
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+
+                                <!-- ================================================= -->
+                                <!-- SHIPPING CARD -->
+                                <!-- ================================================= -->
+
+                                <table width="100%%"
+                                       cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           width:100%%;
+                                           background:#FFFFFF;
+                                           border:1px solid #E4E7DE;
+                                           border-radius:14px;
+                                           margin:0 0 24px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td style="
+                                            padding:22px;
+                                        ">
+
+                                            <div style="
+                                                font-size:17px;
+                                                line-height:24px;
+                                                font-weight:700;
+                                                color:#182016;
+                                                margin-bottom:20px;
+                                            ">
+                                                📦 Informacje o przesyłce
+                                            </div>
+
+                                            <table width="100%%"
+                                                   cellpadding="0"
+                                                   cellspacing="0"
+                                                   border="0">
+
+                                                %s
+                                                %s
+
+                                            </table>
+
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+
+                                <!-- ================================================= -->
+                                <!-- RECEIPT CONFIRMATION -->
+                                <!-- ================================================= -->
+
+                                %s
+
+
+                                <!-- ================================================= -->
+                                <!-- ESCROW -->
+                                <!-- ================================================= -->
+
+                                <table width="100%%"
+                                       cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           width:100%%;
+                                           background:#F8F9F5;
+                                           border:1px solid #E4E7DE;
+                                           border-radius:14px;
+                                           margin:0 0 24px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td style="
+                                            padding:22px;
+                                        ">
+
+                                            <div style="
+                                                font-size:17px;
+                                                line-height:24px;
+                                                font-weight:700;
+                                                color:#182016;
+                                                margin-bottom:10px;
+                                            ">
+                                                🔒 Bezpieczna transakcja
+                                            </div>
+
+                                            <div style="
+                                                font-size:14px;
+                                                line-height:22px;
+                                                color:#596052;
+                                            ">
+                                                Płatność jest zabezpieczona
+                                                w systemie kasoa.pl.
+                                                Środki zostaną rozliczone
+                                                zgodnie z zasadami transakcji
+                                                po zakończeniu procesu.
+                                            </div>
+
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+
+                                <!-- ================================================= -->
+                                <!-- NEXT STEP -->
+                                <!-- ================================================= -->
+
+                                <table width="100%%"
+                                       cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           width:100%%;
+                                           background:#EEF1E8;
+                                           border-radius:14px;
+                                           margin:0 0 28px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td style="
+                                            padding:22px;
+                                        ">
+
+                                            <div style="
+                                                font-size:17px;
+                                                line-height:24px;
+                                                font-weight:700;
+                                                color:#182016;
+                                                margin-bottom:12px;
+                                            ">
+                                                Co dalej?
+                                            </div>
+
+                                            <div style="
+                                                font-size:14px;
+                                                line-height:23px;
+                                                color:#4F5849;
+                                            ">
+                                                %s
+                                            </div>
+
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+
+                                <!-- ================================================= -->
+                                <!-- CTA -->
+                                <!-- ================================================= -->
+
+                                <table width="100%%"
+                                       cellpadding="0"
+                                       cellspacing="0"
+                                       border="0"
+                                       style="
+                                           margin:0 0 8px 0;
+                                       ">
+
+                                    <tr>
+
+                                        <td align="center">
+
+                                            <a href="https://www.kasoa.pl"
+                                               style="
+                                                   display:inline-block;
+                                                   background:#68764B;
+                                                   color:#FFFFFF;
+                                                   text-decoration:none;
+                                                   font-size:15px;
+                                                   line-height:20px;
+                                                   font-weight:700;
+                                                   padding:14px 28px;
+                                                   border-radius:10px;
+                                               ">
+                                                Przejdź do kasoa.pl →
+                                            </a>
+
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+                            </td>
+                        </tr>
+
+
+                        <!-- ================================================= -->
+                        <!-- FOOTER -->
+                        <!-- ================================================= -->
+
+                        <tr>
+
+                            <td style="
+                                background:#F8F9F5;
+                                border-top:1px solid #E4E7DE;
+                                padding:24px 32px;
+                                text-align:center;
+                            ">
+
+                                <div style="
+                                    font-size:15px;
+                                    line-height:22px;
+                                    font-weight:700;
+                                    color:#182016;
+                                    margin-bottom:7px;
+                                ">
+                                    kasoa.pl
+                                </div>
+
+                                <div style="
+                                    font-size:12px;
+                                    line-height:19px;
+                                    color:#7A8172;
+                                ">
+                                    Dziękujemy, że dajesz rzeczom drugą szansę.
+                                </div>
+
+                                <div style="
+                                    font-size:11px;
+                                    line-height:18px;
+                                    color:#9AA092;
+                                    margin-top:12px;
+                                ">
+                                    Ta wiadomość została wygenerowana automatycznie.
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+                    </table>
+
+                </td>
+            </tr>
+
+        </table>
+
+        </body>
+        </html>
+        """.formatted(
+                safeBuyerName,
+                safeShipmentStatus,
+                safeOrderNumber,
+                safeProductName,
+                trackingHtml,
+                shippingMethodHtml,
+                receiptConfirmationHtml,
+                nextStepText
+        );
+
+
+        sendHtmlEmail(
+                buyerEmail,
+                subject,
+                html
+        );
+    }
+
+
+    public void sendShipmentStatusToSeller(
+            String buyerEmail,
+            String buyerName,
+            String orderNumber,
+            String productName,
+            String shipmentStatus,
+            String trackingNumber,
+            String shippingMethod,
+            String receiptConfirmationToken
+    ) {
+
+        String safeBuyerName = escapeHtml(buyerName);
+        String safeOrderNumber = escapeHtml(orderNumber);
+        String safeProductName = escapeHtml(productName);
+        String safeShipmentStatus = escapeHtml(shipmentStatus);
+        String safeTrackingNumber = escapeHtml(trackingNumber);
+        String safeShippingMethod = escapeHtml(shippingMethod);
+
+        String subject;
+
+        switch (shipmentStatus.toUpperCase()) {
+
+            case "SHIPPED" ->
+                    subject = "Twoje zamówienie #" + orderNumber
+                            + " zostało wysłane 📦";
+
+            case "DELIVERED" ->
+                    subject = "Twoje zamówienie #" + orderNumber
+                            + " zostało dostarczone ✓";
+
+            case "RECEIVED" ->
+                    subject = "Odbiór zamówienia #" + orderNumber
+                            + " został potwierdzony ✓";
+
+            default ->
+                    subject = "Aktualizacja zamówienia #" + orderNumber;
+        }
+
+
+        /*
+         * ============================================================
+         * RECEIPT CONFIRMATION
+         * ============================================================
+         *
+         * The confirmation button is displayed for:
+         *
+         * SHIPPED
+         * DELIVERED
+         *
+         * The URL does NOT directly confirm the order.
+         * It opens a confirmation page where the buyer must explicitly
+         * confirm receipt.
+         */
+
+        String receiptConfirmationHtml = "";
+
+        boolean confirmationStatus =
+                "SHIPPED".equalsIgnoreCase(shipmentStatus)
+                        || "DELIVERED".equalsIgnoreCase(shipmentStatus);
+
+        boolean hasConfirmationToken =
+                receiptConfirmationToken != null
+                        && !receiptConfirmationToken.isBlank();
+
+        if (confirmationStatus && hasConfirmationToken) {
+
+            String receiptConfirmationUrl =
+                   returnConfirmationUrl
                             + "/confirm-receipt?token="
                             + URLEncoder.encode(
                             receiptConfirmationToken,

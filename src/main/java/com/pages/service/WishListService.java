@@ -135,7 +135,7 @@ public class WishListService {
                         .createAt(item.getCreatedAt())
                         .productName(inventoryItem.getProductCatalog().getName())
                         .inventoryStatus(inventoryItem.getStatus().name())
-                        .sellerPrice(priceService.getStoreNewPrice())
+                        .sellerPrice(priceService.getSellerNewPrice())
                         .image(mediaResponse!=null?mediaResponse.getImage():null)
                         .build();
             }).toList();

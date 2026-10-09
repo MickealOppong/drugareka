@@ -187,7 +187,7 @@ public class StripePaymentProviderService {
                 log.info("Processing checkout item line attributes - ID: {}, Product Name: {}", item.getId(), logProductName);
 
                 // Enforce null-safe default fallback mappings to bypass unboxing crashes
-                BigDecimal itemPriceField = item.getFinalizedPrice();
+                BigDecimal itemPriceField = item.getSellerPrice();
                 if (itemPriceField == null) {
                     log.warn("Warning: Item ID {} detected with null price parameters. Defaulting baseline to ZERO.", item.getId());
                     itemPriceField = BigDecimal.ZERO;

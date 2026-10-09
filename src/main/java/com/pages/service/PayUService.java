@@ -64,7 +64,7 @@ public class PayUService {
         //products
         List<PayUProduct> products = order.getItems().stream().map(item->{
 
-            BigDecimal unitPrice =item.getFinalizedPrice().add(item.getShippingCost())
+            BigDecimal unitPrice =item.getSellerPrice().add(item.getShippingCost()).add(item.getServiceCharge())
                     .multiply(BigDecimal.valueOf(100))
                     .setScale(0, RoundingMode.HALF_UP);
 

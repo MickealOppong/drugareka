@@ -43,13 +43,11 @@ public class ListingOrderItem extends LogEntity {
     private String productBrandSnapshot;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal finalizedPrice;
+    private BigDecimal serviceCharge;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal sellerPrice;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal subtotal;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal shippingCost;

@@ -41,6 +41,8 @@ public class OrderDto {
 
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal orderTotal;
+    private BigDecimal price;
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal serviceCharge;
 
 }

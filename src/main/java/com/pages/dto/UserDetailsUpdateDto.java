@@ -39,6 +39,9 @@ public class UserDetailsUpdateDto {
     // Optional field - tracking parameters can remain standard string values
     private String country;
 
+    @Pattern(regexp = "^\\d{11}$",message = "Pesel must be 11 digit")
+    private String pesel;
+
     @NotBlank(message = "Kod pocztowy nie może być pusty")
     @Pattern(
             regexp = "\\d{2}-\\d{3}",

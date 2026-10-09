@@ -18,6 +18,7 @@ public class CartItemDto {
 
     private Long listingId;
     private BigDecimal price;
+    private BigDecimal serviceCharge;
     private Instant reservedUntil;
     private Long inventoryId;
     private Long cartItemId;

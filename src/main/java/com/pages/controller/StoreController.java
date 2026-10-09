@@ -2,6 +2,7 @@ package com.pages.controller;
 
 import com.pages.dto.*;
 import com.pages.exception.PhotoNotFoundException;
+import com.pages.repository.ReturnShipmentRepo;
 import com.pages.service.*;
 import com.pages.util.UtilService;
 import jakarta.validation.Valid;
@@ -55,6 +56,9 @@ public class StoreController {
 
     @Autowired
     private ShipmentService shipmentService;
+    @Autowired
+    private OrderReturnService orderReturnService;
+
 
 
 
@@ -108,6 +112,26 @@ public class StoreController {
     @PutMapping("/confirm-delivery")
     public ResponseEntity<Boolean> validateDelivery(@RequestParam("token") String token){
        return ResponseEntity.ok(listingOrderService.validateDelivery(token));
+    }
+
+    @GetMapping("/verify-confirmation")
+    public ResponseEntity<Boolean> isAlreadyConfirmed(@RequestParam("token") String token){
+        return ResponseEntity.ok(listingOrderService.isDeliveryConfirmed(token));
+    }
+
+    @PutMapping("/confirm-return")
+    public ResponseEntity<Boolean> validateReturnDelivery(@RequestParam("token") String token){
+        boolean isConfirmed = shipmentService.validateDelivery(token);
+        if(isConfirmed){
+            orderReturnService.executeFinancialItemRefundOnReceipt(token);
+        }
+        return ResponseEntity.ok(isConfirmed);
+    }
+
+    @GetMapping("/verify-return")
+    public ResponseEntity<Boolean> isReturnAlreadyConfirmed(@RequestParam("token") String token){
+        return ResponseEntity.ok(shipmentService.isDeliveryConfirmed(token));
+
     }
 
 

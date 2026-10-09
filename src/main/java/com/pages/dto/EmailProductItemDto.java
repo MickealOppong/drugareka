@@ -16,4 +16,5 @@ public class EmailProductItemDto {
    private BigDecimal amount;
    private Long quantity=1L;
    private BigDecimal shippingCost;
+   private BigDecimal serviceCharge;
 }

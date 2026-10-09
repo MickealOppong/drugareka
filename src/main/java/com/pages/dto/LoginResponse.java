@@ -17,6 +17,7 @@ public class LoginResponse {
     private String email;
     private TokenDto tokenDto;
     private Set<String> roles;
+    private Boolean hasAddress;
 
 }
 

@@ -29,7 +29,6 @@ public class ShipmentConfirmationController {
 
     @PostMapping(value = "/ship",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public void executeShipment(ShipmentConfirmationRequest request){
-
         shipmentService.createDpdShipment(request);
     }
 

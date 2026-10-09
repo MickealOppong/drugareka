@@ -42,6 +42,8 @@ public class PaymentController {
             PayUNotification notification =
                     objectMapper.readValue(rawBody, PayUNotification.class);
 
+            log.info("PayU notif {}",objectMapper);
+
             // 3. Process notification
             paymentService.handleNotification(notification);
         } catch (Exception e) {

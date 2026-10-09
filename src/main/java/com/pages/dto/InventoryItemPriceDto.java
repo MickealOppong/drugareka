@@ -19,8 +19,8 @@ public class InventoryItemPriceDto {
     private BigDecimal sellerNewPrice;
     private InventoryItem inventoryItem;
 
-    private BigDecimal storeOldPrice;
-    private BigDecimal storeNewPrice;
+    private BigDecimal oldServiceCharge;
+    private BigDecimal newServiceCharge;
 
     private String reason;
 }

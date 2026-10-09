@@ -35,7 +35,6 @@ public class ListingOrderService {
     private final AppUserDetailsService appUserDetailsService;
 
     private final CartService cartService;
-    private final PaymentService paymentService;
 
 
     private final InventoryItemRepo inventoryItemRepo;
@@ -44,12 +43,11 @@ public class ListingOrderService {
     private final SellerProfileService sellerProfileService;
     private final SellerShipmentRepo sellerShipmentRepo;
 
-    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService, @Lazy PaymentService paymentService, InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, SellerShipmentRepo sellerShipmentRepo) {
+    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService,InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, SellerShipmentRepo sellerShipmentRepo) {
         this.listingOrderRepo = listingOrderRepo;
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.cartService = cartService;
-        this.paymentService = paymentService;
         this.inventoryItemRepo = inventoryItemRepo;
         this.inventoryItemPriceService = inventoryItemPriceService;
         this.sellerProfileService = sellerProfileService;
@@ -86,6 +84,18 @@ public class ListingOrderService {
                 .map(CartItemDto::getPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+
+        BigDecimal serviceCharge = cart.getCartItemList().stream()
+                .map(CartItemDto::getServiceCharge)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal shippingCharge = cart.getCartItemList().stream()
+                .map(CartItemDto::getShipping)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        //ORDER TOTAL EXCLUDING SHIPPING COST
+        BigDecimal orderTotal = serviceCharge.add(subTotal).add(shippingCharge);
+
         AppUser buyer = appUserDetailsService.getAppUserId(cart.getBuyerId());
 
         // 2. Build and save the Initial Order Header Container Anchor Instance
@@ -94,17 +104,13 @@ public class ListingOrderService {
                 .buyer(buyer)
                 .buyerNameSnapshot(buyer.getFirstName()+" "+buyer.getLastName())
                 .shippingAddress(permanentShippingAddress)
-                .totalShipmentCost(BigDecimal.ZERO)
-                .orderTotal(subTotal)
+                .orderTotal(orderTotal)
                 .currency("PLN")
-                .subTotal(subTotal)
                 .orderStatus(OrderStatus.PROCESSING)
                 .build();
 
         ListingOrder orderHeader = listingOrderRepo.save(listingOrder);
 
-        BigDecimal totalShippingCost = BigDecimal.ZERO;
-        BigDecimal subtotalAccumulator = BigDecimal.ZERO;
 
         for (CartItemDto cartItem : cart.getCartItemList()) {
             // Hold explicit row-level database locks to completely eliminate overselling or racing
@@ -123,18 +129,8 @@ public class ListingOrderService {
             inventoryItem.setReservedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
             inventoryItemRepo.save(inventoryItem);
 
-            // Accumulate mathematical parameters
-            BigDecimal itemPrice = cartItem.getPrice();
-            BigDecimal shipping = cartItem.getShipping();
-
-            subtotalAccumulator = subtotalAccumulator.add(itemPrice);
-            totalShippingCost = totalShippingCost.add(shipping);
 
             log.info("Compiling order item for seller User ID: {}", inventoryItem.getSeller().getUser().getId());
-
-            // Extract historical seller records safely
-            InventoryItemPrice sellerPrice = inventoryItemPriceService.getPrices(inventoryItem.getId());
-            BigDecimal sellerItemPrice = (sellerPrice != null) ? sellerPrice.getSellerNewPrice() : BigDecimal.ZERO;
 
             //seller name
             String sellerName = inventoryItem.getSeller().getUser().getFirstName()+" "+inventoryItem.getSeller().getUser().getLastName();
@@ -143,16 +139,15 @@ public class ListingOrderService {
                     .listingOrder(orderHeader)
                     .listingId(cartItem.getListingId())
                     .seller(inventoryItem.getSeller())
-                    .finalizedPrice(itemPrice.add(shipping))
-                    .subtotal(itemPrice)
+                    .serviceCharge(cartItem.getServiceCharge())
                     .sellerNameSnapshot(sellerName)
                     .shippingMethod(ShippingMethod.DPD)
                     .productBrandSnapshot(inventoryItem.getProductCatalog().getBrand().getName())
                     .productConditionSnapshot(inventoryItem.getProductCondition().getName())
                     .productNameSnapshot(inventoryItem.getProductCatalog().getName())
-                    .sellerPrice(sellerItemPrice)
+                    .sellerPrice(cartItem.getPrice())
                     .inventoryItem(inventoryItem)
-                    .shippingCost(shipping)
+                    .shippingCost(cartItem.getShipping())
                     .orderItemStatus(OrderItemStatus.PROCESSING) // Synchronize state controllers cleanly
                     .build();
 
@@ -161,9 +156,6 @@ public class ListingOrderService {
         }
 
         // 6. Update single parent aggregate figures cleanly
-        orderHeader.setSubTotal(subtotalAccumulator);
-        orderHeader.setTotalShipmentCost(totalShippingCost);
-        orderHeader.setOrderTotal(subtotalAccumulator.add(totalShippingCost));
         orderHeader.setOrderStatus(OrderStatus.PROCESSING);
 
         // 7. Flush the completely unified object graph in a single atomic database pass!
@@ -207,6 +199,21 @@ public class ListingOrderService {
         return true;
     }
 
+    public boolean isDeliveryConfirmed(String token) {
+
+        ListingOrderItem orderItem =
+                listingOrderItemRepo
+                        .findByReceiptConfirmationToken(token)
+                        .orElse(null);
+
+        if (orderItem == null) {
+            return false;
+        }
+
+        // Already confirmed
+        return orderItem.getReceiptConfirmedAt() != null;
+    }
+
     public void save(ListingOrderItem listingOrderItem){
         listingOrderItemRepo.save(listingOrderItem);
     }
@@ -238,7 +245,8 @@ public class ListingOrderService {
                  return OrderDto.builder()
                          .id(order.getListingOrder().getId())
                          .orderNumber(order.getListingOrder().getOrderNumber())
-                         .orderTotal(order.getListingOrder().getOrderTotal())
+                         .price(order.getListingOrder().getOrderTotal())
+                         .serviceCharge(order.getServiceCharge())
                          .orderStatus(order.getListingOrder().getOrderStatus())
                          .paidAt(order.getListingOrder().getPaidAt())
                          .buyer(order.getListingOrder().getBuyerNameSnapshot())
@@ -276,15 +284,28 @@ public class ListingOrderService {
                 Page<OrderDto> orders =listingOrderRepo.findByBuyerId(buyerId, pageable).map(order->{
 
 
+                    //SHIPPING TOTAL
+                    BigDecimal shippingCost = order.getItems().stream().map(ListingOrderItem::getShippingCost)
+                            .reduce(BigDecimal.ZERO,BigDecimal::add);
+
+                    //ORDER TOTAL
+                    BigDecimal totalValue = order.getItems().stream().map(ListingOrderItem::getSellerPrice)
+                            .reduce(BigDecimal.ZERO,BigDecimal::add);
+
+                    //TOTAL SERVICE CHARGE
+                    BigDecimal totalServiceCharge = order.getItems().stream().map(ListingOrderItem::getServiceCharge)
+                            .reduce(BigDecimal.ZERO,BigDecimal::add);
+
                     return OrderDto.builder()
                             .id(order.getId())
                             .orderNumber(order.getOrderNumber())
-                            .orderTotal(order.getSubTotal())
-                            .shipping(order.getTotalShipmentCost())
+                            .price(totalValue)
                             .orderStatus(order.getOrderStatus())
                             .currency(order.getCurrency())
+                            .shipping(shippingCost)
+                            .serviceCharge(totalServiceCharge)
                             .createdAt(order.getCreatedAt())
-                            .seller("Store")
+                            .seller("Private person")
                             .buyer(order.getBuyerNameSnapshot())
                             .paidAt(order.getPaidAt())
                             .build();
@@ -321,7 +342,8 @@ public class ListingOrderService {
                 return OrderDto.builder()
                         .id(orderItem.getListingOrder().getId())
                         .orderNumber(orderItem.getListingOrder().getOrderNumber())
-                        .orderTotal(orderItem.getFinalizedPrice())
+                        .price(orderItem.getSellerPrice())
+                        .serviceCharge(orderItem.getServiceCharge())
                         .shipping(orderItem.getShippingCost())
                         .orderStatus(orderItem.getListingOrder().getOrderStatus())
                         .currency(orderItem.getListingOrder().getCurrency())
@@ -373,13 +395,14 @@ public class ListingOrderService {
                 return OrderDto.builder()
                         .id(orderItem.getId())
                         .orderNumber(orderItem.getListingOrder().getOrderNumber())
-                        .orderTotal(orderItem.getSellerPrice())
+                        .price(orderItem.getSellerPrice())
+                        .serviceCharge(orderItem.getServiceCharge())
                         .shipping(orderItem.getShippingCost())
                         .orderItemStatus(orderItem.getOrderItemStatus())
                         .currency(orderItem.getListingOrder().getCurrency())
                         .createdAt(orderItem.getCreatedAt())
                         .seller(orderItem.getSellerNameSnapshot())
-                        .buyer("Store")
+                        .buyer("Private person")
                         .paidAt(orderItem.getListingOrder().getPaidAt())
                         .build();
             });
@@ -437,7 +460,8 @@ public class ListingOrderService {
                   OrderDto dto= OrderDto.builder()
                             .id(item.getId())
                             .orderNumber(order.getOrderNumber())
-                            .orderTotal(item.getSubtotal())
+                            .price(item.getSellerPrice())
+                          .serviceCharge(item.getServiceCharge())
                             .shipping(item.getShippingCost())
                             .orderStatus(order.getOrderStatus())
                             .currency(order.getCurrency())
@@ -446,7 +470,7 @@ public class ListingOrderService {
                           .deliveryStatus(shipmentStatus)
                           .orderItemStatus(item.getOrderItemStatus())
                           .deliveryUpdatedAt(updatedAt)
-                            .seller("Store")
+                            .seller("Private person")
                             .buyer(item.getListingOrder().getBuyerNameSnapshot())
                             .paidAt(order.getPaidAt())
                             .build();

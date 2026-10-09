@@ -9,6 +9,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @Builder
@@ -20,13 +21,26 @@ public class SellerProfileDto {
 
     private boolean identityVerified;
 
-    private String name;
-
     private Instant verifiedAt;
 
-    private BigDecimal totalSales =BigDecimal.ZERO;
+    private BigDecimal totalSales = BigDecimal.ZERO;
 
-    private Integer successfulOrders;
+    private BigDecimal totalSettlement = BigDecimal.ZERO;
 
-    private Integer cancelledOrders;
+
+    private String pesel;
+
+    private String fullLegalName;
+
+    private String permanentResidentialAddress;
+
+    private LocalDate dateOfBirth;
+
+    private Integer currentYearSalesCount = 0;
+
+    private BigDecimal currentYearGrossVolumePln = BigDecimal.ZERO;
+
+    private boolean isDac7Reportable = false;
+
+    private Instant dac7FlaggedAt;
 }

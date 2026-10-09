@@ -63,6 +63,10 @@ public class AppUserDetailsService implements UserDetailsService {
         return new User(appUser.getUsername(),appUser.getPassword(),appUser.getAuthorities());
     }
 
+    public Boolean hasAddress(Long userId){
+        GlobalAddress address =globalAddressRepo.findByAppUserId(userId).orElse(null);
+        return address != null;
+    }
 
 
     public void addSellerRole(AppUser appUser){
@@ -233,7 +237,9 @@ public class AppUserDetailsService implements UserDetailsService {
                .firstName(appUser.getFirstName())
                .accountNumber(appUser.getAccountNumber())
                .lastName(appUser.getLastName())
+               .pesel(appUser.getPesel())
                .address(addressResponse)
+
                .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                .build();
        return ResponseDto.builder()
@@ -324,6 +330,16 @@ public class AppUserDetailsService implements UserDetailsService {
                 appUser.setLastName(
                         userDetailsDto
                                 .getLastName()
+                                .trim()
+                );
+            }
+
+            if (StringUtils.hasText(
+                    userDetailsDto.getPesel()
+            )) {
+                appUser.setPesel(
+                        userDetailsDto
+                                .getPesel()
                                 .trim()
                 );
             }
@@ -420,7 +436,7 @@ public class AppUserDetailsService implements UserDetailsService {
                 globalAddressRepo.save(newAddress);
             }
 
-            appUserRepo.save(appUser);
+           appUserRepo.save(appUser);
 
             return ResponseDto.builder()
                     .data(true)

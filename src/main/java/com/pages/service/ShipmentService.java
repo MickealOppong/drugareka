@@ -110,7 +110,7 @@ public class ShipmentService {
                             .deliveredAt(shipment.getDeliveredAt())
                             .deliveryAddress(shipment.getShippingAddress())
                             .listingOrderId(shipment.getListingOrderItem().getListingId())
-                            .seller(shipment.getSeller().getUser().getFirstName() + " " + shipment.getSeller().getUser().getLastName())
+                            .seller("Private person")
                             .shippedAt(shipment.getShippedAt())
                             .trackingNumber(shipment.getTrackingNumber())
                             .itemSize(shipment.getItemSize().name())
@@ -142,14 +142,16 @@ public class ShipmentService {
             Page<ShipmentResponse> shipments = returnShipmentRepo.findByOrderReturnListingOrderItemListingOrderBuyer(appUser, pageable)
                     .map(shipment -> {
                         SellerProfile sellerProfile = shipment.getOrderReturn().getListingOrderItem().getSeller();
-                        String fallbackSellerName = sellerProfile.getUser().getFirstName() + " " + sellerProfile.getUser().getLastName();
+
+                        //String fallbackSellerName = sellerProfile.getUser().getFirstName() + " " + sellerProfile.getUser().getLastName();
+
                         return ShipmentResponse.builder()
                                 .id(shipment.getId())
                                 .orderNumber(shipment.getOrderReturn().getListingOrderItem().getListingOrder().getOrderNumber())
                                 .deliveredAt(shipment.getDeliveredAt())
                                 .deliveryAddress(shipment.getAddress())
                                 .listingOrderId(shipment.getOrderReturn().getListingOrderItem().getId())
-                                .seller(fallbackSellerName)
+                                .seller("Private person")
                                 .itemSize(shipment.getItemSize())
                                 .shippedAt(shipment.getShippedAt())
                                 .trackingNumber(shipment.getTrackingNumber())
@@ -284,8 +286,7 @@ public class ShipmentService {
 
         String token = "";
 
-        if ("SHIPPED".equalsIgnoreCase(status)
-                || "DELIVERED".equalsIgnoreCase(status)) {
+        if ( "DELIVERED".equalsIgnoreCase(status)) {
 
             token = UtilService.generateReceiptConfirmationToken();
 
@@ -327,11 +328,13 @@ public class ShipmentService {
                 .build();
     }
 
+    /**
+     * AUTOMATED RETURN COURIER WEBHOOK RECEIVER
+     * Updates real-time parcel tracks on your Railway persistent volume data records.
+     * Automatically triggers the final platform ledger clawbacks when the item lands back with the seller.
+     */
     @Transactional
-    public ResponseDto<Boolean> updateReturnShippingStatus(
-            Jwt jwt,
-            ShipmentRequest request
-    ) {
+    public ResponseDto<Boolean> updateReturnShippingStatus(Jwt jwt, ShipmentRequest request) {
         if (jwt == null) {
             return ResponseDto.<Boolean>builder()
                     .data(false)
@@ -340,9 +343,7 @@ public class ShipmentService {
                     .build();
         }
 
-        ReturnShipment shipment = returnShipmentRepo
-                .findById(request.getShipmentId())
-                .orElse(null);
+        ReturnShipment shipment = returnShipmentRepo.findById(request.getShipmentId()).orElse(null);
 
         if (shipment == null) {
             return ResponseDto.<Boolean>builder()
@@ -353,15 +354,13 @@ public class ShipmentService {
         }
 
         Instant requestedActionDate = request.getCreatedAt() != null
-                ? request.getCreatedAt()
-                .atStartOfDay(ZoneId.systemDefault())
-                .toInstant()
+                ? request.getCreatedAt().atStartOfDay(ZoneId.systemDefault()).toInstant()
                 : null;
 
         String status = request.getStatus();
 
-        if (("SHIPPED".equalsIgnoreCase(status)
-                || "DELIVERED".equalsIgnoreCase(status))
+        // Strict date validation guardrails
+        if (("SHIPPED".equalsIgnoreCase(status) || "DELIVERED".equalsIgnoreCase(status) || "RETURNED".equalsIgnoreCase(status))
                 && requestedActionDate == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -369,11 +368,13 @@ public class ShipmentService {
             );
         }
 
+
         if ("SHIPPED".equalsIgnoreCase(status)) {
             shipment.setShippedAt(requestedActionDate);
         }
 
-        if ("DELIVERED".equalsIgnoreCase(status)) {
+        //  Natively evaluates both "DELIVERED" and "RETURNED" webhooks cleanly
+        if ("DELIVERED".equalsIgnoreCase(status) || "RETURNED".equalsIgnoreCase(status)) {
             Instant existingShippedAt = shipment.getShippedAt();
 
             if (existingShippedAt == null) {
@@ -386,34 +387,134 @@ public class ShipmentService {
             if (requestedActionDate != null && requestedActionDate.isBefore(existingShippedAt)) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        getMessage(
-                                "api_errors.shipment.validation.invalid_delivery_sequence"
-                        )
+                        getMessage("api_errors.shipment.validation.invalid_delivery_sequence")
                 );
             }
 
-            shipment.setDeliveredAt(requestedActionDate);
+            //  Map to your correct, explicit ReturnShipment property column!
+            shipment.setDeliveredAt(requestedActionDate != null ? requestedActionDate : Instant.now());
+            String token = UtilService.generateShipmentToken().getToken();
+            shipment.setReceiptConfirmationToken(token);
+            shipment.setReceiptConfirmationTokenExpiresAt(Instant.now().plus(3,ChronoUnit.DAYS));
+            returnShipmentRepo.save(shipment);
+            sendNotification(shipment,token);
         }
 
-        if ("RETURNED".equalsIgnoreCase(status)) {
-            shipment.setDeliveredAt(
-                    requestedActionDate != null
-                            ? requestedActionDate
-                            : Instant.now()
-            );
-        }
-
+        // Map and save core metadata properties safely
         shipment.setShipmentStatus(getShippingStatus(status));
-        shipment.setComment(request.getComment());
         shipment.setTrackingNumber(request.getTrackingNumber());
+        // Note: Assure your ReturnShipment entity supports custom comment variables if requested!
 
-        returnShipmentRepo.save(shipment);
+         returnShipmentRepo.save(shipment);
+        returnShipmentRepo.flush();
 
         return ResponseDto.<Boolean>builder()
                 .data(true)
                 .message(getMessage("api_responses.shipment.updated_success"))
                 .httpStatus(HttpStatus.OK.value())
                 .build();
+    }
+
+
+
+    private void sendNotification(ReturnShipment shipment, String token) {
+        if (shipment == null) return;
+
+        // STEP 1: DEFENSIVE EXTRACTION LAYER
+        OrderReturn returnOrder = shipment.getOrderReturn();
+        if (returnOrder == null) {
+            log.error("Notification Shield: Aborting dispatch. OrderReturn relation missing for Shipment ID: {}", shipment.getId());
+            return;
+        }
+
+        ListingOrderItem listingOrderItem = returnOrder.getListingOrderItem();
+        if (listingOrderItem == null) {
+            log.error("Notification Shield: Aborting dispatch. ListingOrderItem snapshot missing for Return ID: {}", returnOrder.getId());
+            return;
+        }
+
+        ListingOrder order = listingOrderItem.getListingOrder();
+        SellerProfile sellerProfile = listingOrderItem.getSeller();
+
+        // STEP 2:  EXTRACT CORRECT ADDRESS CHANNELS
+        // Seller details (Receiving the returned box)
+        String sellerEmail = (sellerProfile != null && sellerProfile.getUser() != null) ? sellerProfile.getUser().getUsername() : null;
+        String sellerName = sellerProfile != null ? sellerProfile.getFullLegalName() : "Użytkownik Kasoa";
+
+
+        String orderNumber = order != null ? order.getOrderNumber() : "000000";
+        String productName = listingOrderItem.getProductNameSnapshot() != null ? listingOrderItem.getProductNameSnapshot() : "Produkt";
+
+        // Pull dynamically from your enum mapping fields instead of hardcoding "DPD"!
+        String activeCarrierMethod = shipment.getCarrier() != null ? shipment.getCarrier() : "PRZESYŁKA_MANUALNA";
+        String trackingCodeStr = shipment.getTrackingNumber() != null ? shipment.getTrackingNumber() : "BRAK_NUMERU";
+        String currentStatusStr = shipment.getShipmentStatus() != null ? shipment.getShipmentStatus().name() : "PENDING";
+
+        log.info("Notification Shield: Preparing dual dispatch routes for Return Tracking Ref: #{}", trackingCodeStr);
+
+        //  STEP 3: DISPATCH EMAIL METRICS TO THE CORRECT CHANNELS
+
+        // Route A: Alert the Seller that their manual confirmation link token is ready for inspection
+        if (sellerEmail != null && token != null) {
+            log.info("Notification Shield: Routing signed manual verification token link to Seller: {}", sellerEmail);
+
+            // Reuses your async Resend service engine to push your new polymorphic link url tracking parameters
+            emailNotificationService.sendShipmentStatusToSeller(
+                    sellerEmail,
+                    sellerName,
+                    orderNumber,
+                    productName,
+                    currentStatusStr,
+                    trackingCodeStr,
+                    activeCarrierMethod,
+                    token
+            );
+        }
+
+    }
+
+
+    public boolean validateDelivery(String token) {
+
+     ReturnShipment  orderItem =returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
+
+        if (orderItem == null) {
+            return false;
+        }
+
+        Instant now = Instant.now();
+
+        // Token expired
+        if (orderItem.getReceiptConfirmationTokenExpiresAt() == null
+                || orderItem.getReceiptConfirmationTokenExpiresAt().isBefore(now)) {
+            return false;
+        }
+
+        // Already confirmed
+        if (orderItem.getReceiptConfirmedAt() != null) {
+            return false;
+        }
+
+        // Confirm receipt
+        orderItem.setReceiptConfirmedAt(now);
+
+        // Invalidate token
+        orderItem.setReceiptConfirmationTokenExpiresAt(now);
+
+        returnShipmentRepo.save(orderItem);
+
+        return true;
+    }
+
+    public boolean isDeliveryConfirmed(String token) {
+
+     ReturnShipment orderItem=  returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
+
+        if (orderItem == null) {
+            return false;
+        }
+        // Already confirmed
+        return orderItem.getReceiptConfirmedAt() != null;
     }
 
     @Transactional(readOnly = true)

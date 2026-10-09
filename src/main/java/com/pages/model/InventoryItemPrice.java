@@ -30,10 +30,10 @@ public class InventoryItemPrice extends LogEntity {
     private BigDecimal sellerNewPrice =BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal storeOldPrice = BigDecimal.ZERO;
+    private BigDecimal oldServiceCharge = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal storeNewPrice = BigDecimal.ZERO;
+    private BigDecimal newServiceCharge = BigDecimal.ZERO;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "inventory_item_id", nullable = false)
@@ -46,8 +46,8 @@ public class InventoryItemPrice extends LogEntity {
         this.sellerOldPrice =dto.getSellerOldPrice();
         this.sellerNewPrice = dto.getSellerNewPrice();
         this.inventoryItem = dto.getInventoryItem();
-        this.storeOldPrice = dto.getStoreOldPrice();
-        this.storeNewPrice = dto.getStoreNewPrice();
+        this.oldServiceCharge = dto.getOldServiceCharge();
+        this.newServiceCharge = dto.getNewServiceCharge();
         this.reason = dto.getReason();
     }
 
@@ -57,8 +57,8 @@ public class InventoryItemPrice extends LogEntity {
                .sellerOLdPrice(this.sellerOldPrice)
                 .sellerNewPrice(this.getSellerNewPrice())
                .inventoryId(this.inventoryItem.getId())
-                .storeOldPrice(this.storeOldPrice)
-               .storeNewPrice(this.storeNewPrice)
+                .oldServiceCharge(this.oldServiceCharge)
+               .newServiceCharge(this.newServiceCharge)
                 .reason(this.reason)
                 .build();
     }

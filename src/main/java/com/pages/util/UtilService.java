@@ -112,12 +112,14 @@ public class UtilService {
                 .encodeToString(randomBytes);
     }
 
-    public static SellerShipmentToken generateSellerShipmentToken(){
+    public static SellerShipmentToken generateShipmentToken(){
         return SellerShipmentToken.builder()
                 .token(UUID.randomUUID().toString())
                 .expiresAt(Instant.now().plus(3, ChronoUnit.DAYS))
                 .build();
     }
+
+
 
 
         private static final Pattern PERFECT_FORMAT_PATTERN =

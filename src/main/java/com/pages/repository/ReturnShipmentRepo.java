@@ -10,6 +10,7 @@ import java.util.Optional;
 
 @Repository
 public interface ReturnShipmentRepo extends JpaRepository<ReturnShipment,Long> {
-    Optional<ReturnShipment> findByToken(String token);
+    Optional<ReturnShipment> findByReceiptConfirmationToken(String token);
     Page<ReturnShipment> findByOrderReturnListingOrderItemListingOrderBuyer(AppUser buyer, Pageable pageable);
+    Optional<ReturnShipment> findByOrderReturnId(Long id);
 }

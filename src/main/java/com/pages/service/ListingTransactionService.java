@@ -4,8 +4,10 @@ import com.pages.dto.*;
 import com.pages.enums.*;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
+import com.pages.repository.GlobalAddressRepo;
 import com.pages.repository.ListingTransactionRepo;
 import com.pages.specs.ListingSpecs;
+import com.pages.util.GlobalAddress;
 import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -39,7 +41,9 @@ public class ListingTransactionService {
     private final ProductConditionService productConditionService;
     private final EmailNotificationService emailNotificationService;
 
-    public ListingTransactionService(ListingTransactionRepo listingTransactionRepo, AppUserDetailsService appUserDetailsService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, ProductCatalogService productCatalogService, PricingService pricingService, InventoryItemService inventoryItemService, CategoryService categoryService, BrandService brandService, ProductConditionService productConditionService, EmailNotificationService emailNotificationService) {
+    public ListingTransactionService(ListingTransactionRepo listingTransactionRepo,
+                                     AppUserDetailsService appUserDetailsService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, ProductCatalogService productCatalogService, PricingService pricingService, InventoryItemService inventoryItemService, CategoryService categoryService, BrandService brandService, ProductConditionService productConditionService,
+                                     EmailNotificationService emailNotificationService) {
         this.listingTransactionRepo = listingTransactionRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.mediaService = mediaService;
@@ -105,7 +109,6 @@ public class ListingTransactionService {
 
             AppUser appUser =
                     appUserDetailsService.getAppUserByUsername(username);
-
             if (appUser == null) {
                 return ResponseDto.builder()
                         .data(false)
@@ -148,16 +151,37 @@ public class ListingTransactionService {
             // 6. VERIFY SELLER OWNS THIS LISTING
             // =====================================================
 
-            if (!inventoryItem.getSeller()
-                    .getId()
-                    .equals(sellerProfile.getId())) {
+            boolean isAdmin = appUser.getUserRoles().stream()
+                    .map(AppUserRole::getRole)
+                    .anyMatch(role -> role.equalsIgnoreCase("ROLE_ADMIN"));
 
-                return ResponseDto.builder()
-                        .data(false)
-                        .message("You are not authorised to edit this listing")
-                        .httpStatus(HttpStatus.FORBIDDEN.value())
-                        .build();
+            if (isAdmin) {
+                log.info("Security Gate: System Administrator [{}] granted moderation access to listing ID: {}",
+                        appUser.getUsername(), productData.getId());
+            } else {
+
+                if (sellerProfile == null) {
+                    log.warn("Security Shield: Access Denied. User [{}] has no registered seller profile.", appUser.getUsername());
+                    return ResponseDto.builder()
+                            .data(false)
+                            .message("You must register a seller profile before modifying listings.")
+                            .httpStatus(HttpStatus.FORBIDDEN.value())
+                            .build();
+                }
+
+                // EXPLICIT OWNERSHIP VERIFICATION CHECK
+                if (!inventoryItem.getSeller().getId().equals(sellerProfile.getId())) {
+                    log.warn("Security Shield: Unauthorized modification attempt on Listing [{}] by Vendor [{}]",
+                            inventoryItem.getId(), sellerProfile.getId());
+
+                    return ResponseDto.builder()
+                            .data(false)
+                            .message("You are not authorised to edit this listing.")
+                            .httpStatus(HttpStatus.FORBIDDEN.value())
+                            .build();
+                }
             }
+
 
 
             // =====================================================
@@ -264,12 +288,12 @@ public class ListingTransactionService {
                     oldPrice.compareTo(newPrice) != 0) {
 
                 BigDecimal newStorePrice =
-                        pricingService.calculateStorePrice(newPrice);
+                        pricingService.calculateServiceCharge(newPrice);
 
                 currentPrice.setSellerOldPrice(oldPrice);
                 currentPrice.setSellerNewPrice(newPrice);
-                currentPrice.setStoreOldPrice(currentPrice.getStoreNewPrice());
-                currentPrice.setStoreNewPrice(newStorePrice);
+                currentPrice.setOldServiceCharge(currentPrice.getNewServiceCharge());
+                currentPrice.setNewServiceCharge(newStorePrice);
                 currentPrice.setInventoryItem(inventoryItem);
                 currentPrice.setReason("Listing price updated");
 
@@ -332,7 +356,6 @@ public class ListingTransactionService {
 
     @jakarta.transaction.Transactional
     public ResponseDto<Object> addSellerProduct(Jwt jwt, ProductData productData) {
-        log.info("data:{}",productData);
         try {
 
             if (jwt == null) {
@@ -348,14 +371,26 @@ public class ListingTransactionService {
             String username = jwt.getSubject();
             AppUser appUser = appUserDetailsService.getAppUserByUsername(username);
 
+            boolean hasAddress = appUserDetailsService.hasAddress(appUser.getId());
+            if(!hasAddress){
+                return ResponseDto.builder()
+                        .data(false)
+                        .message("Listing aborted, user does not have address")
+                        .httpStatus(HttpStatus.FORBIDDEN.value())
+                        .build();
+            }
             SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
                     .totalSales(BigDecimal.ZERO)
-                    .name(appUser.getFirstName()+" "+appUser.getLastName())
+                    .pesel(appUser.getPesel())
+                    .dateOfBirth(appUser.getDateOfBirth())
+                    .fullLegalName(appUser.getFirstName()+" "+appUser.getFirstName())
                     .status(appUser.isEnabled() ? SellerStatus.ACTIVE : SellerStatus.PENDING)
+                    .identityVerified(true)
                     .build();
 
             SellerProfile sellerProfile = sellerProfileService.findOrCreateSellerProfile(sellerProfileDto);
+
                 /*
                         PRODUCT
                  */
@@ -392,8 +427,8 @@ public class ListingTransactionService {
             InventoryItemPriceDto inventoryItemPriceDto = InventoryItemPriceDto.builder()
                     .sellerOldPrice(productData.getPrice())
                     .sellerNewPrice(productData.getPrice())
-                    .storeOldPrice(pricingService.calculateStorePrice(productData.getPrice()))
-                    .storeNewPrice(pricingService.calculateStorePrice(productData.getPrice()))
+                    .oldServiceCharge(pricingService.calculateServiceCharge(productData.getPrice()))
+                    .newServiceCharge(pricingService.calculateServiceCharge(productData.getPrice()))
                     .inventoryItem(savedInventoryItem)
                     .reason("Initial listing price")
                     .build();

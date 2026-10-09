@@ -189,7 +189,8 @@ public class CartService {
 
                 if (existingItem.isPresent()) {
                     CartItem cartItem = existingItem.get();
-                    cartItem.setPrice(price.getStoreNewPrice());
+                    cartItem.setPrice(price.getSellerNewPrice());
+                    cartItem.setServiceCharge(price.getNewServiceCharge());
                     cartItem.setReservedUntil(reservedUntil);
 
                     cartItemRepository.save(cartItem);
@@ -200,7 +201,8 @@ public class CartService {
                             .cart(cart)
                             .inventoryItem(inventoryItem)
                             .listingId(targetListingId)
-                            .price(price.getStoreNewPrice())
+                            .price(price.getSellerNewPrice())
+                            .serviceCharge(price.getNewServiceCharge())
                             .reservedUntil(reservedUntil)
                             .build();
 
@@ -383,6 +385,7 @@ public class CartService {
                             .shipping(assignedItemShipping)
                             .image(media!=null?media.getImage():null)
                             .productName(productName)
+                            .serviceCharge(cartItem.getServiceCharge())
                             .reservedUntil(cartItem.getReservedUntil())
                             .sellerId(cartItem.getInventoryItem().getSeller().getId())
                             .build();

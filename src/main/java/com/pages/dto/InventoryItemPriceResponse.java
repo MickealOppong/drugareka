@@ -19,8 +19,8 @@ public class InventoryItemPriceResponse {
     private BigDecimal sellerNewPrice;
     private Long inventoryId;
 
-    private BigDecimal storeOldPrice;
-    private BigDecimal storeNewPrice;
+    private BigDecimal oldServiceCharge;
+    private BigDecimal newServiceCharge;
 
     private String reason;
 }

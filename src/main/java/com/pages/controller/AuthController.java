@@ -39,6 +39,7 @@ public class AuthController {
 
 
 
+
     public AuthController(AuthenticationManager authenticationManager, AppUserDetailsService userDetailsService,
                           RefreshTokenService refreshTokenService, TokenService tokenService) {
         this.authenticationManager = authenticationManager;
@@ -86,6 +87,7 @@ public class AuthController {
 
                 AppUser appUser = userDetailsService.getAppUserByUsername(credentials.username());
 
+
                 RefreshToken refreshToken =refreshTokenService.createToken(appUser);
 
 
@@ -101,6 +103,7 @@ public class AuthController {
                         .userId(appUser.getId())
                         .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                         .firstName(appUser.getFirstName())
+                        .hasAddress(userDetailsService.hasAddress(appUser.getId()))
                         .lastName(appUser.getLastName())
                         .build();
 

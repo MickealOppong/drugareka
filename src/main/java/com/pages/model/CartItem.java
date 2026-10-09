@@ -36,6 +36,9 @@ public class CartItem extends LogEntity{
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
 
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal serviceCharge;
+
     private Instant reservedUntil;
 
 

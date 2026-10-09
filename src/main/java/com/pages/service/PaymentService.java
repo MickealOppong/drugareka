@@ -47,9 +47,10 @@ public class PaymentService {
     private final ListingOrderItemRepo listingOrderItemRepo;
     private final SellerShipmentTokenService sellerShipmentTokenService;
     private final MessageSource messageSource;
+    private final ServiceChargeService serviceChargeService;
 
     public PaymentService(PaymentRepo paymentRepo, ListingOrderRepo listingOrderRepo, CartService cartService, SellerPayoutService sellerPayoutService, InventoryItemRepo inventoryItemRepo, ShipmentService shipmentService, SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
-                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService, MessageSource messageSource) {
+                          AppUserDetailsService appUserDetailsService, ListingOrderItemRepo listingOrderItemRepo, SellerShipmentTokenService sellerShipmentTokenService, MessageSource messageSource, ServiceChargeService serviceChargeService) {
         this.paymentRepo = paymentRepo;
         this.listingOrderRepo = listingOrderRepo;
         this.cartService = cartService;
@@ -62,6 +63,7 @@ public class PaymentService {
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.sellerShipmentTokenService = sellerShipmentTokenService;
         this.messageSource = messageSource;
+        this.serviceChargeService = serviceChargeService;
     }
     private String getMessage(String code) {
         return messageSource.getMessage(
@@ -222,6 +224,7 @@ public class PaymentService {
 
         sellerProfileService.updateSellerTotalSales(order.getItems());
 
+        serviceChargeService.createCharge(listingOrder);
         shipmentService.createShipment(order.getItems());
         cartService.deleteCartById(order.getBuyer().getId());
 
@@ -233,7 +236,9 @@ public class PaymentService {
                 .stream().map(item->{
 
                     return EmailProductItemDto.builder()
-                            .amount(item.getFinalizedPrice())
+                            .amount(item.getSellerPrice())
+                            .serviceCharge(item.getServiceCharge())
+                            .shippingCost(item.getShippingCost())
                             .productName(item.getInventoryItem().getProductCatalog().getName())
                             .build();
                 }).toList();
@@ -260,7 +265,7 @@ public class PaymentService {
             String sellerEmail = key.getUser().getUsername();
             String sellerName =key.getUser().getUsername();
 
-            SellerShipmentToken token = UtilService.generateSellerShipmentToken();
+            SellerShipmentToken token = UtilService.generateShipmentToken();
             sellerShipmentTokenService.createRecord(key,token,listingOrder);
 
             emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,token.getToken());
@@ -386,7 +391,7 @@ public class PaymentService {
         //seller payout;
         sellerPayoutService.createPayouts(order);
 
-        SellerProfile seller= sellerProfileService.updateSellerTotalSales(order.getItems());
+       sellerProfileService.updateSellerTotalSales(order.getItems());
 
         shipmentService.createShipment(order.getItems());
          cartService.deleteCartById(order.getBuyer().getId());
@@ -399,7 +404,9 @@ public class PaymentService {
                 .stream().map(item->{
 
                     return EmailProductItemDto.builder()
-                            .amount(item.getFinalizedPrice())
+                            .amount(item.getSellerPrice())
+                            .shippingCost(item.getShippingCost())
+                            .serviceCharge(item.getServiceCharge())
                             .productName(item.getInventoryItem().getProductCatalog().getName())
                             .build();
                 }).toList();
@@ -420,13 +427,14 @@ public class PaymentService {
                         .productName(item.getInventoryItem().getProductCatalog().getName())
                         .amount(item.getSellerPrice())
                         .shippingCost(item.getShippingCost())
+                        .serviceCharge(item.getServiceCharge())
                         .quantity(1L)
                         .build();
             }).toList();
             String sellerEmail = key.getUser().getUsername();
             String sellerName =key.getUser().getUsername();
 
-            SellerShipmentToken token = UtilService.generateSellerShipmentToken();
+            SellerShipmentToken token = UtilService.generateShipmentToken();
             sellerShipmentTokenService.createRecord(key,token,listingOrder);
 
             emailNotificationService.sendBulkOrderActionToSeller(sellerEmail,sellerName, order.getOrderNumber(),dto,token.getToken());
@@ -461,7 +469,7 @@ public class PaymentService {
             Payment refund = Payment.builder()
                     .listingOrder(order.getListingOrder())
                     .status(PaymentStatus.REFUND)
-                    .amount(order.getFinalizedPrice().negate())
+                    .amount(order.getSellerPrice().negate())
                     .currency(originalPayment.getCurrency())
                     .providerSessionId(originalPayment.getProviderSessionId())
                     .stripePaymentIntentId(originalPayment.getStripePaymentIntentId())

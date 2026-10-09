@@ -9,9 +9,9 @@ import java.math.RoundingMode;
 public class PricingService {
 
 
-    static BigDecimal marginPercentage = BigDecimal.valueOf(15);
+    static BigDecimal marginPercentage = BigDecimal.valueOf(10);
 
-    public BigDecimal calculateStorePrice(BigDecimal sellerPrice) {
+    public BigDecimal calculateServiceCharge(BigDecimal sellerPrice) {
         if (sellerPrice == null || sellerPrice.signum() < 0) {
             throw new IllegalArgumentException("Invalid seller price");
         }
@@ -21,14 +21,12 @@ public class PricingService {
         }
 
         return sellerPrice
-                .multiply(
-                        BigDecimal.ONE.add(
-                                marginPercentage.divide(
+                .multiply(marginPercentage.divide(
                                         BigDecimal.valueOf(100),
                                         4,
                                         RoundingMode.HALF_UP
-                                )
                         )
+
                 )
                 .setScale(2, RoundingMode.HALF_UP);
     }

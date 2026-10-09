@@ -39,5 +39,12 @@ public class ReturnShipment extends LogEntity {
     private Instant shippedAt;
     private String carrierShipmentId;
     private String carrier;
-    private String token;
+    @Column(name = "receipt_confirmation_token", unique = true)
+    private String receiptConfirmationToken;
+
+    @Column(name = "receipt_confirmation_token_expires_at")
+    private Instant receiptConfirmationTokenExpiresAt;
+
+    @Column(name = "receipt_confirmed_at")
+    private Instant receiptConfirmedAt;
 }

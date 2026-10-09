@@ -25,6 +25,7 @@ public class UserDetailsDto {
     private Set<String> roles;
     private AddressResponse address;
     private String accountNumber;
+    private String pesel;
 
 
 

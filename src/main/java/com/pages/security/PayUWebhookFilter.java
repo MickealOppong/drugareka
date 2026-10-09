@@ -1,6 +1,11 @@
+
 package com.pages.security;
 
-import jakarta.servlet.*;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -11,12 +16,15 @@ import org.springframework.util.StreamUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.HexFormat;
 
 @Slf4j
 @Component
 public class PayUWebhookFilter implements Filter {
+
 
     @Value("${payu.second-key}")
     private String payuSecondKey;
@@ -25,85 +33,137 @@ public class PayUWebhookFilter implements Filter {
     private String webhookPath;
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-            throws IOException, ServletException {
+    public void doFilter(
+            ServletRequest request,
+            ServletResponse response,
+            FilterChain chain
+    ) throws IOException, ServletException {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        //  Intercept ONLY requests hitting your designated PayU webhook callback URI path
-        if (httpRequest.getRequestURI().equals(webhookPath)) {
-            log.info("PayU Gateway: Intercepted inbound transactional webhook data stream.");
-
-            // Extract the secure signature validation header
-            String signatureHeader = httpRequest.getHeader("OpenPayU-Signature");
-            if (signatureHeader == null || signatureHeader.isBlank()) {
-                log.error("PayU Fraud Shield: Reverting endpoint. Missing required OpenPayU-Signature header.");
-                httpResponse.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing validation checksum signature.");
-                return;
-            }
-
-            //  Use a Cached Request Wrapper to read the InputStream stream without consuming it
-            // This allows your RestControllers to read the JSON payload downstream normally!
-            CachedBodyHttpServletRequest wrappedRequest = new CachedBodyHttpServletRequest(httpRequest);
-            String rawJsonBody = StreamUtils.copyToString(wrappedRequest.getInputStream(), StandardCharsets.UTF_8);
-
-            // Cryptographically verify the payload against the checksum
-            if (!verifyPayUSignature(rawJsonBody, signatureHeader)) {
-                log.error("PayU Fraud Shield: ABORTING TRANSACTION! Calculated hash signature mismatch detected.");
-                httpResponse.sendError(HttpServletResponse.SC_FORBIDDEN, "Cryptographic signature validation failure.");
-                return;
-            }
-
-            log.info("PayU Gateway: Cryptographic verification confirmed. Payload is authentic.");
-            chain.doFilter(wrappedRequest, response);
+        // Use servlet path to avoid context-path mismatches.
+        if (!httpRequest.getServletPath().equals(webhookPath)) {
+            chain.doFilter(request, response);
             return;
         }
 
-        // Pass standard public traffic through the filter chain untouched
-        chain.doFilter(request, response);
+        // Only accept POST requests at the webhook endpoint.
+        if (!"POST".equalsIgnoreCase(httpRequest.getMethod())) {
+            httpResponse.sendError(
+                    HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+                    "Only POST requests are supported."
+            );
+            return;
+        }
+
+        String signatureHeader =
+                httpRequest.getHeader("OpenPayU-Signature");
+
+        if (signatureHeader == null || signatureHeader.isBlank()) {
+            log.warn("PayU webhook rejected: missing signature header.");
+            httpResponse.sendError(
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "Missing PayU signature."
+            );
+            return;
+        }
+
+        try {
+            // The wrapper must cache the body and provide a fresh
+            // InputStream whenever getInputStream() is called.
+            CachedBodyHttpServletRequest wrappedRequest =
+                    new CachedBodyHttpServletRequest(httpRequest);
+
+            String rawJsonBody = StreamUtils.copyToString(
+                    wrappedRequest.getInputStream(),
+                    StandardCharsets.UTF_8
+            );
+
+            if (!verifyPayUSignature(rawJsonBody, signatureHeader)) {
+                log.warn("PayU webhook rejected: invalid signature.");
+                httpResponse.sendError(
+                        HttpServletResponse.SC_FORBIDDEN,
+                        "Invalid PayU signature."
+                );
+                return;
+            }
+
+            log.info("PayU webhook signature verified.");
+
+            // The wrapped request must allow the body to be read again.
+            chain.doFilter(wrappedRequest, response);
+
+        } catch (IOException e) {
+            log.error("Failed to read PayU webhook request body.", e);
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("Unexpected PayU webhook verification error.", e);
+            throw e;
+        }
     }
 
-    /**
-     * Parses the signature headers and calculates the MD5 hash checksum.
-     */
-    private boolean verifyPayUSignature(String jsonBody, String signatureHeader) {
+    private boolean verifyPayUSignature(
+            String rawJsonBody,
+            String signatureHeader
+    ) {
         try {
-            // PayU passes parameters as key=value strands (e.g. sender=total;signature=hash;algorithm=MD5)
-            Map<String, String> signatureMap = parseSignatureHeader(signatureHeader);
-            String incomingHash = signatureMap.get("signature");
+            Map<String, String> signatureMap =
+                    parseSignatureHeader(signatureHeader);
 
-            if (incomingHash == null) return false;
+            String incomingSignature = signatureMap.get("signature");
+            String algorithm = signatureMap.get("algorithm");
 
-            // Concatenate the raw incoming JSON body string directly with your POS MD5 Second Secret Key
-            String dataToHash = jsonBody + payuSecondKey;
-
-            // Compute MD5 footprint
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] hashBytes = md.digest(dataToHash.getBytes(StandardCharsets.UTF_8));
-
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
+            // PayU's documented notification example uses MD5.
+            if (incomingSignature == null
+                    || !incomingSignature.matches("(?i)[0-9a-f]{32}")
+                    || algorithm == null
+                    || !"MD5".equalsIgnoreCase(algorithm)
+                    || payuSecondKey == null
+                    || payuSecondKey.isBlank()) {
+                return false;
             }
-            String calculatedHash = sb.toString();
 
-            return calculatedHash.equalsIgnoreCase(incomingHash);
-        } catch (Exception e) {
-            log.error("Security Gateway Exception: Failure during webhook signature parsing loops", e);
+            String dataToHash = rawJsonBody + payuSecondKey;
+
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] hashBytes = md.digest(
+                    dataToHash.getBytes(StandardCharsets.UTF_8)
+            );
+
+            String calculatedSignature =
+                    HexFormat.of().formatHex(hashBytes);
+
+            // Compare decoded bytes rather than ordinary strings.
+            return MessageDigest.isEqual(
+                    calculatedSignature.getBytes(StandardCharsets.US_ASCII),
+                    incomingSignature.toLowerCase()
+                            .getBytes(StandardCharsets.US_ASCII)
+            );
+
+        } catch (NoSuchAlgorithmException e) {
+            log.error("MD5 algorithm is unavailable.", e);
+            return false;
+        } catch (RuntimeException e) {
+            log.error("PayU signature verification failed.", e);
             return false;
         }
     }
 
     private Map<String, String> parseSignatureHeader(String header) {
         Map<String, String> map = new HashMap<>();
-        String[] pairs = header.split(";");
-        for (String pair : pairs) {
-            String[] keyValue = pair.split("=");
+
+        for (String pair : header.split(";")) {
+            String[] keyValue = pair.trim().split("=", 2);
+
             if (keyValue.length == 2) {
-                map.put(keyValue[0].trim(), keyValue[1].trim());
+                map.put(
+                        keyValue[0].trim().toLowerCase(),
+                        keyValue[1].trim()
+                );
             }
         }
+
         return map;
     }
 }
