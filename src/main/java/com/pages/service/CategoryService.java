@@ -337,23 +337,33 @@ public class CategoryService {
         }).toList();
     }
 
-    public List<CategoryResponse> top8Categories(){
+    public List<CategoryResponse> top8Categories() {
 
-        return  categoryRepo.findAll()
-                .stream().map(category -> {
-                    //CATEGORY IMAGE //COULD BE NULL
-                   MediaResponse media = mediaService.getCategoryImage(category);
-                   String image = media!=null? media.getImage():null;
+        List<Category> categories = new ArrayList<>(
+                categoryRepo.findByParentIsNullAndIsActiveIsTrue()
+        );
+
+        Collections.shuffle(categories);
+
+        return categories.stream()
+                .limit(8)
+                .map(category -> {
+                    // Category image could be null
+                    MediaResponse media = mediaService.getCategoryImage(category);
+                    String image = media != null ? media.getImage() : null;
 
                     return CategoryResponse.builder()
                             .image(image)
                             .name(category.getName())
-                            .parent(category.getParent()!=null?category.getName():null)
+                            .parent(category.getParent() != null
+                                    ? category.getParent().getName()
+                                    : null)
                             .sortOrder(category.getSortOrder())
                             .id(category.getId())
                             .slug(category.getSlug())
                             .build();
-                }).toList();
+                })
+                .toList();
     }
 
     public List<CategoryResponse> allCategories(){
