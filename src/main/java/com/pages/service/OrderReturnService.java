@@ -207,33 +207,28 @@ public class OrderReturnService {
      * and securely triggers your independent wallet balance services exactly once.
      */
     @Transactional
-    public void executeFinancialItemRefundOnReceipt(String token) {
+    public void executeFinancialItemRefundOnReceipt(OrderReturn orderReturn) {
 
         //  STEP 1: MANDATORY RETURN SHIPMENT GATEWAY CHECK
-        // Fetch the corresponding logistics record and verify that the seller has confirmed receipt!
-        ReturnShipment returnShipment = returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
 
-        if (returnShipment == null || returnShipment.getReceiptConfirmedAt() == null) {
-            log.error("Security Shield Alert: Attempted background refund execution on an unconfirmed return! token: {}",token);
+        if (orderReturn== null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     getMessage("api_errors.order_return.not_confirmed")
             );
         }
 
-        log.info("Background Tax Engine: Processing terminal return sequence for Return Ticket ID: {}", returnShipment.getOrderReturn().getId());
+        log.info("Background Tax Engine: Processing terminal return sequence for Return Ticket ID: {}", orderReturn.getId());
 
-        // 1. Fetch our master return ticket profile
-        OrderReturn returnTicket = returnShipment.getOrderReturn();
 
         // Idempotency Shield: Prevent duplicate background execution loops
-        if (returnTicket.isSellerDebited()) {
-            log.warn("Background Tax Engine Shield: Return ID {} already processed. Standing down.", returnTicket.getId());
+        if (orderReturn.isSellerDebited()) {
+            log.warn("Background Tax Engine Shield: Return ID {} already processed. Standing down.",orderReturn.getId());
             return;
         }
 
 
-        ListingOrderItem item = returnTicket.getListingOrderItem();
+        ListingOrderItem item = orderReturn.getListingOrderItem();
 
         //  THE NON-REFUNDABLE LOGISTICS RULE:
         // Logistics shipping fees and platform service charges are locked as non-refundable.
@@ -242,11 +237,11 @@ public class OrderReturnService {
         Instant now = Instant.now();
 
         // --- TABLE 1: RECORD LOG ENTRIES TO THE AUDITING HISTORY TABLE ---
-        returnTicket.setSellerDeductionAmount(productPriceClawback);
-        returnTicket.setStatus("RETURN_COMPLETED");
-        returnTicket.setSellerDebited(true);
-        returnTicket.setResolvedAt(now);
-        orderReturnRepo.save(returnTicket);
+        orderReturn.setSellerDeductionAmount(productPriceClawback);
+        orderReturn.setStatus("RETURN_COMPLETED");
+        orderReturn.setSellerDebited(true);
+        orderReturn.setResolvedAt(now);
+        orderReturnRepo.save(orderReturn);
 
         // --- TABLE 2 & 3: DISPATCH TO THE SEPARATE WALLET BALANCER TABLES ---
         sellerPayoutService.createRefund(item);
@@ -257,7 +252,7 @@ public class OrderReturnService {
         paymentService.createRefund(item);
 
         // --- STEP 4: UPDATE INTERMEDIATE ENUMS & CLOSE WORKFLOWS CLEANLY ---
-        item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+        item.setOrderItemStatus(OrderItemStatus.RETURNED);
         listingOrderItemRepo.save(item);
 
         // Defensive Inventory Management: Hide broken inventory from your frontend catalog views
@@ -322,6 +317,90 @@ public class OrderReturnService {
 
         log.warn("Fulfillment System: Seller [{}] is cancelling Order Item #{} [Executing balance clawbacks...]",
                 authenticatedUser.getUsername(), orderItem.getId());
+
+        try {
+            // Defensive Inventory Management: Hide broken inventory from your frontend catalog views
+            InventoryItem inventory = orderItem.getInventoryItem();
+            if (inventory != null) {
+                inventory.setStatus(InventoryStatus.UNAVAILABLE);
+                inventoryItemRepo.save(inventory);
+            }
+
+            // Lock order item status to CANCELLED
+            orderItem.setOrderItemStatus(OrderItemStatus.CANCELLED);
+            listingOrderItemRepo.save(orderItem);
+
+            // Flush changes directly down to database row indexes to eliminate query race conditions
+            listingOrderItemRepo.flush();
+
+            // Evaluate if this cancellation completely closes out the parent order structure
+            List<ListingOrderItem> siblingItems = listingOrderItemRepo.findByListingOrderId(orderItem.getListingOrder().getId());
+            boolean areAllItemsCancelled = siblingItems.stream()
+                    .allMatch(item -> item.getOrderItemStatus() == OrderItemStatus.CANCELLED);
+
+            if (areAllItemsCancelled) {
+                ListingOrder parent = orderItem.getListingOrder();
+                parent.setOrderStatus(OrderStatus.CANCELLED);
+                listingOrderRepo.save(parent);
+                log.info("Fulfillment System: Master Order #{} automatically set to CANCELLED.", parent.getOrderNumber());
+            }
+
+            if (shipment != null) {
+                shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
+                sellerShipmentRepo.save(shipment);
+            }
+
+
+            //  DISPATCH PAYU CUSTOMER CASH REVERSAL
+            // Fires an automated refund request to return the escrow funds back to the buyer's bank account.
+            paymentService.createRefund(orderItem);
+
+            // ACCOUNTING ADJUSTMENT INTERCEPT:
+            // Because the seller was credited at checkout, we run clawback script here.
+            // This safely deducts the item price out of totalSettlement and increases cancelledOrders.
+            sellerProfileService.updateSellerTotalPayoutWithRefund(orderItem);
+
+
+            log.info("Fulfillment System Success: Merchant balance clawback locked down. Order Item #{} successfully archived.", orderItem.getId());
+
+        } catch (Exception e) {
+            log.error("Fulfillment System Error: Critical failure executing merchant cancellation for ID: {}", orderItemId, e);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    getMessage("api_errors.order_cancellation.gateway_failure")
+            );
+        }
+    }
+
+    @Transactional
+    public void executeSellerCancellation(Long orderItemId) {
+
+
+        ListingOrderItem orderItem = listingOrderItemRepo.findById(orderItemId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        getMessage("api_errors.order_cancellation.item_not_found")
+                ));
+
+
+        // Validate shipping history parameters to prevent mid-transit cancellations
+        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId()).orElse(null);
+        if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_cancellation.already_shipped")
+            );
+        }
+
+        if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_cancellation.already_cancelled")
+            );
+        }
+
+        log.warn("Fulfillment System: Seller is cancelling Order Item #{} [Executing balance clawbacks...]",
+                 orderItem.getId());
 
         try {
             // Defensive Inventory Management: Hide broken inventory from your frontend catalog views

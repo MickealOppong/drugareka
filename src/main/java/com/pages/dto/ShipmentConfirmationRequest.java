@@ -6,6 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Set;
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -17,6 +20,6 @@ public class ShipmentConfirmationRequest {
     private String comment;
     private String token;
     private AddressForm pickupAddress;
-    private Long[] shipmentIds;
+    private Set<Long> shipmentIds;
     private String name;
 }

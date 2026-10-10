@@ -52,6 +52,9 @@ public class SellerShipment extends LogEntity {
     @Column(length = 1024)
     private String comment;
 
+    @Column(length = 1024)
+    private String sellerComment;
+
 
     private String trackingNumber;
     private String carrierShipmentId;

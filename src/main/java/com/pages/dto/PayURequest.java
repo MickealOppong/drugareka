@@ -18,6 +18,7 @@ public class PayURequest {
     private String currencyCode;
     private String totalAmount;
     private String extOrderId;
+    private PayMethod payMethods;
 
     private PayUBuyer buyer;
 

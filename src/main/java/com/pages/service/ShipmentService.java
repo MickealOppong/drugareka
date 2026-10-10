@@ -9,6 +9,7 @@ import com.pages.repository.SellerShipmentRepo;
 import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,10 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -43,11 +41,13 @@ public class ShipmentService {
     private final DpdShipmentService dpdShipmentService;
     private final PackageConfigurationService packageConfigurationService;
     private final SellerShipmentTokenService sellerShipmentTokenService;
+    private final OrderReturnService orderReturnService;
+
 
     public ShipmentService(SellerShipmentRepo sellerShipmentRepo, AppUserDetailsService appUserDetailsService,
                            SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
                            ListingOrderService listingOrderService, ReturnShipmentRepo returnShipmentRepo,
-                           MessageSource messageSource, DpdShipmentService dpdShipmentService, PackageConfigurationService packageConfigurationService, SellerShipmentTokenService sellerShipmentTokenService) {
+                           MessageSource messageSource, DpdShipmentService dpdShipmentService, PackageConfigurationService packageConfigurationService, SellerShipmentTokenService sellerShipmentTokenService,@Lazy OrderReturnService orderReturnService) {
         this.sellerShipmentRepo = sellerShipmentRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.sellerProfileService = sellerProfileService;
@@ -58,6 +58,8 @@ public class ShipmentService {
         this.dpdShipmentService = dpdShipmentService;
         this.packageConfigurationService = packageConfigurationService;
         this.sellerShipmentTokenService = sellerShipmentTokenService;
+
+        this.orderReturnService = orderReturnService;
     }
 
     public SellerShipment findOrCreateShipment(ListingOrderItem listingOrderItem) {
@@ -474,36 +476,46 @@ public class ShipmentService {
     }
 
 
-    public boolean validateDelivery(String token) {
+    /**
+     * Confirms the shipment delivery and triggers the associated financial refund.
+     * Enforced with a database transaction to prevent race conditions.
+     */
+    @Transactional
+    public OrderReturn validateAndProcessDelivery(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
 
-     ReturnShipment  orderItem =returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
+        // 1. Fetch with a Pessimistic Lock to prevent concurrent double-processing
+        ReturnShipment orderItem = returnShipmentRepo.findByReceiptConfirmationToken(token)
+                .orElse(null);
 
         if (orderItem == null) {
-            return false;
+            return null;
         }
 
         Instant now = Instant.now();
 
-        // Token expired
+        // 2. Token expiration verification
         if (orderItem.getReceiptConfirmationTokenExpiresAt() == null
                 || orderItem.getReceiptConfirmationTokenExpiresAt().isBefore(now)) {
-            return false;
+            return null;
         }
 
-        // Already confirmed
+        // 3. Idempotency validation (Already confirmed check)
         if (orderItem.getReceiptConfirmedAt() != null) {
-            return false;
+            return null;
         }
 
-        // Confirm receipt
+        // 4. Update the shipment status states immediately
         orderItem.setReceiptConfirmedAt(now);
+        orderItem.setReceiptConfirmationTokenExpiresAt(now); // Invalidates instantly
+        // Optional safety: orderItem.setReceiptConfirmationToken(null);
 
-        // Invalidate token
-        orderItem.setReceiptConfirmationTokenExpiresAt(now);
+        // 5. Persist the state transition to the database
+     ReturnShipment returnShipment= returnShipmentRepo.save(orderItem);
+        return returnShipment.getOrderReturn();
 
-        returnShipmentRepo.save(orderItem);
-
-        return true;
     }
 
     public boolean isDeliveryConfirmed(String token) {
@@ -743,8 +755,8 @@ public class ShipmentService {
     }
 
     @Transactional(readOnly = true)
-    public List<ShipmentItemResponse> getShipment(SellerShipmentToken token){
-     return   sellerShipmentRepo.findBySellerShipmentToken(token).stream()
+    public List<ShipmentItemResponse> getShipment(String token){
+     return   sellerShipmentRepo.findBySellerShipmentTokenToken(token).stream()
              .map(shipment -> {
 
                return ShipmentItemResponse.builder()
@@ -776,7 +788,7 @@ public class ShipmentService {
         }
 
         if (data.getShipmentIds() == null
-                || data.getShipmentIds().length == 0) {
+                || data.getShipmentIds().isEmpty()) {
 
             throw new IllegalArgumentException(
                     "Nie wybrano żadnych przesyłek."
@@ -806,8 +818,7 @@ public class ShipmentService {
         // ============================================================
 
         Set<Long> targetedShipmentIds =
-                Arrays.stream(data.getShipmentIds())
-                        .collect(Collectors.toSet());
+                new HashSet<>(data.getShipmentIds());
 
         List<SellerShipment> sellerShipments =
                 sellerShipmentRepo
@@ -1058,6 +1069,53 @@ public class ShipmentService {
         dpdShipmentService.createShipment(
                 shipmentApiRequest
         );
+    }
+
+    @Transactional
+    public Boolean updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
+        // 1. Guard clause for malformed or empty payloads
+        if (request == null || request.getShipmentIds() == null) {
+            return null;
+        }
+
+        // 2.Construct the immutable string ONCE outside the loop
+        var pickup = request.getPickupAddress();
+        String sellerAddress = String.join(", ",
+                request.getName(),
+                pickup.getStreet(),
+                pickup.getPostalCode(),
+                pickup.getCity(),
+                pickup.getCountry()
+        );
+
+        // 3.  Fetch all shipments in a SINGLE database query round-trip
+        List<SellerShipment> itemsToShip =
+                sellerShipmentRepo.findBySellerShipmentTokenToken(request.getToken());
+
+        List<SellerShipment> confirmedShipments =
+                sellerShipmentRepo.findAllById(request.getShipmentIds());
+
+        Set<Long> confirmedIds = confirmedShipments.stream()
+                .map(SellerShipment::getId)
+                .collect(Collectors.toSet());
+
+        // orders tro cancel because seller did not confirm
+        List<SellerShipment> itemsToCancel = itemsToShip.stream()
+                .filter(item -> !confirmedIds.contains(item.getId()))
+                .toList();
+
+
+        // 4. Update the entities in memory
+        for (SellerShipment itemToShip : confirmedShipments) {
+            itemToShip.setCollectionAddress(sellerAddress);
+            itemToShip.setSellerComment(request.getComment());
+            sellerShipmentRepo.save(itemToShip);
+        }
+
+       itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
+           orderReturnService.executeSellerCancellation(item.getId());
+       });
+        return true;
     }
 
 

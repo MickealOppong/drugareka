@@ -17,6 +17,7 @@ public interface SellerShipmentRepo extends JpaRepository<SellerShipment,Long> {
     List<SellerShipment> findBySellerAndListingOrderItemListingOrder(SellerProfile seller, ListingOrder order);
 
     Page<SellerShipment> findBySeller(SellerProfile sellerProfile, Pageable pageable);
+    List<SellerShipment> findBySellerShipmentTokenToken(String token);
     List<SellerShipment> findBySellerShipmentToken(SellerShipmentToken token);
     List<SellerShipment> findBySeller(SellerProfile sellerProfile);
     Optional<SellerShipment> findByListingOrderItemId(Long id);

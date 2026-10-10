@@ -17,7 +17,7 @@ import java.util.List;
 
 @Slf4j
 @Service
-@Transactional // 🚀 ATOMIC PROTECTION: Secures complete data rollbacks across tables if any operation fails
+@Transactional
 public class SellerShipmentTokenService {
 
     private final SellerShipmentTokenRepo sellerShipmentTokenRepo;

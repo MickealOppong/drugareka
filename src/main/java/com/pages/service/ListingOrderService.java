@@ -134,6 +134,7 @@ public class ListingOrderService {
 
             //seller name
             String sellerName = inventoryItem.getSeller().getUser().getFirstName()+" "+inventoryItem.getSeller().getUser().getLastName();
+
             // 4. Build child item model instance with safe parent back-reference links
             ListingOrderItem orderItem = ListingOrderItem.builder()
                     .listingOrder(orderHeader)

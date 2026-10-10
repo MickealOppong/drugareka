@@ -229,13 +229,13 @@ public class PaymentService {
         String buyerName = listingOrder.getBuyerNameSnapshot();
         String buyerEmail = listingOrder.getBuyer().getUsername();
 
-        List<EmailProductItemDto> emailDto =listingOrderItemRepo.findByListingOrderId(order.getId())
-                .stream().map(item->{
+        List<EmailProductItemDto> emailDto =listingOrder.getItems().stream().map(item->{
 
                     return EmailProductItemDto.builder()
                             .amount(item.getSellerPrice())
                             .serviceCharge(item.getServiceCharge())
                             .shippingCost(item.getShippingCost())
+                            .sellerName(item.getSellerNameSnapshot())
                             .productName(item.getInventoryItem().getProductCatalog().getName())
                             .build();
                 }).toList();
@@ -397,13 +397,14 @@ public class PaymentService {
         String buyerName = listingOrder.getBuyerNameSnapshot();
         String buyerEmail = listingOrder.getBuyer().getUsername();
 
-        List<EmailProductItemDto> emailDto =listingOrderItemRepo.findByListingOrderId(order.getId())
-                .stream().map(item->{
+        List<EmailProductItemDto> emailDto =listingOrder.getItems().stream().map(item->{
 
                     return EmailProductItemDto.builder()
                             .amount(item.getSellerPrice())
                             .shippingCost(item.getShippingCost())
                             .serviceCharge(item.getServiceCharge())
+                            .quantity(1L)
+                            .sellerName(item.getSellerNameSnapshot())
                             .productName(item.getInventoryItem().getProductCatalog().getName())
                             .build();
                 }).toList();

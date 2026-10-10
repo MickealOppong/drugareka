@@ -117,7 +117,6 @@ public class PayUWebhookFilter implements Filter {
             // PayU's documented notification example uses MD5.
             if (incomingSignature == null
                     || !incomingSignature.matches("(?i)[0-9a-f]{32}")
-                    || algorithm == null
                     || !"MD5".equalsIgnoreCase(algorithm)
                     || payuSecondKey == null
                     || payuSecondKey.isBlank()) {

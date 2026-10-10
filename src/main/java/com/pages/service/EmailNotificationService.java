@@ -38,6 +38,9 @@ public class EmailNotificationService {
     @Value("${delivery.confirmation.url}")
     private String deliveryConfirmationUrl;
 
+    @Value("${shipment.confirmation.url}")
+    private String shipmentConfirmationUrl;
+
     @Value("${return.confirmation.url}")
     private String returnConfirmationUrl;
 
@@ -133,44 +136,126 @@ public class EmailNotificationService {
     ) {
         String subject = "🎉 Twoje zamówienie na kasoa.pl zostało opłacone! #" + orderNumber;
 
-        // Order items
+        // Build order items
         StringBuilder itemsHtml = new StringBuilder();
 
         if (items != null) {
             for (EmailProductItemDto item : items) {
                 String productName = escapeHtml(item.getProductName());
+                String sellerName = escapeHtml(item.getSellerName());
+
                 String amount = item.getAmount() != null
                         ? item.getAmount().toPlainString()
                         : "0.00";
 
+                String quantity = item.getQuantity() != null
+                        ? item.getQuantity().toString()
+                        : "1";
+
+                String shippingCost = item.getShippingCost() != null
+                        ? item.getShippingCost().toPlainString()
+                        : "0.00";
+
+                String serviceCharge = item.getServiceCharge() != null
+                        ? item.getServiceCharge().toPlainString()
+                        : "0.00";
+
+
                 itemsHtml.append("""
                 <tr>
-                    <td style="
-                        padding: 14px 0;
+                    <td colspan="2" style="
+                        padding: 16px 0 8px 0;
                         border-bottom: 1px dashed #DDE2D8;
-                        font-size: 14px;
-                        line-height: 1.5;
-                        color: #182016;
-                        font-weight: 600;
                     ">
-                        %s
-                    </td>
-
-                    <td
-                        align="right"
-                        style="
-                            padding: 14px 0 14px 12px;
-                            border-bottom: 1px dashed #DDE2D8;
+                        <div style="
                             font-size: 14px;
-                            color: #68764B;
+                            line-height: 1.5;
+                            color: #182016;
                             font-weight: 700;
-                            white-space: nowrap;
-                        "
-                    >
+                        ">
+                            %s
+                        </div>
+
+                        <div style="
+                            margin-top: 6px;
+                            font-size: 12px;
+                            line-height: 1.8;
+                            color: #667066;
+                        ">
+                            Sprzedawca:
+                            <strong style="color: #182016;">%s</strong>
+                            <br>
+                            Status sprzedawcy:
+                            <strong>Osoba prywatna</strong>
+                            <br>
+                            Ilość: <strong>%s</strong>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="
+                        padding: 8px 0;
+                        font-size: 12px;
+                        color: #667066;
+                    ">
+                        Cena produktu
+                    </td>
+                    <td align="right" style="
+                        padding: 8px 0;
+                        font-size: 13px;
+                        color: #182016;
+                        white-space: nowrap;
+                    ">
                         %s zł
                     </td>
                 </tr>
-                """.formatted(productName, amount));
+
+                <tr>
+                    <td style="
+                        padding: 6px 0;
+                        font-size: 12px;
+                        color: #667066;
+                    ">
+                        Koszt dostawy
+                    </td>
+                    <td align="right" style="
+                        padding: 6px 0;
+                        font-size: 13px;
+                        color: #182016;
+                        white-space: nowrap;
+                    ">
+                        %s zł
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="
+                        padding: 6px 0 16px 0;
+                        font-size: 12px;
+                        color: #667066;
+                        border-bottom: 1px dashed #DDE2D8;
+                    ">
+                        Opłata serwisowa
+                    </td>
+                    <td align="right" style="
+                        padding: 6px 0 16px 0;
+                        font-size: 13px;
+                        color: #182016;
+                        border-bottom: 1px dashed #DDE2D8;
+                        white-space: nowrap;
+                    ">
+                        %s zł
+                    </td>
+                </tr>
+                """.formatted(
+                        productName,
+                        sellerName,
+                        escapeHtml(quantity),
+                        escapeHtml(amount),
+                        escapeHtml(shippingCost),
+                        escapeHtml(serviceCharge)
+                ));
             }
         }
 
@@ -179,465 +264,461 @@ public class EmailNotificationService {
                 : "0.00";
 
         String htmlContent = """
-        <div style="
-            margin: 0;
-            padding: 30px 15px;
-            background-color: #F5F6F1;
-            font-family: Arial, Helvetica, sans-serif;
-            color: #182016;
-        ">
-            <table
-                width="100%%"
-                cellpadding="0"
-                cellspacing="0"
-                border="0"
-                style="max-width: 600px; margin: 0 auto;"
-            >
+    <div style="
+        margin: 0;
+        padding: 30px 15px;
+        background-color: #F5F6F1;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #182016;
+    ">
+        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+               style="max-width: 600px; margin: 0 auto;">
 
-                <!-- HEADER -->
-                <tr>
-                    <td style="
-                        background-color: #68764B;
-                        padding: 28px 30px;
-                        border-radius: 16px 16px 0 0;
+            <!-- HEADER -->
+            <tr>
+                <td style="
+                    background-color: #68764B;
+                    padding: 28px 30px;
+                    border-radius: 16px 16px 0 0;
+                ">
+                    <div style="
+                        font-size: 26px;
+                        line-height: 1;
+                        font-weight: 800;
+                        letter-spacing: -1px;
+                        color: #FFFFFF;
                     ">
-                        <div style="
-                            font-size: 26px;
-                            line-height: 1;
-                            font-weight: 800;
-                            letter-spacing: -1px;
-                            color: #FFFFFF;
-                        ">
-                            kasoa<span style="
-                                font-weight: 400;
-                                opacity: 0.75;
-                            ">.pl</span>
-                        </div>
+                        kasoa<span style="font-weight: 400; opacity: 0.75;">.pl</span>
+                    </div>
 
-                        <div style="
-                            margin-top: 10px;
-                            font-size: 12px;
-                            color: #E9EDDF;
-                            letter-spacing: 0.5px;
-                        ">
-                            DRUGA RĘKA · BEZPIECZNE ZAKUPY
-                        </div>
-                    </td>
-                </tr>
-
-                <!-- BODY -->
-                <tr>
-                    <td style="
-                        background-color: #FFFFFF;
-                        padding: 32px 30px 30px 30px;
+                    <div style="
+                        margin-top: 10px;
+                        font-size: 12px;
+                        color: #E9EDDF;
+                        letter-spacing: 0.5px;
                     ">
+                        DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                    </div>
+                </td>
+            </tr>
 
-                        <!-- SUCCESS BADGE -->
-                        <div style="
-                            display: inline-block;
-                            padding: 8px 13px;
-                            background-color: #EEF1E8;
-                            color: #68764B;
-                            border-radius: 20px;
-                            font-size: 11px;
-                            font-weight: 800;
-                            letter-spacing: 0.6px;
-                            text-transform: uppercase;
-                        ">
-                            ✓ Płatność potwierdzona
-                        </div>
+            <!-- BODY -->
+            <tr>
+                <td style="
+                    background-color: #FFFFFF;
+                    padding: 32px 30px 30px 30px;
+                ">
 
-                        <h1 style="
-                            margin: 18px 0 10px 0;
-                            font-size: 25px;
-                            line-height: 1.25;
-                            color: #182016;
-                            font-weight: 800;
-                            letter-spacing: -0.5px;
-                        ">
-                            Dziękujemy za zakupy, %s!
-                        </h1>
+                    <div style="
+                        display: inline-block;
+                        padding: 8px 13px;
+                        background-color: #EEF1E8;
+                        color: #68764B;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 0.6px;
+                        text-transform: uppercase;
+                    ">
+                        ✓ Płatność potwierdzona
+                    </div>
 
-                        <p style="
-                            margin: 0 0 26px 0;
-                            font-size: 15px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-                            Twoja płatność za zamówienie
-                            <strong style="color: #182016;">#%s</strong>
-                            została pomyślnie przetworzona.
-                            Zamówienie jest teraz bezpiecznie przekazywane
-                            do realizacji.
-                        </p>
+                    <h1 style="
+                        margin: 18px 0 10px 0;
+                        font-size: 25px;
+                        line-height: 1.25;
+                        color: #182016;
+                        font-weight: 800;
+                        letter-spacing: -0.5px;
+                    ">
+                        Dziękujemy za zakupy, %s!
+                    </h1>
 
-                        <!-- ORDER NUMBER -->
-                        <table
-                            width="100%%"
-                            cellpadding="0"
-                            cellspacing="0"
-                            border="0"
-                            style="
-                                background-color: #F7F8F5;
-                                border: 1px solid #E4E8DE;
-                                border-radius: 12px;
-                                margin-bottom: 18px;
-                            "
-                        >
-                            <tr>
-                                <td style="padding: 18px 20px;">
+                    <p style="
+                        margin: 0 0 26px 0;
+                        font-size: 15px;
+                        line-height: 1.7;
+                        color: #667066;
+                    ">
+                        Twoja płatność za zamówienie
+                        <strong style="color: #182016;">#%s</strong>
+                        została pomyślnie przetworzona.
+                        Poniżej znajdziesz szczegóły zamówienia,
+                        dane sprzedawców oraz informacje o podmiocie
+                        obsługującym transakcję.
+                    </p>
 
-                                    <div style="
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                        margin-bottom: 7px;
-                                    ">
-                                        Numer zamówienia
-                                    </div>
-
-                                    <div style="
-                                        font-family: monospace;
-                                        font-size: 17px;
-                                        font-weight: 700;
-                                        color: #182016;
-                                    ">
-                                        #%s
-                                    </div>
-
-                                </td>
-                            </tr>
-                        </table>
-
-                        <!-- ORDER SUMMARY -->
-                        <table
-                            width="100%%"
-                            cellpadding="0"
-                            cellspacing="0"
-                            border="0"
-                            style="
-                                background-color: #FFFFFF;
-                                border: 1px solid #E4E8DE;
-                                border-radius: 12px;
-                                overflow: hidden;
-                            "
-                        >
-                            <tr>
-                                <td style="padding: 20px 20px 8px 20px;">
-
-                                    <div style="
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                    ">
-                                        Podsumowanie zamówienia
-                                    </div>
-
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style="padding: 0 20px 12px 20px;">
-
-                                    <table
-                                        width="100%%"
-                                        cellpadding="0"
-                                        cellspacing="0"
-                                        border="0"
-                                    >
-                                        %s
-                                    </table>
-
-                                </td>
-                            </tr>
-
-                            <!-- TOTAL -->
-                            <tr>
-                                <td style="
-                                    padding: 16px 20px 20px 20px;
-                                    border-top: 1px solid #E4E8DE;
-                                ">
-                                    <table
-                                        width="100%%"
-                                        cellpadding="0"
-                                        cellspacing="0"
-                                        border="0"
-                                    >
-                                        <tr>
-                                            <td style="
-                                                font-size: 14px;
-                                                color: #182016;
-                                                font-weight: 700;
-                                            ">
-                                                Razem z dostawą
-                                            </td>
-
-                                            <td
-                                                align="right"
-                                                style="
-                                                    font-size: 21px;
-                                                    color: #68764B;
-                                                    font-weight: 800;
-                                                    white-space: nowrap;
-                                                "
-                                            >
-                                                %s zł
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-
-                        <!-- ESCROW -->
-                        <table
-                            width="100%%"
-                            cellpadding="0"
-                            cellspacing="0"
-                            border="0"
-                            style="
-                                margin-top: 18px;
-                                background-color: #EEF1E8;
-                                border-radius: 12px;
-                            "
-                        >
-                            <tr>
-                                <td
-                                    width="42"
-                                    valign="top"
-                                    style="
-                                        padding: 19px 0 19px 18px;
-                                        font-size: 22px;
-                                    "
-                                >
-                                    🛡️
-                                </td>
-
-                                <td style="
-                                    padding: 19px 18px 19px 8px;
-                                ">
-                                    <div style="
-                                        font-size: 13px;
-                                        font-weight: 800;
-                                        color: #68764B;
-                                        margin-bottom: 6px;
-                                    ">
-                                        Bezpieczna ochrona kasoa.pl
-                                    </div>
-
-                                    <div style="
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #536047;
-                                    ">
-                                        Twoje środki są zabezpieczone w systemie
-                                        ochrony kupujących Kasoa Escrow.
-                                        Otrzymasz kolejne informacje, gdy
-                                        sprzedawcy rozpoczną realizację
-                                        zamówienia.
-                                    </div>
-                                </td>
-                            </tr>
-                        </table>
-
-                        <!-- WHAT'S NEXT -->
-                        <div style="
-                            margin-top: 28px;
-                            padding-top: 24px;
-                            border-top: 1px solid #E8EBE5;
-                        ">
-                            <div style="
-                                font-size: 13px;
-                                font-weight: 800;
-                                color: #182016;
-                                margin-bottom: 14px;
-                            ">
-                                Co dalej?
-                            </div>
-
-                            <table
-                                width="100%%"
-                                cellpadding="0"
-                                cellspacing="0"
-                                border="0"
-                            >
-                                <tr>
-                                    <td
-                                        width="32"
-                                        valign="top"
-                                        style="padding-bottom: 13px;"
-                                    >
-                                        <div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            1
-                                        </div>
-                                    </td>
-
-                                    <td style="
-                                        padding: 3px 0 13px 8px;
-                                        font-size: 13px;
-                                        line-height: 1.5;
-                                        color: #667066;
-                                    ">
-                                        Sprzedawca przygotuje Twoje
-                                        zamówienie do wysyłki.
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td
-                                        width="32"
-                                        valign="top"
-                                        style="padding-bottom: 13px;"
-                                    >
-                                        <div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            2
-                                        </div>
-                                    </td>
-
-                                    <td style="
-                                        padding: 3px 0 13px 8px;
-                                        font-size: 13px;
-                                        line-height: 1.5;
-                                        color: #667066;
-                                    ">
-                                        Otrzymasz numer śledzenia,
-                                        gdy przesyłka zostanie nadana.
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td width="32" valign="top">
-                                        <div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            3
-                                        </div>
-                                    </td>
-
-                                    <td style="
-                                        padding: 3px 0 0 8px;
-                                        font-size: 13px;
-                                        line-height: 1.5;
-                                        color: #667066;
-                                    ">
-                                        Śledź przesyłkę i odbierz swoje
-                                        zakupy.
-                                    </td>
-                                </tr>
-                            </table>
-                        </div>
-
-                        <!-- CTA -->
-                        <div style="
-                            margin-top: 28px;
-                            text-align: center;
-                        ">
-                            <a
-                                href="https://www.kasoa.pl"
-                                style="
-                                    display: inline-block;
-                                    padding: 14px 28px;
-                                    background-color: #68764B;
-                                    color: #FFFFFF;
-                                    text-decoration: none;
-                                    border-radius: 9px;
-                                    font-size: 13px;
+                    <!-- ORDER NUMBER -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        background-color: #F7F8F5;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-bottom: 18px;
+                    ">
+                        <tr>
+                            <td style="padding: 18px 20px;">
+                                <div style="
+                                    font-size: 10px;
                                     font-weight: 700;
-                                "
-                            >
-                                Sprawdź moje zamówienie →
-                            </a>
-                        </div>
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 7px;
+                                ">
+                                    Numer zamówienia
+                                </div>
 
-                    </td>
-                </tr>
+                                <div style="
+                                    font-family: monospace;
+                                    font-size: 17px;
+                                    font-weight: 700;
+                                    color: #182016;
+                                ">
+                                    #%s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
 
-                <!-- FOOTER -->
-                <tr>
-                    <td style="
-                        background-color: #182016;
-                        padding: 24px 30px;
-                        border-radius: 0 0 16px 16px;
-                        text-align: center;
+                    <!-- ORDER SUMMARY -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        background-color: #FFFFFF;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px 20px 8px 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                ">
+                                    Podsumowanie zamówienia
+                                </div>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 0 20px 12px 20px;">
+                                <table width="100%%" cellpadding="0"
+                                       cellspacing="0" border="0">
+                                    %s
+                                </table>
+                            </td>
+                        </tr>
+
+                        <!-- TOTAL -->
+                        <tr>
+                            <td style="
+                                padding: 16px 20px 20px 20px;
+                                border-top: 1px solid #E4E8DE;
+                            ">
+                                <table width="100%%" cellpadding="0"
+                                       cellspacing="0" border="0">
+                                    <tr>
+                                        <td style="
+                                            font-size: 14px;
+                                            color: #182016;
+                                            font-weight: 700;
+                                        ">
+                                            Łączna kwota zamówienia
+                                        </td>
+
+                                        <td align="right" style="
+                                            font-size: 21px;
+                                            color: #68764B;
+                                            font-weight: 800;
+                                            white-space: nowrap;
+                                        ">
+                                            %s zł
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- PRIVATE SELLER DISCLOSURE -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        margin-top: 20px;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                    ">
+                        <tr>
+                            <td style="padding: 19px 20px;">
+                                <div style="
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    color: #182016;
+                                    margin-bottom: 9px;
+                                ">
+                                    Informacje o sprzedawcach
+                                </div>
+
+                                <p style="
+                                    margin: 0;
+                                    font-size: 13px;
+                                    line-height: 1.7;
+                                    color: #667066;
+                                ">
+                                    Produkty w tym zamówieniu są oferowane
+                                    przez sprzedawców wskazanych przy
+                                    poszczególnych pozycjach. W przypadku
+                                    sprzedawcy oznaczonego jako osoba
+                                    prywatna sprzedaż odbywa się pomiędzy
+                                    kupującym a tym sprzedawcą.
+                                    Kasoa.pl nie jest sprzedawcą tych
+                                    produktów wyłącznie z tytułu
+                                    udostępniania platformy.
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- TRANSACTION FACILITATOR -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        margin-top: 18px;
+                        background-color: #F7F8F5;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 10px;
+                                ">
+                                    Podmiot obsługujący transakcję
+                                </div>
+
+                                <div style="
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    line-height: 1.5;
+                                    color: #182016;
+                                ">
+                                    KASAWA SPÓŁKA Z OGRANICZONĄ
+                                    ODPOWIEDZIALNOŚCIĄ
+                                </div>
+
+                                <div style="
+                                    margin-top: 10px;
+                                    font-size: 12px;
+                                    line-height: 1.8;
+                                    color: #667066;
+                                ">
+                                    ul. Kostromska nr 55 lok. 95<br>
+                                    97-300 Piotrków Trybunalski, Polska<br>
+                                    <strong>KRS:</strong> 0001269876<br>
+                                    <strong>NIP:</strong> 7712946929<br>
+                                    <strong>REGON:</strong> 54582126100000<br>
+                                    <strong>E-mail:</strong>
+                                    <a href="mailto:kasawa.corp@gmail.com"
+                                       style="color: #68764B;">
+                                        kasawa.corp@gmail.com
+                                    </a><br>
+                                    <strong>Telefon:</strong> +48 722 364 131
+                                </div>
+
+                                <p style="
+                                    margin: 12px 0 0 0;
+                                    font-size: 12px;
+                                    line-height: 1.7;
+                                    color: #667066;
+                                ">
+                                    KASAWA Sp. z o.o. prowadzi platformę
+                                    Kasoa.pl i pełni funkcję podmiotu
+                                    obsługującego transakcję.
+                                    Spółka nie jest sprzedawcą produktów
+                                    wymienionych w tym zamówieniu.
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- WHAT HAPPENS NEXT -->
+                    <div style="
+                        margin-top: 28px;
+                        padding-top: 24px;
+                        border-top: 1px solid #E8EBE5;
                     ">
                         <div style="
-                            font-size: 17px;
+                            font-size: 13px;
                             font-weight: 800;
-                            color: #FFFFFF;
+                            color: #182016;
+                            margin-bottom: 14px;
                         ">
-                            kasoa<span style="
-                                font-weight: 400;
-                                color: #AEB69D;
-                            ">.pl</span>
+                            Co dalej?
                         </div>
 
-                        <div style="
-                            margin-top: 7px;
-                            font-size: 11px;
-                            color: #AEB69D;
-                        ">
-                            Good things. A second chance.
-                        </div>
+                        <table width="100%%" cellpadding="0" cellspacing="0"
+                               border="0">
+                            <tr>
+                                <td width="32" valign="top"
+                                    style="padding-bottom: 13px;">
+                                    <div style="
+                                        width: 24px;
+                                        height: 24px;
+                                        line-height: 24px;
+                                        text-align: center;
+                                        background-color: #68764B;
+                                        color: #FFFFFF;
+                                        border-radius: 50%%;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    ">1</div>
+                                </td>
 
-                        <div style="
-                            margin-top: 14px;
-                            font-size: 10px;
-                            line-height: 1.5;
-                            color: #7F8878;
-                        ">
-                            Ta wiadomość została wygenerowana automatycznie.
-                            <br>
-                            Status przesyłek możesz śledzić
-                            w zakładce „Zamówienia”.
-                        </div>
-                    </td>
-                </tr>
+                                <td style="
+                                    padding: 3px 0 13px 8px;
+                                    font-size: 13px;
+                                    line-height: 1.5;
+                                    color: #667066;
+                                ">
+                                    Sprzedawcy przygotują produkty
+                                    do wysyłki.
+                                </td>
+                            </tr>
 
-            </table>
-        </div>
-        """.formatted(
+                            <tr>
+                                <td width="32" valign="top"
+                                    style="padding-bottom: 13px;">
+                                    <div style="
+                                        width: 24px;
+                                        height: 24px;
+                                        line-height: 24px;
+                                        text-align: center;
+                                        background-color: #68764B;
+                                        color: #FFFFFF;
+                                        border-radius: 50%%;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    ">2</div>
+                                </td>
+
+                                <td style="
+                                    padding: 3px 0 13px 8px;
+                                    font-size: 13px;
+                                    line-height: 1.5;
+                                    color: #667066;
+                                ">
+                                    Otrzymasz informacje o wysyłce
+                                    i numerach śledzenia, gdy będą dostępne.
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td width="32" valign="top">
+                                    <div style="
+                                        width: 24px;
+                                        height: 24px;
+                                        line-height: 24px;
+                                        text-align: center;
+                                        background-color: #68764B;
+                                        color: #FFFFFF;
+                                        border-radius: 50%%;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    ">3</div>
+                                </td>
+
+                                <td style="
+                                    padding: 3px 0 0 8px;
+                                    font-size: 13px;
+                                    line-height: 1.5;
+                                    color: #667066;
+                                ">
+                                    Śledź przesyłki i odbierz swoje zakupy.
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- CTA -->
+                    <div style="margin-top: 28px; text-align: center;">
+                        <a href="https://www.kasoa.pl"
+                           style="
+                               display: inline-block;
+                               padding: 14px 28px;
+                               background-color: #68764B;
+                               color: #FFFFFF;
+                               text-decoration: none;
+                               border-radius: 9px;
+                               font-size: 13px;
+                               font-weight: 700;
+                           ">
+                            Sprawdź moje zamówienie →
+                        </a>
+                    </div>
+
+                </td>
+            </tr>
+
+            <!-- FOOTER -->
+            <tr>
+                <td style="
+                    background-color: #182016;
+                    padding: 24px 30px;
+                    border-radius: 0 0 16px 16px;
+                    text-align: center;
+                ">
+                    <div style="
+                        font-size: 17px;
+                        font-weight: 800;
+                        color: #FFFFFF;
+                    ">
+                        kasoa<span style="font-weight: 400; color: #AEB69D;">.pl</span>
+                    </div>
+
+                    <div style="
+                        margin-top: 7px;
+                        font-size: 11px;
+                        color: #AEB69D;
+                    ">
+                        Good things. A second chance.
+                    </div>
+
+                    <div style="
+                        margin-top: 14px;
+                        font-size: 10px;
+                        line-height: 1.7;
+                        color: #AEB69D;
+                    ">
+                        Ta wiadomość została wygenerowana automatycznie.
+                        <br>
+                        Status zamówienia możesz śledzić
+                        w zakładce „Zamówienia”.
+                        <br><br>
+                        KASAWA Sp. z o.o. · ul. Kostromska nr 55 lok. 95,
+                        97-300 Piotrków Trybunalski, Polska
+                        <br>
+                        KRS: 0001269876 · NIP: 7712946929
+                    </div>
+                </td>
+            </tr>
+
+        </table>
+    </div>
+    """.formatted(
                 escapeHtml(buyerName),
                 escapeHtml(orderNumber),
                 escapeHtml(orderNumber),
                 itemsHtml.toString(),
-                total
+                escapeHtml(total)
         );
 
         sendHtmlEmail(buyerEmail, subject, htmlContent);
     }
-
 
     /**
      * Compiles a beautiful brand confirmation email when a product goes live.
@@ -1266,46 +1347,193 @@ public class EmailNotificationService {
      * Sends a transactional confirmation email to the Buyer with Escrow protection updates.
      */
     @Async
-    public void sendOrderConfirmationToBuyer(String buyerEmail, String buyerName, String orderNumber, String productName, java.math.BigDecimal totalAmount) {
+    public void sendOrderConfirmationToBuyer(
+            String buyerEmail,
+            String buyerName,
+            String orderNumber,
+            String productName,
+            java.math.BigDecimal totalAmount,
+            String sellerName) {
+
         String subject = "Twoje zamówienie na Kasoa.pl zostało opłacone! 🎉 #" + orderNumber;
 
-        String htmlContent = """
-        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #0D1313; background-color: #FFFFFF; padding: 20px; border: 1px solid #E0E7E6; border-radius: 12px;">
-            <div style="padding-bottom: 20px; border-bottom: 1px solid #E0E7E6;">
-                <h1 style="font-size: 24px; font-weight: 800; color: #1E3A3A; margin: 0; letter-spacing: -0.03em;">Kasoa<span style="font-weight: 400; color: #5E6C6A;">.pl</span></h1>
-            </div>
-            <div style="padding: 20px 0;">
-                <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px 0;">Dziękujemy za zakupy, %s!</h2>
-                <p style="font-size: 14px; line-height: 1.6; color: #42504F; margin: 0 0 20px 0;">
-                    Twoja płatność za zamówienie <strong>#%s</strong> została pomyślnie przetworzona. 
-                    Środki zostały bezpiecznie ulokowane w **systemie ochrony kupujących (Escrow)** Kasoa.pl.
-                </p>
-                
-                <div style="background-color: #F4F7F6; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <span style="font-size: 11px; font-weight: 700; color: #5E6C6A; display: block; text-transform: uppercase; letter-spacing: 0.5px;">Podsumowanie zakupu</span>
-                    <strong style="font-size: 14px; color: #0D1313; display: block; margin-top: 4px;">%s</strong>
-                    <strong style="font-size: 16px; color: #1E3A3A; display: block; margin-top: 4px;">Kwota: %s zł</strong>
-                </div>
+        java.text.NumberFormat currencyFormat =
+                java.text.NumberFormat.getCurrencyInstance(
+                        java.util.Locale.forLanguageTag("pl-PL"));
 
-                <div style="background-color: #EDF7F3; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <strong style="font-size: 13px; color: #2A6B4E; display: block; margin-bottom: 4px;">🛡️ Bezpieczna Transakcja Escrow:</strong>
-                    <p style="font-size: 13px; line-height: 1.4; color: #2A6B4E; margin: 0;">
-                        Sprzedawca nie otrzyma Twoich pieniędzy, dopóki nie odbierzesz paczki i nie potwierdzisz w swoim panelu, że produkt jest zgodny z opisem.
-                    </p>
+        String formattedAmount = currencyFormat.format(totalAmount);
+
+        String htmlContent = """
+    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                max-width: 600px; margin: 0 auto; color: #0D1313;
+                background-color: #FFFFFF; padding: 20px;
+                border: 1px solid #E0E7E6; border-radius: 12px;">
+
+        <div style="padding-bottom: 20px; border-bottom: 1px solid #E0E7E6;">
+            <h1 style="font-size: 24px; font-weight: 800; color: #1E3A3A;
+                       margin: 0; letter-spacing: -0.03em;">
+                Kasoa<span style="font-weight: 400; color: #5E6C6A;">.pl</span>
+            </h1>
+        </div>
+
+        <div style="padding: 20px 0;">
+
+            <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px 0;">
+                Dziękujemy za zakupy, %s!
+            </h2>
+
+            <p style="font-size: 14px; line-height: 1.6; color: #42504F;
+                      margin: 0 0 20px 0;">
+                Twoja płatność za zamówienie
+                <strong>#%s</strong> została pomyślnie przetworzona.
+                Poniżej znajdziesz podsumowanie zakupu oraz informacje
+                o sprzedawcy i obsłudze transakcji.
+            </p>
+
+            <!-- ORDER DETAILS -->
+            <div style="background-color: #F4F7F6; border-radius: 8px;
+                        padding: 15px; margin-bottom: 20px;">
+
+                <span style="font-size: 11px; font-weight: 700;
+                             color: #5E6C6A; display: block;
+                             text-transform: uppercase; letter-spacing: 0.5px;">
+                    Podsumowanie zamówienia
+                </span>
+
+                <p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
+                    <strong>Numer zamówienia:</strong> #%s
+                </p>
+
+                <p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
+                    <strong>Produkt:</strong> %s
+                </p>
+
+                <p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
+                    <strong>Sprzedawca:</strong> %s
+                </p>
+
+                <p style="font-size: 13px; color: #5E6C6A; margin: 8px 0;">
+                    <strong>Status sprzedawcy:</strong> Osoba prywatna
+                </p>
+
+                <div style="border-top: 1px solid #DCE5E2; margin-top: 12px;
+                            padding-top: 12px;">
+                    <span style="font-size: 16px; font-weight: 700;
+                                 color: #1E3A3A;">
+                        Łączna kwota: %s
+                    </span>
                 </div>
-                
-                <p style="font-size: 13px; color: #5E6C6A; margin: 0;">
-                    Powiadomiliśmy już sprzedawcę o konieczności przygotowania przesyłki. Wyślemy Ci kolejny e-mail z linkiem do śledzenia paczki, gdy tylko ruszy w drogę!
+            </div>
+
+            <!-- SELLER DISCLOSURE -->
+            <div style="border: 1px solid #E0E7E6; border-radius: 8px;
+                        padding: 15px; margin-bottom: 20px;">
+
+                <h3 style="font-size: 14px; color: #1E3A3A;
+                           margin: 0 0 10px 0;">
+                    Informacje o sprzedawcy
+                </h3>
+
+                <p style="font-size: 13px; line-height: 1.6; color: #42504F;
+                          margin: 0;">
+                    Produkt jest sprzedawany przez wskazanego powyżej
+                    sprzedawcę będącego osobą prywatną. Jest to sprzedaż
+                    pomiędzy kupującym a prywatnym sprzedawcą.
+                    Kasoa.pl nie jest sprzedawcą tego produktu.
                 </p>
             </div>
-            <div style="border-top: 1px solid #E0E7E6; padding-top: 20px; text-align: center; font-size: 11px; color: #5E6C6A;">
-                Wiadomość wygenerowana automatycznie przez Kasoa.pl. Status zamówienia możesz śledzić w zakładce 'Zamówienia'.
+
+            <!-- TRANSACTION FACILITATOR -->
+            <div style="background-color: #F4F7F6; border-radius: 8px;
+                        padding: 15px; margin-bottom: 20px;">
+
+                <h3 style="font-size: 14px; color: #1E3A3A;
+                           margin: 0 0 10px 0;">
+                    Podmiot obsługujący transakcję
+                </h3>
+
+                <p style="font-size: 13px; line-height: 1.6; color: #42504F;
+                          margin: 0 0 10px 0;">
+                    Platformę Kasoa.pl prowadzi i obsługuje transakcję:
+                </p>
+
+                <p style="font-size: 13px; line-height: 1.6; color: #0D1313;
+                          margin: 0;">
+                    <strong>
+                        KASAWA SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ
+                    </strong><br>
+                    ul. Kostromska nr 55 lok. 95<br>
+                    97-300 Piotrków Trybunalski, Polska<br><br>
+
+                    <strong>KRS:</strong> 0001269876<br>
+                    <strong>NIP:</strong> 7712946929<br>
+                    <strong>REGON:</strong> 54582126100000<br>
+                    <strong>E-mail:</strong> kasawa.corp@gmail.com<br>
+                    <strong>Telefon:</strong> +48 722 364 131
+                </p>
+
+                <p style="font-size: 13px; line-height: 1.6; color: #42504F;
+                          margin: 12px 0 0 0;">
+                    KASAWA Sp. z o.o. pełni w tej transakcji funkcję
+                    podmiotu obsługującego transakcję za pośrednictwem
+                    platformy Kasoa.pl. Spółka nie jest sprzedawcą
+                    wskazanego produktu.
+                </p>
             </div>
+
+            <!-- PAYMENT / DELIVERY -->
+            <div style="background-color: #EDF7F3; border-radius: 8px;
+                        padding: 15px; margin-bottom: 20px;">
+
+                <strong style="font-size: 13px; color: #2A6B4E;
+                               display: block; margin-bottom: 6px;">
+                    Status płatności
+                </strong>
+
+                <p style="font-size: 13px; line-height: 1.6; color: #2A6B4E;
+                          margin: 0;">
+                    Twoja płatność została przetworzona.
+                    Sprzedawca został powiadomiony o zamówieniu
+                    i może przygotować przesyłkę.
+                    O kolejnych etapach realizacji zamówienia
+                    poinformujemy Cię w osobnej wiadomości.
+                </p>
+            </div>
+
+            <p style="font-size: 13px; line-height: 1.6; color: #5E6C6A;
+                      margin: 0;">
+                W razie pytań dotyczących zamówienia skontaktuj się z nami:
+                <a href="mailto:kasawa.corp@gmail.com"
+                   style="color: #1E3A3A;">
+                    kasawa.corp@gmail.com
+                </a>.
+            </p>
+
         </div>
-        """.formatted(buyerName, orderNumber, productName, totalAmount.toString());
+
+        <div style="border-top: 1px solid #E0E7E6; padding-top: 20px;
+                    text-align: center; font-size: 11px; color: #5E6C6A;">
+            Wiadomość wygenerowana automatycznie przez Kasoa.pl.
+            Status zamówienia możesz śledzić w zakładce „Zamówienia”.
+            <br><br>
+            Kasoa.pl — platforma obsługi transakcji pomiędzy kupującymi
+            a sprzedawcami.
+        </div>
+
+    </div>
+    """.formatted(
+                escapeHtml(buyerName),
+                escapeHtml(orderNumber),
+                escapeHtml(orderNumber),
+                escapeHtml(productName),
+                escapeHtml(sellerName),
+                escapeHtml(formattedAmount)
+        );
 
         sendHtmlEmail(buyerEmail, subject, htmlContent);
     }
+
+
 
     /**
      * Sends a notification email to the Seller instructing them to pack and ship the item.
@@ -2148,7 +2376,8 @@ public class EmailNotificationService {
         BigDecimal orderTotal = productsTotal.add(shippingTotal);
 
         String shipmentUrl =
-                "https://www.kasoa.pl/seller/shipment/create?token="
+                shipmentConfirmationUrl+
+                "/create?token="
                         + URLEncoder.encode(
                         shipmentToken,
                         StandardCharsets.UTF_8

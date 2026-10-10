@@ -99,6 +99,7 @@ public class PayUService {
         request.setDescription("Kasoa.pl Order #" + orderNumber);
         request.setCurrencyCode("PLN");
 
+
         // PayU expects the amount in grosz
         request.setTotalAmount(
                 totalAmount
