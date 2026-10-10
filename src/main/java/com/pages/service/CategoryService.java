@@ -321,7 +321,11 @@ public class CategoryService {
     public List<CategoryResponse> top6Categories(){
       return  categoryRepo.findTop6ByParentIsNullAndIsActiveIsTrueOrderBySortOrder()
               .stream().map(category -> {
-         String image= mediaService.getCategoryImage(category).getImage();
+
+                  //CATEGORY IMAGE //COULD BE NULL
+                  MediaResponse media = mediaService.getCategoryImage(category);
+                  String image = media!=null? media.getImage():null;
+
             return CategoryResponse.builder()
                     .image(image)
                     .name(category.getName())
@@ -337,7 +341,10 @@ public class CategoryService {
 
         return  categoryRepo.findAll()
                 .stream().map(category -> {
-                    String image= mediaService.getCategoryImage(category).getImage();
+                    //CATEGORY IMAGE //COULD BE NULL
+                   MediaResponse media = mediaService.getCategoryImage(category);
+                   String image = media!=null? media.getImage():null;
+
                     return CategoryResponse.builder()
                             .image(image)
                             .name(category.getName())
