@@ -6,15 +6,24 @@ import com.pages.model.InventoryItem;
 import com.pages.model.ListingOrder;
 import com.pages.model.ListingOrderItem;
 import com.pages.service.PaymentService;
+import com.pages.service.StripeConnectService;
+import com.stripe.StripeClient;
+import com.stripe.events.V2CoreAccountUpdatedEvent;
+import com.stripe.events.V2CoreAccountUpdatedEventNotification;
 import com.stripe.model.Event;
 import com.stripe.model.checkout.Session;
+import com.stripe.model.v2.core.EventNotification;
 import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/webhooks")
@@ -23,55 +32,63 @@ import org.springframework.web.bind.annotation.*;
 public class StripeWebhookController {
 
     private final PaymentService paymentService;
+    private final StripeConnectService stripeConnectService;
+    private  final StripeClient client;
+    private final ObjectMapper objectMapper;
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
 
     @PostMapping("/stripe")
-    public ResponseEntity<String> webhook(@RequestBody String payload, @RequestHeader("Stripe-Signature") String signature) {
-
-        final Event event;
-
-        try {
-
-            event = Webhook.constructEvent(payload, signature, webhookSecret);
-
-        } catch (Exception e) {
-
-            log.error("Invalid Stripe webhook", e);
-
-            return ResponseEntity
-                    .badRequest()
-                    .body("Invalid webhook");
-        }
+    public ResponseEntity<String> webhook(
+            @RequestBody String payload,
+            @RequestHeader("Stripe-Signature") String signature) {
 
         try {
+            JsonNode root = objectMapper.readTree(payload);
+            String objectType = root.path("object").asString();
 
-            switch (event.getType()) {
 
-                case "checkout.session.completed":
-                    paymentService.handleCheckoutCompleted(event);
-                    break;
 
-                case "checkout.session.expired":
+            if ("v2.core.event".equals(objectType)) {
+               EventNotification notification =
+                        client.parseEventNotification(
+                                payload, signature, webhookSecret);
 
-                    paymentService.handleCheckoutExpired(event);
+                switch (notification.getType()) {
+                    case "v2.core.account[identity].updated":
+                    case "v2.core.account_person.updated":
+                        stripeConnectService.handleAccountUpdated(notification);
+                        break;
 
-                    break;
+                    default:
+                        log.debug("Unhandled Stripe thin event: {}",
+                                notification.getType());
+                }
 
-                default:
+            } else {
+                Event event = Webhook.constructEvent(
+                        payload, signature, webhookSecret);
 
-                    log.debug("Unhandled Stripe event: {}", event.getType());
+                switch (event.getType()) {
+                    case "checkout.session.completed":
+                        paymentService.handleCheckoutCompleted(event);
+                        break;
+
+                    case "checkout.session.expired":
+                        paymentService.handleCheckoutExpired(event);
+                        break;
+
+                    default:
+                        log.debug("Unhandled Stripe event: {}", event.getType());
+                }
             }
 
             return ResponseEntity.ok("received");
 
         } catch (Exception e) {
-
             log.error("Stripe webhook processing failed", e);
-
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Webhook processing failed");
         }
     }

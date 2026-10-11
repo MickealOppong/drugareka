@@ -1,10 +1,7 @@
 package com.pages.util;
 
 
-import com.pages.exception.AccessPermissionException;
-import com.pages.exception.InsufficientPublicPresenceException;
-import com.pages.exception.InvalidOperationException;
-import com.pages.exception.PhotoNotFoundException;
+import com.pages.exception.*;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -151,6 +148,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONTENT_TOO_LARGE.value())
                 .body(body);
+    }
+
+    @ExceptionHandler(PayUValidationException.class)
+    public ResponseEntity<Map<String, Object>> handlePayUValidation(PayUValidationException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "error_source", "PAYU_AML_PROVIDER",
+                "status", ex.getStatusCode(),
+                "code", ex.getPayuErrorCode(),
+                "message", ex.getMessage() // E.g., "Invalid PESEL structural checksum format"
+        );
+
+        return ResponseEntity.status(ex.getStatusCode()).body(body);
     }
 
 

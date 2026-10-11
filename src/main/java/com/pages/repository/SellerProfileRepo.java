@@ -15,8 +15,10 @@ public interface SellerProfileRepo extends JpaRepository<SellerProfile,Long> {
 
     Optional<SellerProfile> findByUser(AppUser user);
     Optional<SellerProfile> findByUserId(Long userId);
-
+Optional<SellerProfile> findByStripeAccountId(String id);
     @Modifying
     @Query("UPDATE SellerProfile s SET s.currentYearSalesCount = 0, s.currentYearGrossVolumePln = 0.00")
     int resetAnnualDac7TaxCountersBulk();
+
+
 }

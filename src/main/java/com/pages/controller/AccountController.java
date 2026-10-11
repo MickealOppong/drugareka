@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Set;
+import java.util.jar.JarEntry;
 
 @Slf4j
 @RestController
@@ -27,12 +28,14 @@ public class AccountController {
     private final AppUserDetailsService appUserDetailsService;
     private final ListingTransactionService listingTransactionService;
     private final SellerPayoutService sellerPayoutService;
+    private final StripeConnectService stripeConnectService;
 
-    public AccountController(WishListService wishListService, AppUserDetailsService appUserDetailsService, ListingTransactionService listingTransactionService,  SellerPayoutService sellerPayoutService1) {
+    public AccountController(WishListService wishListService, AppUserDetailsService appUserDetailsService, ListingTransactionService listingTransactionService, SellerPayoutService sellerPayoutService1, StripeConnectService stripeConnectService) {
         this.wishListService = wishListService;
         this.appUserDetailsService = appUserDetailsService;
         this.listingTransactionService = listingTransactionService;
         this.sellerPayoutService = sellerPayoutService1;
+        this.stripeConnectService = stripeConnectService;
     }
 
     @PreAuthorize("hasAuthority('ROLE_USER')")
@@ -57,9 +60,13 @@ public class AccountController {
         return appUserDetailsService.getAppUser(jwt);
     }
 
+    @GetMapping("/stripe-update")
+    public ResponseDto<Object> isStripeVerified(@AuthenticationPrincipal Jwt jwt){
+       return stripeConnectService.handleAccountUpdated(jwt);
+    }
     @PutMapping(value = "/edit",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseDto<Object> editUser(@AuthenticationPrincipal Jwt jwt,@ModelAttribute @Valid UserDetailsUpdateDto userDetailsDto){
-        log.info("{}",userDetailsDto);
+
         return appUserDetailsService.updateUser(jwt,userDetailsDto);
     }
 

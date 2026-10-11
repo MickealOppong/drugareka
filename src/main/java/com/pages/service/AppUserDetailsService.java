@@ -6,6 +6,7 @@ import com.pages.enums.Request_Status;
 import com.pages.enums.UserRole;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
+import com.pages.exception.PayUValidationException;
 import com.pages.model.*;
 import com.pages.repository.*;
 import com.pages.util.GlobalAddress;
@@ -27,6 +28,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.RollbackOn;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.security.Principal;
@@ -48,12 +50,14 @@ public class AppUserDetailsService implements UserDetailsService {
     private final AppUserRepo appUserRepo;
     private final AppUserRoleRepo appUserRoleRepo;
     private final GlobalAddressRepo globalAddressRepo;
+    private final PayUAmlService payUAmlService;
 
-    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo) {
+    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo, PayUAmlService payUAmlService) {
         this.appUserRepo = appUserRepo;
         this.appUserRoleRepo = appUserRoleRepo;
 
         this.globalAddressRepo = globalAddressRepo;
+        this.payUAmlService = payUAmlService;
     }
 
 
@@ -282,26 +286,19 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
     @Transactional
-    public ResponseDto<Object> updateUser(Jwt jwt,UserDetailsUpdateDto userDetailsDto) {
-
+    public ResponseDto<Object> updateUser(Jwt jwt, UserDetailsUpdateDto userDetailsDto) {
         try {
-
-            if(jwt==null){
+            if (jwt == null) {
                 return ResponseDto.builder()
                         .data(false)
-                        .message(
-                                "User not authorised to update"
-                        )
-                        .httpStatus(
-                                HttpStatus.FORBIDDEN.value()
-                        )
+                        .message("User not authorised to update")
+                        .httpStatus(HttpStatus.FORBIDDEN.value())
                         .build();
             }
-            log.info("Updating user: {}", userDetailsDto.getId());
+            log.info("Updating user profile: {}", userDetailsDto.getId());
 
             AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
-
-            if(appUser==null){
+            if (appUser == null) {
                 return ResponseDto.builder()
                         .data(false)
                         .message("User profile not found in database registry")
@@ -309,122 +306,42 @@ public class AppUserDetailsService implements UserDetailsService {
                         .build();
             }
 
+            // Fetch the existing address to execute differential data checks
+            GlobalAddress address = globalAddressRepo.findByAppUserId(appUser.getId()).orElse(null);
 
             /*
-             * ==============================
-             * PERSONAL INFORMATION
-             * ==============================
+             * ==========================================================================
+             *  PROACTIVE MERCHANT ONBOARDING GUARD CHECK
+             * ==========================================================================
+             * Trigger verification if the user explicitly holds ROLE_SELLER OR if they
+             * are providing a bank account number right now to prepare for future selling.
              */
-
-            if (StringUtils.hasText(
-                    userDetailsDto.getFirstName()
-            )) {
-                appUser.setFirstName(userDetailsDto
-                        .getFirstName()
-                        .trim());
-            }
-
-            if (StringUtils.hasText(
-                    userDetailsDto.getLastName()
-            )) {
-                appUser.setLastName(
-                        userDetailsDto
-                                .getLastName()
-                                .trim()
-                );
-            }
-
-            if (StringUtils.hasText(
-                    userDetailsDto.getPesel()
-            )) {
-                appUser.setPesel(
-                        userDetailsDto
-                                .getPesel()
-                                .trim()
-                );
-            }
 
             /*
-             * ==============================
-             * SELLER ACCOUNT
-             * ==============================
+             * ==========================================================================
+             *  DATABASE PERSISTENCE LAYER (Only committed if PayU validation passes)
+             * ==========================================================================
              */
-
-            if (StringUtils.hasText(
-                    userDetailsDto.getAccountNumber()
-            )) {
-                appUser.setAccountNumber(
-                        userDetailsDto
-                                .getAccountNumber()
-                                .trim()
-                );
-            }
-
-            /*
-             * ==============================
-             * ADDRESS
-             * ==============================
-             */
-
-            GlobalAddress address =
-                    globalAddressRepo
-                            .findByAppUserId(appUser.getId())
-                            .orElse(null);
+            if (StringUtils.hasText(userDetailsDto.getFirstName()))
+                appUser.setFirstName(userDetailsDto.getFirstName().trim());
+            if (StringUtils.hasText(userDetailsDto.getLastName()))
+                appUser.setLastName(userDetailsDto.getLastName().trim());
+            if (StringUtils.hasText(userDetailsDto.getPesel())) appUser.setPesel(userDetailsDto.getPesel().trim());
+            if (StringUtils.hasText(userDetailsDto.getAccountNumber()))
+                appUser.setAccountNumber(userDetailsDto.getAccountNumber().trim());
 
             if (address != null) {
-
-                if (StringUtils.hasText(
-                        userDetailsDto.getStreet()
-                )) {
-                    address.setStreet(
-                            userDetailsDto
-                                    .getStreet()
-                                    .trim()
-                    );
-                }
-
-                if (StringUtils.hasText(
-                        userDetailsDto.getCity()
-                )) {
-                    address.setCity(
-                            userDetailsDto
-                                    .getCity()
-                                    .trim()
-                    );
-                }
-
-                if (StringUtils.hasText(
-                        userDetailsDto.getContact()
-                )) {
-                    address.setContact(
-                            userDetailsDto
-                                    .getContact()
-                                    .trim()
-                    );
-                }
-
-                if (StringUtils.hasText(
-                        userDetailsDto.getPostalCode()
-                )) {
-                    address.setPostCode(
-                            userDetailsDto
-                                    .getPostalCode()
-                                    .trim()
-                    );
-                }
-
-                if (StringUtils.hasText(
-                        userDetailsDto.getCountry()
-                )) {
-                    address.setCountry(
-                            userDetailsDto
-                                    .getCountry()
-                                    .trim()
-                    );
-                }
-
+                if (StringUtils.hasText(userDetailsDto.getStreet()))
+                    address.setStreet(userDetailsDto.getStreet().trim());
+                if (StringUtils.hasText(userDetailsDto.getCity())) address.setCity(userDetailsDto.getCity().trim());
+                if (StringUtils.hasText(userDetailsDto.getContact()))
+                    address.setContact(userDetailsDto.getContact().trim());
+                if (StringUtils.hasText(userDetailsDto.getPostalCode()))
+                    address.setPostCode(userDetailsDto.getPostalCode().trim());
+                if (StringUtils.hasText(userDetailsDto.getCountry()))
+                    address.setCountry(userDetailsDto.getCountry().trim());
                 globalAddressRepo.save(address);
-            }else{
+            } else {
                 GlobalAddress newAddress = GlobalAddress.builder()
                         .contact(userDetailsDto.getContact())
                         .appUser(appUser)
@@ -436,36 +353,25 @@ public class AppUserDetailsService implements UserDetailsService {
                 globalAddressRepo.save(newAddress);
             }
 
-           appUserRepo.save(appUser);
+            appUserRepo.save(appUser);
 
             return ResponseDto.builder()
                     .data(true)
-                    .message("User updated successfully")
-                    .httpStatus(
-                            HttpStatus.OK.value()
-                    )
+                    .message("User profile successfully updated and synced with payment provider.")
+                    .httpStatus(HttpStatus.OK.value())
                     .build();
 
         } catch (Exception e) {
-
-            log.error(
-                    "Failed to update user {}",
-                    userDetailsDto.getId(),
-                    e
-            );
-
+            log.error("Failed to update user profile details", e);
             return ResponseDto.builder()
                     .data(false)
-                    .message(
-                            "Update aborted: "
-                                    + e.getMessage()
-                    )
-                    .httpStatus(
-                            HttpStatus.INTERNAL_SERVER_ERROR.value()
-                    )
+                    .message("Update aborted due to a system processing error: " + e.getMessage())
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
                     .build();
         }
     }
+
+
 
 
     @Transactional

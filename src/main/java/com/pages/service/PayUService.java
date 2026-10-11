@@ -3,6 +3,7 @@ package com.pages.service;
 import com.pages.dto.*;
 import com.pages.enums.PaymentStatus;
 import com.pages.model.ListingOrder;
+import com.pages.util.PayUProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,31 +28,20 @@ import java.util.Locale;
 public class PayUService {
 
     private final RestClient restClient;
-
-    @Value("${payu.base-url}")
-    private String baseUrl;
-
-    @Value("${payu.pos-id}")
-    private String posId;
-
-    @Value("${payu.client-id}")
-    private String clientId;
-
-    @Value("${payu.client-secret}")
-    private String clientSecret;
-
-    @Value("${payu.notify-url}")
-    private String notifyUrl;
-
-    @Value("${payu.continue-url}")
-    private String continueUrl;
-
-    @Value("${payu.second-key}")
-    private String secondKey;
+    private final PayUProperties payUProperties;
 
 
-    public PayUService(RestClient.Builder restClientBuilder) {
-        this.restClient = restClientBuilder.build();
+
+    public PayUService(RestClient.Builder restClientBuilder, PayUProperties payUProperties) {
+        this.payUProperties = payUProperties;
+
+        //  Anchor baseUrl directly to the client instance
+        String targetDomain = (payUProperties.getBaseUrl() != null && !payUProperties.getBaseUrl().isBlank())
+                ? payUProperties.getBaseUrl()
+                : "https://secure.snd.payu.com";
+
+        this.restClient = restClientBuilder.baseUrl(targetDomain).build();
+
     }
 
 
@@ -92,10 +82,10 @@ public class PayUService {
 
         PayURequest request = new PayURequest();
 
-        request.setNotifyUrl(notifyUrl);
-        request.setContinueUrl(continueUrl + "?orderNumber=" + orderNumber);
+        request.setNotifyUrl(payUProperties.getNotifyUrl());
+        request.setContinueUrl(payUProperties.getContinueUrl() + "?orderNumber=" + orderNumber);
         request.setCustomerIp(servletRequest.getRemoteAddr());
-        request.setMerchantPosId(posId);
+        request.setMerchantPosId(payUProperties.getPosId());
         request.setDescription("Kasoa.pl Order #" + orderNumber);
         request.setCurrencyCode("PLN");
 
@@ -115,7 +105,7 @@ public class PayUService {
 
         return restClient
                 .post()
-                .uri(baseUrl + "/api/v2_1/orders")
+                .uri( "/api/v2_1/orders")
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -129,11 +119,11 @@ public class PayUService {
 
         PayUAuthResponse response = restClient
                 .post()
-                .uri(baseUrl + "/pl/standard/user/oauth/authorize")
+                .uri("/pl/standard/user/oauth/authorize")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body("grant_type=client_credentials"
-                                + "&client_id=" + clientId
-                                + "&client_secret=" + clientSecret)
+                                + "&client_id=" + payUProperties.getClientId()
+                                + "&client_secret=" + payUProperties.getClientSecret())
                 .retrieve()
                 .body(PayUAuthResponse.class);
 
@@ -165,7 +155,7 @@ public class PayUService {
             );
         }
 
-        String expectedSignature = md5(rawBody + secondKey);
+        String expectedSignature = md5(rawBody +payUProperties.getSecondKey());
 
         if (!MessageDigest.isEqual(
                 expectedSignature.getBytes(StandardCharsets.UTF_8),

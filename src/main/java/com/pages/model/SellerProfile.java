@@ -67,6 +67,7 @@ public class SellerProfile extends LogEntity {
     private boolean isDac7Reportable = false;
 
     private Instant dac7FlaggedAt;
+    private String stripeAccountId;
 
 
 
