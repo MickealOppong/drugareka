@@ -73,7 +73,7 @@ public class CategoryService {
                         .build();
             }
 
-            String computedPath = UtilService.toPath(incomingName, hasParent ? parentNode.getSlug() : null);
+            String computedPath = UtilService.toPath( hasParent ? parentNode.getSlug() : null,incomingName);
 
             Category category = Category.builder()
                     .name(incomingName)
