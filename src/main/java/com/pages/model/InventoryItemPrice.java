@@ -51,6 +51,7 @@ public class InventoryItemPrice extends LogEntity {
         this.inventoryItem = dto.getInventoryItem();
         this.oldServiceCharge = dto.getOldServiceCharge();
         this.newServiceCharge = dto.getNewServiceCharge();
+        this.sellerMinPrice = dto.getSellerMinPrice();
         this.reason = dto.getReason();
     }
 

@@ -90,7 +90,7 @@ public class ProductController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     messageSource.getMessage("api.add_listing.automotive.item_number.error", null, LocaleContextHolder.getLocale()));
         }
-
+log.info("dTA:{}",productData);
         return listingTransactionService.addSellerProduct(jwt,productData);
     }
 
