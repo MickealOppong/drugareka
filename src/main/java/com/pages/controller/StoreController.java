@@ -16,6 +16,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,6 +61,8 @@ public class StoreController {
 
     @Autowired
     private OrderReturnService orderReturnService;
+    @Autowired
+    private PaymentService paymentService;
 
 
 
@@ -68,6 +71,8 @@ public class StoreController {
     public List<ListTransResponse>  getListings(@AuthenticationPrincipal Jwt jwt){
            return listingTransactionService.getProductListings();
     }
+
+
 
 
     @GetMapping("/store-products")
@@ -113,27 +118,22 @@ public class StoreController {
 
     @PutMapping("/confirm-delivery")
     public ResponseEntity<Boolean> validateDelivery(@RequestParam("token") String token){
-       return ResponseEntity.ok(listingOrderService.validateDelivery(token));
+        return ResponseEntity.ok(listingOrderService.validateItemDelivery(token));
     }
 
     @GetMapping("/verify-confirmation")
     public ResponseEntity<Boolean> isAlreadyConfirmed(@RequestParam("token") String token){
-        return ResponseEntity.ok(listingOrderService.isDeliveryConfirmed(token));
+        return ResponseEntity.ok(listingOrderService.isDeliveryConfirmedAlready(token));
     }
 
     @PutMapping("/confirm-return")
     public ResponseEntity<Boolean> validateReturnDelivery(@RequestParam("token") String token){
-        OrderReturn orderReturn = shipmentService.validateAndProcessDelivery(token);
-            if(orderReturn !=null){
-              orderReturnService.executeFinancialItemRefundOnReceipt(orderReturn);
-                return ResponseEntity.ok(true);
-            }
-        return ResponseEntity.ok(false);
+       return ResponseEntity.ok(shipmentService.validateAndProcessDelivery(token));
     }
 
     @GetMapping("/verify-return")
     public ResponseEntity<Boolean> isReturnAlreadyConfirmed(@RequestParam("token") String token){
-        return ResponseEntity.ok(shipmentService.isDeliveryConfirmed(token));
+        return ResponseEntity.ok(shipmentService.isItemReturnConfirmed(token));
 
     }
 

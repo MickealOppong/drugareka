@@ -30,7 +30,17 @@ public interface InventoryItemRepo extends JpaRepository<InventoryItem,Long> {
     """)
         Optional<InventoryItem> findByIdForUpdate(@Param("id") Long id);
 
-    List<InventoryItem> findByStatusAndReservedUntilBefore(InventoryStatus status, Instant time);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT i
+    FROM InventoryItem i
+    WHERE i.status = :status
+      AND i.reservedUntil < :time
+    """)
+    List<InventoryItem> findByStatusAndReservedUntilBeforeForUpdate(
+            @Param("status") InventoryStatus status,
+            @Param("time") Instant time
+    );
 
     List<InventoryItem> findByStatusAndReservedBy(InventoryStatus status,Long reservedBy);
 }

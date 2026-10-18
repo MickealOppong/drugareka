@@ -40,6 +40,9 @@ public class Payment extends LogEntity {
     @Column(nullable = false, length = 3)
     private String currency;
 
+    @Column(name = "stripe_charge_id", unique = true)
+    private String stripeChargeId;
+
     /**
      * Provider-specific checkout/session identifier.
      *

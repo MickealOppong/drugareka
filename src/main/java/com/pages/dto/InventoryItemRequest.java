@@ -22,4 +22,10 @@ public class InventoryItemRequest {
     private InventoryStatus status;
     private String shippingMethod;
     private String itemSize;
+    private String productionYear;
+    private String model;
+    private String width;
+    private String height;
+    private String depth;
+    private String itemNumber;
 }

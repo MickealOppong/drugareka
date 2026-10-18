@@ -106,12 +106,6 @@ public class AccountController {
         return appUserDetailsService.changePassword(jwt,dto);
     }
 
-    @PreAuthorize(("hasAuthority('ROLE_ADMIN')"))
-    @PutMapping("/settle-order")
-    public ResponseDto<Object> settleSeller(@AuthenticationPrincipal Jwt jwt,
-                                            @RequestParam String paidAt,
-                                            @RequestParam Long payoutId){
-        return sellerPayoutService.settleAmountDue(jwt,payoutId,paidAt);
-    }
+
 
 }

@@ -9,6 +9,10 @@ import com.pages.enums.ShipmentStatus;
 import com.pages.model.*;
 import com.pages.repository.SellerPayoutRepo;
 import com.pages.repository.SellerProfileRepo;
+import com.stripe.exception.EventDataObjectDeserializationException;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Event;
+import com.stripe.model.Transfer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -47,35 +51,58 @@ public class SellerPayoutService {
         this.sellerProfileRepo = sellerProfileRepo;
     }
 
+    public List<SellerPayoutResponse> allPayouts(Jwt jwt){
+        if(jwt==null){
+            return null;
+        }
+       return sellerPayoutRepo.findAll().stream().map(payout->{
+          return SellerPayoutResponse.builder()
+                   .id(payout.getId())
+                   .seller(payout.getSellerNameSnapshot())
+                   .status(payout.getStatus())
+                   .listingOrderItem(payout.getListingOrderItem().getId())
+                   .orderNumber(payout.getListingOrderItem().getListingOrder().getOrderNumber())
+                   .currency(payout.getCurrency())
+                   .amount(payout.getAmount())
+                   .build();
+       }).toList();
+    }
+
+    public SellerPayout getSellerPayoutById(Long id){
+        return sellerPayoutRepo.findById(id).orElse(null);
+    }
+    public List<SellerPayout> getPayoutsByStatus(PayoutStatus payoutStatus){
+        return sellerPayoutRepo.findByStatus(payoutStatus);
+    }
+
+    public void save(SellerPayout sellerPayout){
+        sellerPayoutRepo.save(sellerPayout);
+    }
 
     @Transactional
-    public void createPayouts(ListingOrder orderItem) {
+    public void createPayouts(ListingOrder order) {
 
-        if(!orderItem.getItems().isEmpty()){
+        if(order==null){
+            return;
+        }
 
+        for(ListingOrderItem item :order.getItems()){
 
-            orderItem.getItems()
-                    .forEach(order->{
+            BigDecimal payoutAmount =item.getSellerPrice();
 
-                        InventoryItem inventoryItem =order.getInventoryItem();
-                        InventoryItemPrice inventoryItemPrice = inventoryItemPriceService.getPrices(inventoryItem.getId());
-                        BigDecimal payoutAmount = inventoryItemPrice.getSellerNewPrice().add(order.getShippingCost());
+            //seller name
+            String sellerName = item.getSellerNameSnapshot();
 
-                        //seller name
-                        String sellerName = inventoryItem.getSeller().getUser().getFirstName()+" "
-                        + inventoryItem.getSeller().getUser().getLastName();
+            SellerPayout payout = SellerPayout.builder()
+                    .listingOrderItem(item)
+                    .seller(item.getSeller())
+                    .amount(payoutAmount)
+                    .sellerNameSnapshot(sellerName)
+                    .currency("PLN")
+                    .status(PayoutStatus.CREATED)
+                    .build();
 
-                        SellerPayout payout = SellerPayout.builder()
-                                .listingOrderItem(order)
-                                .seller(order.getSeller())
-                                .amount(payoutAmount)
-                                .sellerNameSnapshot(sellerName)
-                                .currency("PLN")
-                                .status(PayoutStatus.CREATED)
-                                .build();
-
-                    sellerPayoutRepo.save(payout);
-                    });
+            sellerPayoutRepo.save(payout);
         }
 
     }
@@ -117,7 +144,7 @@ public class SellerPayoutService {
     }
 
     @Transactional(readOnly = true)
-    private ListPagePayout allPayouts(Jwt jwt,int page,int size){
+    public ListPagePayout allPayouts(Jwt jwt,int page,int size){
         if(jwt !=null){
 
             Pageable pageable = PageRequest.of(
@@ -135,6 +162,7 @@ public class SellerPayoutService {
                                 .id(sellerPayout.getId())
                                 .status(sellerPayout.getStatus())
                                 .currency(sellerPayout.getCurrency())
+                                .transferId(sellerPayout.getTransferId())
                                 .orderNumber(sellerPayout.getListingOrderItem().getListingOrder().getOrderNumber())
                                 .listingOrderItem(sellerPayout.getListingOrderItem().getListingId())
                                 .build();
@@ -154,11 +182,6 @@ public class SellerPayoutService {
     public ListPagePayout payouts(Jwt jwt,int page,int size){
         if(jwt!=null){
             AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
-            boolean isAdmin = jwt.getClaimAsStringList("ROLE").contains("ROLE_ADMIN");
-
-            if(isAdmin){
-                return allPayouts(jwt,page,size);
-            }
             return getMyPayouts(jwt,page,size);
         }
         return ListPagePayout.builder().build();
@@ -214,6 +237,54 @@ public class SellerPayoutService {
                 .build();
     }
 
+
+    @Transactional
+    public ResponseDto<Object> updateStatus(Jwt jwt,Long payoutId,String status){
+        if(jwt==null){
+            return ResponseDto.<Object>builder()
+                    .httpStatus(HttpStatus.FORBIDDEN.value())
+                    .message("Not authorised")
+                    .build();
+        }
+        SellerPayout payout= sellerPayoutRepo.findById(payoutId).orElse(null);
+
+
+        if(payout!=null){
+
+
+            payout.setStatus(getStatusFromString(status));
+
+            sellerPayoutRepo.save(payout);
+
+            return ResponseDto.<Object>builder()
+                    .httpStatus(HttpStatus.OK.value())
+                    .data(true)
+                    .message("Payment completed")
+                    .build();
+        }
+        return ResponseDto.<Object>builder()
+                .httpStatus(HttpStatus.BAD_REQUEST.value())
+                .data(false)
+                .message("Record does not exist")
+                .build();
+    }
+
+    public PayoutStatus getStatusFromString(String status){
+        return switch (status.toLowerCase()){
+            case "paid" ->PayoutStatus.PAID;
+            case"created"->PayoutStatus.CREATED;
+            case"processing"->PayoutStatus.PROCESSING;
+            case"transferred"->PayoutStatus.TRANSFERRED;
+            case "approved"->PayoutStatus.APPROVED;
+            case "reversed"->PayoutStatus.REVERSED;
+            case"refund"->PayoutStatus.REFUND;
+            case"pending"->PayoutStatus.PENDING;
+            case"failed"->PayoutStatus.FAILED;
+            case "completed"->PayoutStatus.COMPLETED;
+            default -> throw new IllegalStateException("Unexpected value: " + status.toLowerCase());
+        };
+    }
+
     public void createRefund(ListingOrderItem orderItem) {
 
         if(orderItem!=null){
@@ -233,5 +304,82 @@ public class SellerPayoutService {
             sellerPayoutRepo.save(payout);
         }
 
+    }
+
+
+    public void handleTransferCreated(Event event) {
+        Transfer transfer = null;
+        try {
+            transfer = (Transfer) event
+                    .getDataObjectDeserializer()
+                    .deserializeUnsafe();
+        } catch (EventDataObjectDeserializationException e) {
+            throw new RuntimeException(e);
+        }
+
+        if (transfer == null) {
+            throw new IllegalStateException(
+                    "Could not deserialize transfer for event "
+                            + event.getId()
+            );
+        }
+
+        String transferId = transfer.getId();
+
+        SellerPayout sellerPayout = sellerPayoutRepo
+                .findByTransferId(transferId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No associated SellerPayout for transfer: "
+                                + transferId
+                ));
+
+        // A reversal is a separate lifecycle event and must not be overwritten.
+        if (sellerPayout.getStatus() == PayoutStatus.REVERSED
+                || sellerPayout.getStatus() == PayoutStatus.PAID) {
+            return;
+        }
+
+        if (sellerPayout.getStatus() == PayoutStatus.TRANSFERRED) {
+            return;
+        }
+
+        sellerPayout.setStatus(PayoutStatus.TRANSFERRED);
+        sellerPayoutRepo.save(sellerPayout);
+    }
+
+
+    public void handleTransferReversed(Event event){
+        Transfer transfer = null;
+        try {
+            transfer = (Transfer) event
+                    .getDataObjectDeserializer()
+                    .deserializeUnsafe();
+        } catch (EventDataObjectDeserializationException e) {
+            throw new RuntimeException(e);
+        }
+
+        if (transfer == null) {
+            throw new IllegalStateException(
+                    "Could not deserialize transfer for event "
+                            + event.getId()
+            );
+        }
+
+        String transferId = transfer.getId();
+
+        SellerPayout sellerPayout = sellerPayoutRepo
+                .findByTransferId(transferId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No associated SellerPayout for transfer: "
+                                + transferId
+                ));
+
+        // Ignore duplicate reversal events.
+        if (sellerPayout.getStatus() == PayoutStatus.REVERSED) {
+            return;
+        }
+
+        sellerPayout.setStatus(PayoutStatus.REVERSED);
+        sellerPayoutRepo.save(sellerPayout);
     }
 }

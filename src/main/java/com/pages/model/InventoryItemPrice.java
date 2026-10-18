@@ -29,6 +29,9 @@ public class InventoryItemPrice extends LogEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal sellerNewPrice =BigDecimal.ZERO;
 
+    @Column(precision = 12, scale = 2)
+    private BigDecimal sellerMinPrice= BigDecimal.ZERO;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal oldServiceCharge = BigDecimal.ZERO;
 
@@ -54,12 +57,13 @@ public class InventoryItemPrice extends LogEntity {
     public InventoryItemPriceResponse toPriceDto(){
        return InventoryItemPriceResponse.builder()
                 .id(this.getId())
-               .sellerOLdPrice(this.sellerOldPrice)
+               .sellerOLdPrice(this.getSellerOldPrice())
                 .sellerNewPrice(this.getSellerNewPrice())
-               .inventoryId(this.inventoryItem.getId())
-                .oldServiceCharge(this.oldServiceCharge)
-               .newServiceCharge(this.newServiceCharge)
-                .reason(this.reason)
+               .inventoryId(this.getInventoryItem().getId())
+                .oldServiceCharge(this.getOldServiceCharge())
+               .newServiceCharge(this.getNewServiceCharge())
+               .sellerMinPrice(this.getSellerMinPrice())
+                .reason(this.getReason())
                 .build();
     }
 }

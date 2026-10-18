@@ -58,6 +58,12 @@ public class InventoryItem extends LogEntity {
     private ItemSize itemSize = ItemSize.SMALL_UP_10KG;
 
     private String sku;
+    private String productionYear;
+    private String model;
+    private String width;
+    private String height;
+    private String depth;
+    private String itemNumber;
 
 
 }

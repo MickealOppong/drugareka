@@ -1,7 +1,9 @@
 package com.pages.repository;
 
 import com.pages.enums.InventoryStatus;
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.OrderStatus;
+import com.pages.enums.ReceiptConfirmationStatus;
 import com.pages.model.ListingOrderItem;
 import com.pages.model.ListingTransaction;
 import com.pages.model.SellerProfile;
@@ -26,6 +28,9 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
     Long countBySellerIdAndListingOrderOrderStatus(Long userId, OrderStatus orderStatus);
     Long countBySellerId(Long userId);
     Optional<ListingOrderItem> findFirstBySellerIdAndInventoryItemStatusOrderByCreatedAtDesc(Long sellerId, InventoryStatus inventoryStatus);
+
+    List<ListingOrderItem>  findByReceiptConfirmationStatusAndOrderItemStatus(ReceiptConfirmationStatus receiptConfirmationStatus, OrderItemStatus orderItemStatus);
+
     Optional<ListingOrderItem> findByReceiptConfirmationToken(String token);
 
     @Query("""

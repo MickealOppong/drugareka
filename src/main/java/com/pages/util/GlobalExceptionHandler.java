@@ -1,13 +1,15 @@
 package com.pages.util;
 
-
 import com.pages.exception.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.MessagingException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,154 +17,218 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
+    // 🚀 Inject the central Spring MessageSource message processor
+    private final MessageSource messageSource;
+
     @ExceptionHandler(InsufficientPublicPresenceException.class)
-    public ResponseEntity<Map<String, Object>> handleInsufficientPublicPresence(InsufficientPublicPresenceException ex) {
+    public ResponseEntity<Map<String, Object>> handleInsufficientPublicPresence(InsufficientPublicPresenceException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
 
-        body.put("status", HttpStatus.FORBIDDEN.value()); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error", "Feature Locked");
+        String errorMsg = messageSource.getMessage("api.error.feature_locked", null, "Feature Locked", locale);
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorMsg);
         body.put("message", ex.getMessage());
 
-        // Return a clean, structured JSON object with the right HTTP code instead of a 500 error
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
-
     @ExceptionHandler(MessagingException.class)
-    public ResponseEntity<Map<String, Object>> handleMessagingException(MessagingException ex) {
+    public ResponseEntity<Map<String, Object>> handleMessagingException(MessagingException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
 
+        String errorMsg = messageSource.getMessage("api.error.conflict_generic", null, "Error", locale);
+
         body.put("status", HttpStatus.CONFLICT.value());
-        body.put("error", "Error");
+        body.put("error", errorMsg);
         body.put("message", ex.getMessage());
 
-        // Return a clean, structured JSON object with the right HTTP code instead of a 500 error
         return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
         Map<String, Object> body = new LinkedHashMap<>();
-
-        // Extract the explicit HTTP Status Code embedded by your transaction service layer guards
         HttpStatus statusCode = HttpStatus.valueOf(ex.getStatusCode().value());
 
-        body.put("timestamp", java.time.Instant.now().toString());
-        body.put("status", statusCode.value()); // Returns numeric integers (e.g. 403, 404, 400)
-        body.put("error", statusCode.getReasonPhrase()); // E.g., "Forbidden", "Not Found"
-        body.put("message", ex.getReason()); //
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", statusCode.value());
+        body.put("error", statusCode.getReasonPhrase());
+        body.put("message", ex.getReason());
 
-        // Return a clean, structured JSON object with the right HTTP code instead of a 500 error
         return new ResponseEntity<>(body, statusCode);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> validationException(MethodArgumentNotValidException ex) {
+    public ResponseEntity<Map<String, Object>> validationException(MethodArgumentNotValidException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-       Map<String,String> errors = ex.getBindingResult().getFieldErrors().stream()
-                        .collect(Collectors.toMap(FieldError::getField, fieldError -> fieldError.getDefaultMessage()!=null?
-                                fieldError.getDefaultMessage():"Invalid value",(existingMessage,newMessage)->existingMessage+","+newMessage));
-        body.put("status", HttpStatus.FORBIDDEN.value()); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error", errors);
-        body.put("message", "One or more field errors");
+        String fallbackInvalidValue = messageSource.getMessage("api.error.validation.invalid_value", null, "Invalid value", locale);
+        String errorLabel = messageSource.getMessage("api.error.validation.label", null, "error", locale);
 
-        // Return a clean, structured JSON object with the right HTTP code instead of a 500 error
+        // Map errors safely using the dynamic fallback string
+        Map<String, String> errors = ex.getBindingResult().getFieldErrors().stream()
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        fieldError -> fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : fallbackInvalidValue,
+                        (existingMessage, newMessage) -> existingMessage + ", " + newMessage
+                ));
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorLabel);
+        body.put("message", errors);
+
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
-    @ExceptionHandler(InvalidOperationException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidOperationException(InvalidOperationException ex) {
-       InvalidOperationException error =  new InvalidOperationException(ex.getMessage());
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<Map<String, Object>> bindException(
+            BindException ex,
+            Locale locale) {
+
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.CONFLICT); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","An error occurred");
+
+        String errorLabel = messageSource.getMessage(
+                "api.error.validation.label",
+                null,
+                "error",
+                locale);
+
+        String invalidNumber = messageSource.getMessage(
+                "api.listing.price.invalid_number",
+                null,
+                "Minimum price must be a valid number.",
+                locale);
+
+        Map<String, String> errors = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        fieldError -> {
+                            if ("minPrice".equals(fieldError.getField())
+                                    && fieldError.getRejectedValue() != null) {
+                                return invalidNumber;
+                            }
+
+                            return fieldError.getDefaultMessage() != null
+                                    ? fieldError.getDefaultMessage()
+                                    : invalidNumber;
+                        },
+                        (a, b) -> a
+                ));
+
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", errorLabel);
+        body.put("message", errors);
+
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidOperationException(InvalidOperationException ex, Locale locale) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        String errorMsg = messageSource.getMessage("api.error.invalid_operation", null, "An error occurred", locale);
+
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", errorMsg);
         body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(AccessPermissionException.class)
-    public ResponseEntity<Map<String, Object>> accessPermission(AccessPermissionException ex) {
-        AccessPermissionException error = new AccessPermissionException(ex.getMessage());
+    public ResponseEntity<Map<String, Object>> accessPermission(AccessPermissionException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.FORBIDDEN); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","an error occurred");
-        body.put("message", error.getMessage());
+        String errorMsg = messageSource.getMessage("api.error.access_denied", null, "an error occurred", locale);
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
-    public ResponseEntity<Map<String, Object>> duplicateKey(DuplicateKeyException ex) {
-        DuplicateKeyException error = new DuplicateKeyException(ex.getMessage());
+    public ResponseEntity<Map<String, Object>> duplicateKey(DuplicateKeyException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.FORBIDDEN); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","an error occurred");
-        body.put("message", error.getMessage());
+        String errorMsg = messageSource.getMessage("api.error.duplicate_key", null, "an error occurred", locale);
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(UsernameNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> userNotFound(UsernameNotFoundException ex) {
-        UsernameNotFoundException error = new UsernameNotFoundException(ex.getMessage());
+    public ResponseEntity<Map<String, Object>> userNotFound(UsernameNotFoundException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.FORBIDDEN); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","an error occurred");
-        body.put("message", error.getMessage());
+        String errorMsg = messageSource.getMessage("api.error.user_not_found", null, "an error occurred", locale);
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
+
     @ExceptionHandler(PhotoNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> handleMissingImage(PhotoNotFoundException ex) {
-        PhotoNotFoundException error = new PhotoNotFoundException(ex.getMessage());
+    public ResponseEntity<Map<String, Object>> handleMissingImage(PhotoNotFoundException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.BAD_REQUEST.value()); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","error occurred");
-        body.put("message", error.getMessage());
+        String errorMsg = messageSource.getMessage("api.error.photo_not_found", null, "error occurred", locale);
+
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> illegalArgument(IllegalArgumentException ex) {
-        InvalidOperationException error = new InvalidOperationException(ex.getMessage());
+    public ResponseEntity<Map<String, Object>> illegalArgument(IllegalArgumentException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.BAD_REQUEST); // 403 Forbidden or HttpStatus.BAD_REQUEST (400)
-        body.put("error","Error occurred");
-        body.put("message", error.getMessage());
+        String errorMsg = messageSource.getMessage("api.error.illegal_argument", null, "Error occurred", locale);
+
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
-
-
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<Map<String, Object>> Exception(MaxUploadSizeExceededException ex) {
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", HttpStatus.CONTENT_TOO_LARGE.value());
-        body.put("error", "Content too large"+ex.getCause());
-        body.put("message", ex.getMessage()); // This will show you the REAL video streaming error!
+        String errorLabel = messageSource.getMessage("api.error.file_too_large", null, "Content too large", locale);
 
-        return ResponseEntity
-                .status(HttpStatus.CONTENT_TOO_LARGE.value())
-                .body(body);
+        body.put("status", HttpStatus.CONTENT_TOO_LARGE.value());
+        body.put("error", errorLabel + " " + ex.getCause());
+        body.put("message", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).body(body);
     }
 
+    // 🚀 FIXED: Fully completed and closed out the PayU handling logic safely
     @ExceptionHandler(PayUValidationException.class)
     public ResponseEntity<Map<String, Object>> handlePayUValidation(PayUValidationException ex) {
         Map<String, Object> body = Map.of(
                 "success", false,
                 "error_source", "PAYU_AML_PROVIDER",
                 "status", ex.getStatusCode(),
-                "code", ex.getPayuErrorCode(),
-                "message", ex.getMessage() // E.g., "Invalid PESEL structural checksum format"
+                "code", ex.getPayuErrorCode() != null ? ex.getPayuErrorCode() : "UNKNOWN_PAYU_GATEWAY_FAULT",
+                "message", ex.getMessage() != null ? ex.getMessage() : "Payment gateway processing anomaly detected"
         );
-
-        return ResponseEntity.status(ex.getStatusCode()).body(body);
+        return new ResponseEntity<>(body, HttpStatus.valueOf(ex.getStatusCode()));
     }
-
-
 }
-

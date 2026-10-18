@@ -1,0 +1,8 @@
+package com.pages.enums;
+
+public enum PayoutExceptionReason {
+    SELLER_ONBOARDING_INCOMPLETE,
+    INSUFFICIENT_STRIPE_BALANCE,
+    STRIPE_TRANSFER_FAILED,
+    MANUAL_REVIEW
+}

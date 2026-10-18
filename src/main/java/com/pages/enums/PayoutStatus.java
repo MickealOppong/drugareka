@@ -6,5 +6,11 @@ public enum PayoutStatus {
     FAILED,
     CANCELLED,
     REFUND,
-    CREATED
+    CREATED,
+    COMPLETED,
+    PROCESSING,
+    TRANSFERRED,
+    READY_FOR_REVIEW,
+    APPROVED,
+    REVERSED
 }

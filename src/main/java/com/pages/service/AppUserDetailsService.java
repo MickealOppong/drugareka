@@ -326,9 +326,7 @@ public class AppUserDetailsService implements UserDetailsService {
                 appUser.setFirstName(userDetailsDto.getFirstName().trim());
             if (StringUtils.hasText(userDetailsDto.getLastName()))
                 appUser.setLastName(userDetailsDto.getLastName().trim());
-            if (StringUtils.hasText(userDetailsDto.getPesel())) appUser.setPesel(userDetailsDto.getPesel().trim());
-            if (StringUtils.hasText(userDetailsDto.getAccountNumber()))
-                appUser.setAccountNumber(userDetailsDto.getAccountNumber().trim());
+
 
             if (address != null) {
                 if (StringUtils.hasText(userDetailsDto.getStreet()))

@@ -1,6 +1,7 @@
 package com.pages.model;
 
 import com.pages.enums.OrderItemStatus;
+import com.pages.enums.ReceiptConfirmationStatus;
 import com.pages.enums.ShippingMethod;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -68,6 +69,9 @@ public class ListingOrderItem extends LogEntity {
     @Enumerated(EnumType.STRING)
     private OrderItemStatus orderItemStatus;
 
+    @Enumerated(EnumType.STRING)
+    private ReceiptConfirmationStatus receiptConfirmationStatus;
+
     @Column(name = "receipt_confirmation_token", unique = true)
     private String receiptConfirmationToken;
 
@@ -76,5 +80,7 @@ public class ListingOrderItem extends LogEntity {
 
     @Column(name = "receipt_confirmed_at")
     private Instant receiptConfirmedAt;
+
+
 
 }

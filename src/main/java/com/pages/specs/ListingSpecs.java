@@ -55,6 +55,38 @@ public class ListingSpecs {
         };
     }
 
+    public static Specification<ListingTransaction> hasCategoryId(
+            Long categoryId) {
+
+        return (root, query, cb) -> {
+
+            if (categoryId == 0 ) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventory =
+                    root.join("inventory");
+
+            Join<InventoryItem, ProductCatalog> product =
+                    inventory.join("productCatalog");
+
+            Join<ProductCatalog, Category> categoryJoin =
+                    product.join("category");
+
+            Path<Category> category= categoryJoin.get("id");
+
+
+            // Condition A: Direct match where the category's id matches the query parameter
+            Predicate directCategoryMatch = cb.equal(
+                    category,
+                    categoryId
+            );
+
+
+            return cb.or(directCategoryMatch);
+        };
+    }
+
 
     public static Specification<ListingTransaction> isNotSold() {
 

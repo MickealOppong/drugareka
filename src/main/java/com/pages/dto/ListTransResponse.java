@@ -10,6 +10,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 @Data
@@ -21,6 +22,8 @@ public class ListTransResponse {
     private Long listingId;
     private Long inventoryId;
 
+    private BigDecimal serviceCharge;
+    private BigDecimal shippingCost;
     private Long productId;
 
     private String brand;
@@ -33,7 +36,6 @@ public class ListTransResponse {
     private String productSlug;
 
     private String productDescription;
-
 
     private String productCondition;
     private String itemSize;
@@ -50,4 +52,10 @@ public class ListTransResponse {
     private Instant createdAt;
     private String shippingMethod;
     private String shipping;
+    private String productionYear;
+    private String model;
+    private String width;
+    private String height;
+    private String depth;
+    private String itemNumber;
 }

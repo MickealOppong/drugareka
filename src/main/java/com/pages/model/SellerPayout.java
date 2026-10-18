@@ -37,4 +37,6 @@ public class SellerPayout extends LogEntity{
     private PayoutStatus status;
 
     private Instant paidAt;
+
+    private String transferId;
 }

@@ -22,9 +22,9 @@ public class ServiceCharge extends LogEntity {
     /**
      * The order that generated the charge.
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false)
-    private ListingOrder order;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "order_item_id", nullable = false)
+    private ListingOrderItem listingOrderItem;
 
     /**
      * Seller responsible for the charge.

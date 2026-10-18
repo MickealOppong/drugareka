@@ -78,6 +78,9 @@ public class ShipmentService {
                 });
     }
 
+
+
+    @Transactional
     public void createShipment(List<ListingOrderItem> listingOrderItem) {
         listingOrderItem.forEach(item -> {
             SellerShipment shipment = SellerShipment.builder()
@@ -477,11 +480,11 @@ public class ShipmentService {
 
 
     /**
-     * Confirms the shipment delivery and triggers the associated financial refund.
+     * Confirms the shipment delivery and triggers the associated financial refund to buyer.
      * Enforced with a database transaction to prevent race conditions.
      */
     @Transactional
-    public OrderReturn validateAndProcessDelivery(String token) {
+    public Boolean validateAndProcessDelivery(String token) {
         if (token == null || token.isBlank()) {
             return null;
         }
@@ -513,12 +516,18 @@ public class ShipmentService {
         // Optional safety: orderItem.setReceiptConfirmationToken(null);
 
         // 5. Persist the state transition to the database
-     ReturnShipment returnShipment= returnShipmentRepo.save(orderItem);
-        return returnShipment.getOrderReturn();
+
+        returnShipmentRepo.save(orderItem);
+        return true;
 
     }
 
-    public boolean isDeliveryConfirmed(String token) {
+    /**
+     * check that item return is not already confirmed when seller reuses the link
+     * @param token
+     * @return
+     */
+    public boolean isItemReturnConfirmed(String token) {
 
      ReturnShipment orderItem=  returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
 
@@ -767,9 +776,17 @@ public class ShipmentService {
              }).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<SellerShipment> getSellerShipments(String token){
+        return   sellerShipmentRepo.findBySellerShipmentTokenToken(token);
+    }
 
 
 
+    @Transactional(readOnly = true)
+    public SellerShipment getShipments(Long orderItemId){
+        return   sellerShipmentRepo.findByListingOrderItemId(orderItemId).orElse(null);
+    }
 
     @Transactional
     public void createDpdShipment(ShipmentConfirmationRequest data) {

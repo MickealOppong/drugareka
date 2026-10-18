@@ -37,31 +37,16 @@ public class OrderCleanupService {
     }
 
     // Runs once every 5 minutes (300,000 milliseconds)
-    @Scheduled(fixedRate = 300000)
+    @Scheduled(cron = "0 0/30 * * * *", zone = "Europe/Warsaw")
     @Transactional
     public void cleanupAbandonedReservations() {
         Instant now = Instant.now();
         log.info("Executing database sweep for expired checkout reservations at timestamp: {}", now);
 
-        // 1. Find all physical items still locked past their 15-minute reservation deadline
-        List<InventoryItem> expiredItems = inventoryItemRepo.findByStatusAndReservedUntilBefore(
-                InventoryStatus.RESERVED, now
-        );
 
-        if (!expiredItems.isEmpty()) {
-            log.info("Found {} ghost items to release back to storefront catalog.", expiredItems.size());
-
-            for (InventoryItem item : expiredItems) {
-                // Return item back to store catalog availability pools
-                item.setStatus(InventoryStatus.AVAILABLE);
-                item.setReservedUntil(null);
-                inventoryItemRepo.save(item);
-            }
-        }
-
-        // Find orders created more than 40 minutes ago that are still stuck as PENDING
-        Instant orderTimeoutLimit = Instant.now().minusSeconds(2400); // 40 minutes
-        List<ListingOrder> abandonedOrders = listingOrderRepo.findByOrderStatusAndCreatedAtBefore(
+        // Find orders created more than 30 minutes ago that are still stuck as PENDING
+        Instant orderTimeoutLimit = Instant.now().minusSeconds(1800); // 30 minutes
+        List<ListingOrder> abandonedOrders = listingOrderRepo.findByOrderStatusAndCreatedAtBeforeForUpdate(
                 OrderStatus.PROCESSING, orderTimeoutLimit
         );
 
@@ -70,9 +55,21 @@ public class OrderCleanupService {
             listingOrderRepo.save(order);
             log.info("Marked abandoned order header {} as CANCELLED.", order.getOrderNumber());
 
+
             order.getItems().forEach(lineItem->{
                 lineItem.setOrderItemStatus(OrderItemStatus.CANCELLED);
+
                 listingOrderItemRepo.save(lineItem);
+
+                //inventory release
+                InventoryItem inventoryItem = lineItem.getInventoryItem();
+                if(inventoryItem.getReservedUntil().isBefore(Instant.now())){
+                    inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+                    inventoryItem.setReservedUntil(null);
+                    inventoryItem.setReservedBy(null);
+                    inventoryItemRepo.save(inventoryItem);
+                }
+
             });
 
             Payment payment =paymentRepo.findByListingOrderIdAndStatus(order.getId(),PaymentStatus.PENDING).orElse(null);

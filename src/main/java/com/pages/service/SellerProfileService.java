@@ -51,6 +51,10 @@ public class SellerProfileService {
         return sellerProfileRepo.findByUserId(userId).orElse(null);
     }
 
+    public SellerProfile getSellerProfileById(Long id){
+        return sellerProfileRepo.findById(id).orElse(null);
+    }
+
 
     /**
      *
@@ -58,9 +62,9 @@ public class SellerProfileService {
      * updates lifetime metrics, and dynamically computes calendar-year DAC7 tax compliance thresholds.
      */
     @Transactional
-    public List<SellerProfile> updateSellerTotalSales(List<ListingOrderItem> orderItems) {
+    public void updateSellerTotalSales(List<ListingOrderItem> orderItems) {
         if (orderItems == null || orderItems.isEmpty()) {
-            return new ArrayList<>();
+            return ;
         }
 
         try {
@@ -89,7 +93,7 @@ public class SellerProfileService {
                 Long sellerId = entry.getKey();
                 BigDecimal aggregatedOrderTotal = entry.getValue();
 
-                SellerProfile seller = sellerProfileRepo.findById(sellerId)
+                SellerProfile seller = sellerProfileRepo.findByIdForUpdate(sellerId)
                         .orElseThrow(() -> new InvalidOperationException("Seller profile not found for user ID: " + sellerId));
 
                 log.info("Financial System: Aggregating order funds for seller profile: {} [Amount: +{} zł]",
@@ -124,7 +128,7 @@ public class SellerProfileService {
             }
 
             // STEP 4: Flush everything to your Railway instance in a single batch query!
-            return sellerProfileRepo.saveAll(profilesToUpdate);
+             sellerProfileRepo.saveAll(profilesToUpdate);
 
         } catch (InvalidOperationException e) {
             log.error("Validation Violation: Failed to match seller entities during accounting updates", e);

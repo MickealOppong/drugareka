@@ -1,5 +1,6 @@
 package com.pages.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -20,48 +21,64 @@ import java.math.BigDecimal;
 public class ProductData {
 
     private Long id;
-    @NotNull(message = "Name cannot be null")
-    @NotBlank(message = "Name cannot be empty")
+    @NotNull(message = "{api.product.name.empty}")
+    @NotBlank(message = "{api.product.name.empty}")
     private String name;
 
-    @NotNull(message = "Status cannot be null")
-    @NotBlank(message = "Status cannot be empty")
+    @NotNull(message = "{api.product.status.empty}")
+    @NotBlank(message = "{api.product.status.empty}")
     private String status;
 
-    @NotNull(message = "Category cannot be null")
+    @NotNull(message = "{api.product.categoryPath.empty}")
     private String categoryPath;
 
-    @NotNull(message = "Condition cannot be null")
-    @NotBlank(message = "Please set product condition")
+    @NotNull(message = "{api.product.condition.empty}")
+    @NotBlank(message = "{api.product.condition.empty}")
     private String condition;
 
-    @NotNull(message = "Description cannot be null")
-    @NotBlank(message = "Description cannot be empty")
+    @NotNull(message = "{api.product.description.empty}")
+    @NotBlank(message = "{api.product.description.empty}")
     private String description;
 
-    @NotNull(message = "Cena nie moze byc pusta")
+    @NotNull(message = "{api.product.price.empty}")
     @DecimalMin(
             value = "0.00",
             inclusive = false,
-            message = "Cena produktu musi być większa od zera"
+            message = "{api.product.price.min}"
     )
     private BigDecimal price;
 
-    @NotNull(message = "Shipping cannot be null")
-    @NotBlank(message = "Please provide shipping information")
+    @NotNull(message = "{api.product.price.empty}")
+    @DecimalMin(
+            value = "0.00",
+            inclusive = false,
+            message = "{api.product.price.min}"
+    )
+    private BigDecimal minPrice;
+
+    @NotNull(message = "{api.product.shippingInfo.empty}")
+    @NotBlank(message = "{api.product.shippingInfo.empty}")
     private String shippingInfo;
 
     private String sku;
 
-    @NotNull(message = "Brand cannot be null")
-    @NotBlank(message = "Brand cannot be empty")
+    @NotNull(message = "{api.product.brand.empty}")
+    @NotBlank(message = "{api.product.brand.empty}")
     private String brand;
 
     private MultipartFile[] images;
     private Integer[] imageSortOrder;
 
 
-    @NotNull(message = "Select item size for shipment pricing")
-    @NotBlank(message = "Please provide item size")
+    @NotNull(message = "{api.product.itemSize.empty}")
+    @NotBlank(message = "{api.product.itemSize.empty}")
     private String itemSize;
+
+    private String productionYear;
+    private String model;
+    private String width;
+    private String height;
+    private String depth;
+    private String itemNumber;
+
 }

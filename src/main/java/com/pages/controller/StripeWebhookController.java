@@ -6,6 +6,7 @@ import com.pages.model.InventoryItem;
 import com.pages.model.ListingOrder;
 import com.pages.model.ListingOrderItem;
 import com.pages.service.PaymentService;
+import com.pages.service.SellerPayoutService;
 import com.pages.service.StripeConnectService;
 import com.stripe.StripeClient;
 import com.stripe.events.V2CoreAccountUpdatedEvent;
@@ -35,6 +36,7 @@ public class StripeWebhookController {
     private final StripeConnectService stripeConnectService;
     private  final StripeClient client;
     private final ObjectMapper objectMapper;
+    private final SellerPayoutService sellerPayoutService;
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
@@ -51,7 +53,7 @@ public class StripeWebhookController {
 
 
             if ("v2.core.event".equals(objectType)) {
-               EventNotification notification =
+                EventNotification notification =
                         client.parseEventNotification(
                                 payload, signature, webhookSecret);
 
@@ -72,22 +74,41 @@ public class StripeWebhookController {
 
                 switch (event.getType()) {
                     case "checkout.session.completed":
+                    case "checkout.session.async_payment_succeeded":
                         paymentService.handleCheckoutCompleted(event);
+                        break;
+                    case "charge.succeeded":
+                        paymentService.handleChargeSucceeded(event);
                         break;
 
                     case "checkout.session.expired":
-                        paymentService.handleCheckoutExpired(event);
+                        paymentService.handleCheckoutSessionExpired(event);
+                        break;
+                        case "payment_intent.succeeded":
+                            paymentService.handleDelayedPaymentIntentSuccess(event);
+                            break;
+                    case "checkout.session.async_payment_failed":
+                        paymentService.handleAsyncPaymentFailed(event);
+                        break;
+                    case "payment_intent.failed":
+                        paymentService.handleAsyncPaymentFailed(event);
+                    case "transfer.created":
+                       sellerPayoutService.handleTransferCreated(event);
                         break;
 
+                    case "transfer.reversed":
+                        sellerPayoutService.handleTransferReversed(event);
+                        break;
                     default:
                         log.debug("Unhandled Stripe event: {}", event.getType());
+                        break;
                 }
             }
 
             return ResponseEntity.ok("received");
 
         } catch (Exception e) {
-            log.error("Stripe webhook processing failed", e);
+            log.error("Stripe webhook processing failed :{}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Webhook processing failed");
         }

@@ -12,7 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/payment/payu")
+@RequestMapping("/api/payment")
 public class PaymentController {
 
     private final PaymentService paymentService;
@@ -24,8 +24,8 @@ public class PaymentController {
     }
 
     @GetMapping("/status")
-    public ResponseEntity<PaymentStatus> getStatus( String orderNumber){
-        return ResponseEntity.ok( paymentService.getPaymentStatus(orderNumber.trim()));
+    public ResponseEntity<PaymentStatus> getStatus( String paymentId){
+        return ResponseEntity.ok( paymentService.getPaymentStatus(paymentId.trim()));
     }
 
     @PostMapping("/notify")

@@ -38,18 +38,20 @@ public class ListingOrderService {
 
 
     private final InventoryItemRepo inventoryItemRepo;
-    private final InventoryItemPriceService inventoryItemPriceService;
+    private final PayoutProcessingService payoutProcessingService;
 
     private final SellerProfileService sellerProfileService;
     private final SellerShipmentRepo sellerShipmentRepo;
 
-    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo, AppUserDetailsService appUserDetailsService, CartService cartService,InventoryItemRepo inventoryItemRepo, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, SellerShipmentRepo sellerShipmentRepo) {
+    public ListingOrderService(ListingOrderRepo listingOrderRepo, ListingOrderItemRepo listingOrderItemRepo,
+                               AppUserDetailsService appUserDetailsService, CartService cartService,
+                               InventoryItemRepo inventoryItemRepo, PayoutProcessingService payoutProcessingService, SellerProfileService sellerProfileService, SellerShipmentRepo sellerShipmentRepo) {
         this.listingOrderRepo = listingOrderRepo;
         this.listingOrderItemRepo = listingOrderItemRepo;
         this.appUserDetailsService = appUserDetailsService;
         this.cartService = cartService;
         this.inventoryItemRepo = inventoryItemRepo;
-        this.inventoryItemPriceService = inventoryItemPriceService;
+        this.payoutProcessingService = payoutProcessingService;
         this.sellerProfileService = sellerProfileService;
         this.sellerShipmentRepo = sellerShipmentRepo;
     }
@@ -164,8 +166,13 @@ public class ListingOrderService {
     }
 
 
-
-    public boolean validateDelivery(String token) {
+    /***
+     *  Buyer confirms receipt of goods to pave way for seller payment
+     * @param token
+     * @return
+     */
+    @Transactional
+    public boolean validateItemDelivery(String token) {
 
         ListingOrderItem orderItem =
                 listingOrderItemRepo
@@ -194,13 +201,14 @@ public class ListingOrderService {
 
         // Invalidate token
         orderItem.setReceiptConfirmationTokenExpiresAt(now);
+        orderItem.setReceiptConfirmationStatus(ReceiptConfirmationStatus.CONFIRMED);
 
-        listingOrderItemRepo.save(orderItem);
-
+        ListingOrderItem item= listingOrderItemRepo.save(orderItem);
+        payoutProcessingService.approvedPayout(item);
         return true;
     }
 
-    public boolean isDeliveryConfirmed(String token) {
+    public boolean isDeliveryConfirmedAlready(String token) {
 
         ListingOrderItem orderItem =
                 listingOrderItemRepo

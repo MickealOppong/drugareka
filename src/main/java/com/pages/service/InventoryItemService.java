@@ -78,6 +78,12 @@ private final AppUserDetailsService appUserDetailsService;
                     .deliveryInfo(dto.getShippingInfo())
                     .productCatalog(dto.getProductCatalog())
                     .sku(dto.getSku())
+                    .depth(dto.getDepth())
+                    .width(dto.getWidth())
+                    .height(dto.getHeight())
+                    .productionYear(dto.getProductionYear())
+                    .model(dto.getModel())
+                    .itemNumber(dto.getItemNumber())
                     .itemSize(getItemDimension(dto.getItemSize()))
                     .productCondition(savedCondition)
                     .build();

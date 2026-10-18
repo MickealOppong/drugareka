@@ -52,23 +52,19 @@ import static com.stripe.Stripe.apiKey;
 public class StripeConnectService {
 
 
-    private final ObjectMapper objectMapper;
     private final StripeClient client;
     private final SellerProfileRepo sellerProfileRepo;
     private final AppUserRepo appUserRepo;
-    private final GlobalAddressRepo globalAddressRepo;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    public StripeConnectService(ObjectMapper objectMapper, StripeClient client, SellerProfileRepo sellerProfileRepo, AppUserRepo appUserRepo, GlobalAddressRepo globalAddressRepo) {
-        this.objectMapper = objectMapper;
+    public StripeConnectService( StripeClient client, SellerProfileRepo sellerProfileRepo, AppUserRepo appUserRepo) {
         this.client = client;
 
         this.sellerProfileRepo = sellerProfileRepo;
         this.appUserRepo = appUserRepo;
 
-        this.globalAddressRepo = globalAddressRepo;
     }
 
     /**
@@ -176,6 +172,7 @@ public class StripeConnectService {
                         .setAccount(accountId)
                         .setUseCase(
                                 AccountLinkCreateParams.UseCase.builder()
+
                                         .setType(
                                                 AccountLinkCreateParams.UseCase.Type
                                                         .ACCOUNT_ONBOARDING
@@ -215,6 +212,7 @@ public class StripeConnectService {
         log.info("notif:{}",notification);
 
     }
+
 
 
     public ResponseDto<Object> handleAccountUpdated(Jwt jwt) {
@@ -355,7 +353,6 @@ public class StripeConnectService {
                                 user.getUsername(),
                                 user.getFirstName()+" "+user.getFirstName()
                         ).getData();
-                log.info("account {}",account);
 
                 if (account == null || account.getId() == null) {
                     throw new IllegalStateException(

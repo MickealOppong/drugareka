@@ -1,7 +1,9 @@
+
 package com.pages.service;
 
 import com.pages.controller.MediaController;
 import com.pages.dto.MediaResponse;
+import com.pages.exception.PhotoStorageException;
 import com.pages.impl.MediaUtilImpl;
 import com.pages.model.Category;
 import com.pages.model.InventoryItem;
@@ -12,17 +14,14 @@ import com.pages.util.UtilService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 
-
 import java.io.IOException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 @Slf4j
 @Service
@@ -30,521 +29,411 @@ public class MediaService {
 
     private final MediaRepo mediaRepo;
     private final MediaUtilImpl mediaUtil;
-    private final MediaStorageLocation mediaStorageLocation;
+    private final MediaStorageLocation storage;
 
-
-    public MediaService(MediaRepo mediaRepo, MediaUtilImpl mediaUtil, MediaStorageLocation mediaStorageLocation) {
+    public MediaService(
+            MediaRepo mediaRepo,
+            MediaUtilImpl mediaUtil,
+            MediaStorageLocation storage) {
         this.mediaRepo = mediaRepo;
         this.mediaUtil = mediaUtil;
-        this.mediaStorageLocation = mediaStorageLocation;
+        this.storage = storage;
     }
 
+    // ---------------------------------------------------------
+    // Category images
+    // ---------------------------------------------------------
 
-   @Transactional
-    public void uploadCategoryImage(MultipartFile file,Category category) {
-        // STEP 1: Calculate unique deterministic content hash fingerprint up-front
-        String fileHash = calculateSHA256(file);
-        log.info("has h{}",fileHash);
+    @Transactional
+    public void uploadCategoryImage(MultipartFile file, Category category) {
+        updateCategoryImage(file, category);
+    }
 
-        // STEP 2: Check database registry index first to intercept duplicate uploads
-        Optional<Media> existingAsset = mediaRepo.findByFileHash(fileHash);
-        if (existingAsset.isPresent()) {
-            log.info("Deduplication Shield: Match found for fingerprint [{}]. Skipping file storage write.", fileHash);
+    @Transactional
+    public void updateCategoryImage(MultipartFile file, Category category) {
+        if (file == null || file.isEmpty()) {
             return;
         }
 
-        // STEP 3: Fall back to format and clean the file name if it's a net-new upload pass
-        String sanitizedName = UtilService.formatMediaName(file.getOriginalFilename());
-        // Append hash block string fragment to physical key file target path names to guarantee uniqueness
-        String uniqueStorageKey = category.getId()+"-"+fileHash.substring(0, 8) + "-" + sanitizedName;
+        String hash = calculateSHA256(file);
 
+        Optional<Media> existing = mediaRepo.findByCategory(category);
 
-        // STEP 4: Persist the fingerprint mapping into the asset table manager registry
+        if (existing.isPresent()
+                && hash.equals(existing.get().getFileHash())) {
+            return;
+        }
 
-        Media media = Media.builder()
-                .contentType(file.getContentType())
-                .category(category)
-                .fileName(uniqueStorageKey)
-                .sortOrder(category.getSortOrder())
-                .path(mediaStorageLocation.getLocation() +"/"+uniqueStorageKey)
-                .fileHash(fileHash)
-                .build();
-          Media newMedia=  mediaRepo.save(media);
-        mediaUtil.store(file, uniqueStorageKey);
+        String filename = UUID.randomUUID() + "-"
+                + safeFilename(file.getOriginalFilename());
 
+        String key = storage.getCategoryImageKey(category.getId(), filename);
+
+        Media media = existing.orElseGet(Media::new);
+        String oldKey = media.getPath();
+
+        media.setCategory(category);
+        media.setContentType(file.getContentType());
+        media.setFileName(filename);
+        media.setPath(key);
+        media.setFileHash(hash);
+        media.setSortOrder(category.getSortOrder());
+
+        // Write the new file before switching the database record.
+        mediaUtil.store(file, key);
+
+        try {
+            mediaRepo.saveAndFlush(media);
+        } catch (RuntimeException e) {
+            deleteQuietly(key);
+            throw e;
+        }
+
+        if (oldKey != null && !oldKey.isBlank() && !oldKey.equals(key)) {
+            deleteQuietly(oldKey);
+        }
     }
 
+    public void saveMedia(MultipartFile image, Category category) {
+        updateCategoryImage(image, category);
+    }
+
+    public Media categoryImage(Category category) {
+        return mediaRepo.findByCategory(category).orElse(null);
+    }
+
+    public MediaResponse getCategoryImage(Category category) {
+        return mediaRepo.findByCategory(category)
+                .map(this::toResponse)
+                .orElse(null);
+    }
 
     @Transactional
-    public void uploadProductImage(MultipartFile[] files, Integer[] sortOrders, InventoryItem item) {
-        if (files == null || files.length == 0) return;
+    public void deleteByCategory(Category category) throws IOException {
+        Optional<Media> existing = mediaRepo.findFirstByCategory(category);
 
-        for (int index = 0; index < files.length; index++) {
-            MultipartFile file = files[index];
-            if (file.isEmpty()) continue;
+        if (existing.isEmpty()) {
+            return;
+        }
 
-            String fileHash =calculateSHA256(file);
+        Media media = existing.get();
+        String key = media.getPath();
 
-            Integer currentSortOrder = index;
-            if (sortOrders != null && index < sortOrders.length && sortOrders[index] != null) {
-                currentSortOrder = sortOrders[index];
+        mediaRepo.delete(media);
+        mediaRepo.flush();
+
+        deleteQuietly(key);
+    }
+
+    // ---------------------------------------------------------
+    // Listing images
+    // ---------------------------------------------------------
+
+    @Transactional
+    public void uploadProductImage(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            InventoryItem item) {
+        updateMediaFile(files, sortOrders, item);
+    }
+
+    public void saveMedia(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            InventoryItem item) {
+        updateMediaFile(files, sortOrders, item);
+    }
+
+    @Transactional
+    public void updateMedia(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            InventoryItem item) {
+        updateMediaFile(files, sortOrders, item);
+    }
+
+    @Transactional
+    public void updateMediaFile(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            InventoryItem item) {
+
+        if (item == null || item.getId() == null) {
+            throw new IllegalArgumentException(
+                    "A persisted listing is required before uploading images"
+            );
+        }
+
+        if (files == null) {
+            files = new MultipartFile[0];
+        }
+
+        List<Media> existing =
+                mediaRepo.findAllByInventoryItemId(item.getId());
+
+        // Index the existing records by content hash.
+        Map<String, Media> existingByHash = new HashMap<>();
+
+        for (Media media : existing) {
+            if (media.getFileHash() != null) {
+                existingByHash.putIfAbsent(media.getFileHash(), media);
             }
+        }
 
-            //  See if this physical file content already exists on disk
-            Optional<Media> existingAsset = mediaRepo.findByFileHash(fileHash);
+        Set<String> retainedHashes = new HashSet<>();
+        List<String> obsoleteKeys = new ArrayList<>();
 
-            if (existingAsset.isPresent()) {
-                Media duplicate = existingAsset.get();
-                log.info("Deduplication Shield: Reusing physical disk file for hash [{}]. Creating pointer reference.", fileHash);
+        for (int i = 0; i < files.length; i++) {
+            MultipartFile file = files[i];
+
+            if (file == null || file.isEmpty()) {
                 continue;
             }
 
-            // NET-NEW ASSET: Format and write new data blocks since this content hash doesn't exist anywhere yet
-            String sanitizedName = UtilService.formatMediaName(file.getOriginalFilename());
-            String uniqueStorageKey = item.getId()+"-"+fileHash.substring(0, 8) + "-" + sanitizedName;
-            String computedStoragePath = mediaStorageLocation.getLocation() + "/" +uniqueStorageKey;
+            String hash = calculateSHA256(file);
+            int sortOrder = resolveSortOrder(sortOrders, i);
+
+            Media matching = existingByHash.get(hash);
+
+            if (matching != null) {
+                // The same image already belongs to THIS listing.
+                matching.setSortOrder(sortOrder);
+                mediaRepo.save(matching);
+                retainedHashes.add(hash);
+                continue;
+            }
+
+            String filename = UUID.randomUUID() + "-"
+                    + safeFilename(file.getOriginalFilename());
+
+            String key = storage.getListingImageKey(item.getId(), filename);
 
             Media newMedia = Media.builder()
-                    .contentType(file.getContentType())
                     .inventoryItem(item)
-                    .fileName(uniqueStorageKey)
-                    .sortOrder(currentSortOrder)
-                    .path(computedStoragePath)
-                    .fileHash(fileHash)
+                    .contentType(file.getContentType())
+                    .fileName(filename)
+                    .path(key)
+                    .fileHash(hash)
+                    .sortOrder(sortOrder)
                     .build();
 
-            mediaRepo.save(newMedia);
-            mediaUtil.store(file, uniqueStorageKey);
+            // Write the image before inserting the reference.
+            mediaUtil.store(file, key);
+
+            try {
+                mediaRepo.save(newMedia);
+            } catch (RuntimeException e) {
+                deleteQuietly(key);
+                throw e;
+            }
+
+            retainedHashes.add(hash);
         }
+
+        // Remove records for images no longer submitted.
+        for (Media old : existing) {
+            String hash = old.getFileHash();
+
+            if (hash == null || !retainedHashes.contains(hash)) {
+                obsoleteKeys.add(old.getPath());
+                mediaRepo.delete(old);
+            }
+        }
+
+        mediaRepo.flush();
+
+        // Physical cleanup happens after database records are removed.
+        // A cleanup failure leaves an orphan file, not a broken listing.
+        for (String key : obsoleteKeys) {
+            deleteQuietly(key);
+        }
+    }
+
+    public MediaResponse getListingMainImage(Long inventoryItemId) {
+        return mediaRepo.findFirstByInventoryItemId(inventoryItemId)
+                .map(this::toResponse)
+                .orElse(null);
+    }
+
+    public List<MediaResponse> getImageList(Long inventoryItemId) {
+        return mediaRepo.findAllByInventoryItemId(inventoryItemId)
+                .stream()
+                .sorted(Comparator.comparing(
+                        Media::getSortOrder,
+                        Comparator.nullsLast(Integer::compareTo)))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    // ---------------------------------------------------------
+    // Generic uploads
+    // ---------------------------------------------------------
+
+    public Media saveMedia(MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            throw new PhotoStorageException("Cannot store an empty image");
+        }
+
+        String filename = UUID.randomUUID() + "-"
+                + safeFilename(image.getOriginalFilename());
+
+        String key = storage.getCompanyImageKey(filename);
+
+        Media media = Media.builder()
+                .contentType(image.getContentType())
+                .fileName(filename)
+                .path(key)
+                .fileHash(calculateSHA256(image))
+                .build();
+
+        mediaUtil.store(image, key);
+
+        try {
+            return mediaRepo.save(media);
+        } catch (RuntimeException e) {
+            deleteQuietly(key);
+            throw e;
+        }
+    }
+
+    public Resource getResource(String relativeKey) {
+        return mediaUtil.loadAsResource(relativeKey);
+    }
+
+    // ---------------------------------------------------------
+    // Deletion
+    // ---------------------------------------------------------
+
+    @Transactional
+    public void delete(Long id) throws IOException {
+        Optional<Media> result = mediaRepo.findById(id);
+
+        if (result.isEmpty()) {
+            return;
+        }
+
+        Media media = result.get();
+        String key = media.getPath();
+
+        mediaRepo.delete(media);
+        mediaRepo.flush();
+
+        deleteQuietly(key);
+    }
+
+    public void delete(String relativeKey) throws IOException {
+        mediaRepo.deleteByPath(relativeKey);
+        mediaUtil.delete(relativeKey);
+    }
+
+    public void deleteAll(List<String> relativeKeys) throws IOException {
+        if (relativeKeys == null || relativeKeys.isEmpty()) {
+            return;
+        }
+
+        for (String key : relativeKeys) {
+            delete(key);
+        }
+    }
+
+    @Transactional
+    public void deleteAllByInventoryItem(InventoryItem item)
+            throws IOException {
+
+        if (item == null || item.getId() == null) {
+            return;
+        }
+
+        List<Media> images =
+                mediaRepo.findAllByInventoryItemId(item.getId());
+
+        mediaRepo.deleteByInventoryItem(item);
+        mediaRepo.flush();
+
+        for (Media image : images) {
+            deleteQuietly(image.getPath());
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------
+
+    private MediaResponse toResponse(Media media) {
+        return MediaResponse.builder()
+                .image(MvcUriComponentsBuilder
+                        .fromMethodName(
+                                MediaController.class,
+                                "serveFile",
+                                media.getPath())
+                        .build()
+                        .toUri()
+                        .toString())
+                .sortOrder(media.getSortOrder())
+                .id(media.getId())
+                .build();
+    }
+
+    private int resolveSortOrder(Integer[] sortOrders, int index) {
+        if (sortOrders != null
+                && index < sortOrders.length
+                && sortOrders[index] != null) {
+            return sortOrders[index];
+        }
+
+        return index + 1;
+    }
+
+    private String safeFilename(String originalFilename) {
+        String formatted = UtilService.formatMediaName(
+                originalFilename == null ? "image" : originalFilename
+        );
+
+        if (formatted == null || formatted.isBlank()) {
+            formatted = "image";
+        }
+
+        // Keep only a filename, never a caller-supplied path.
+        formatted = formatted.replace('\\', '/');
+        formatted = formatted.substring(formatted.lastIndexOf('/') + 1);
+
+        return formatted;
     }
 
     public static String calculateSHA256(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("Cannot calculate fingerprint hash on an empty payload file container.");
+            throw new IllegalArgumentException(
+                    "Cannot calculate a hash for an empty file"
+            );
         }
+
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = file.getBytes();
-            byte[] hashBytes = digest.digest(bytes);
+            byte[] hash = digest.digest(file.getBytes());
 
-            // Convert byte array into standard safe hexadecimal string sequence
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
+            StringBuilder result = new StringBuilder(hash.length * 2);
+
+            for (byte value : hash) {
+                result.append(String.format("%02x", value & 0xff));
             }
-            return sb.toString();
+
+            return result.toString();
+        } catch (IOException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException(
+                    "Failed to calculate image hash", e
+            );
+        }
+    }
+
+    private void deleteQuietly(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+
+        try {
+            mediaUtil.delete(key);
         } catch (Exception e) {
-            throw new RuntimeException("Logistics Engine: Failed to parse structural binary matrix for file hash generation.", e);
+            log.error("Failed to delete media file {}", key, e);
         }
-    }
-
-
-    public Resource getResource(String fileName){
-
-        return mediaUtil.loadAsResource(fileName);
-    }
-
-    public void saveMedia(MultipartFile image, Category category) {
-        try{
-            String cleanFileName = category.getSlug()+"-"+Objects.requireNonNull(image.getOriginalFilename());
-
-            Media media = Media.builder()
-                    .contentType(image.getContentType())
-                    .category(category)
-                    .fileName(cleanFileName)
-                    .sortOrder(category.getSortOrder())
-                    .path(mediaStorageLocation.getLocation() +"/"+cleanFileName)
-                    .build();
-           Media savedMedia = mediaRepo.save(media);
-            mediaUtil.store(image, category.getSlug());
-
-        }catch (Exception ignored){
-
-        }
-    }
-
-    public Media saveMedia(MultipartFile image) {
-        try{
-            Media media = Media.builder()
-                    .contentType(image.getContentType())
-                    .fileName(image.getOriginalFilename())
-                    .path(mediaStorageLocation.getLocation() +"/"+ image.getOriginalFilename())
-                    .build();
-            Media savedMedia = mediaRepo.save(media);
-            mediaUtil.store(image);
-            return savedMedia;
-        }catch (Exception e){
-            return null;
-        }
-    }
-
-
-    public void saveMedia(MultipartFile[] files,Integer[] sortOrders, InventoryItem item) {
-
-            if (files.length==0 ) {
-                throw new IllegalArgumentException("Empty file! Please upload again.");
-            }
-
-        IntStream.range(0,files.length).forEach(index->{
-            MultipartFile file = files[index];
-
-            Integer currentSortOrder = (sortOrders!=null && sortOrders.length>0?sortOrders[index]:index);
-
-                String formatedFileName = UtilService.formatMediaName(item.getId()+"-"+file.getOriginalFilename());
-            Media media = Media.builder()
-                    .contentType(file.getContentType())
-                    .inventoryItem(item)
-                    .path(mediaStorageLocation.getLocation()+"/"+formatedFileName)
-                    .fileName(formatedFileName)
-                    .sortOrder(currentSortOrder)
-                    .build();
-            mediaRepo.save(media);
-            mediaUtil.store(file,item.getId());
-        });
-
-    }
-
-    @Transactional
-    public void updateMedia(MultipartFile[] files, Integer[] sortOrders,InventoryItem inventoryItem) {
-
-        List<Media> existing =
-                mediaRepo.findAllByInventoryItemId(
-                        inventoryItem.getId());
-
-        existing.forEach(i->{
-            log.info("exisitng images {}",i.getFileName());
-        });
-
-        // 1. Determine which existing images are still being used
-        Set<String> incomingExistingName = Arrays.stream(files)
-                .map(MultipartFile::getOriginalFilename)
-                .map(UtilService::formatMediaName)
-                .collect(Collectors.toSet());
-       incomingExistingName.forEach(i->{
-            log.info("incoming {}",i);
-        });
-
-        // 2. Delete images removed by seller
-        existing.stream()
-                .filter(media -> !incomingExistingName.contains(UtilService.formatMediaName(media.getFileName())))
-                .forEach(media -> {
-
-                    // Delete physical/cloud file here if necessary
-                    mediaRepo.delete(media);
-
-                    try {
-                        mediaUtil.delete(media.getFileName());
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-
-
-        // 3. Update existing images / create new images
-       for(int i=0; i<files.length;i++){
-           MultipartFile request = files[i];
-
-               Media media = existing.stream()
-                       .filter(item ->
-                               item.getFileName().equals(request.getOriginalFilename())
-                       )
-                       .findFirst()
-                       .orElse(null);
-
-               if(media!=null){
-                   media.setSortOrder(i + 1);
-                   mediaRepo.save(media);
-               }else{
-                   String formatedFileName = UtilService.formatMediaName(inventoryItem.getId()+"-"+request.getOriginalFilename());
-                   Media newMedia = Media.builder()
-                           .contentType(request.getContentType())
-                           .inventoryItem(inventoryItem)
-                           .path(mediaStorageLocation.getLocation()+"/"+formatedFileName)
-                           .fileName(formatedFileName)
-                           .sortOrder(i+1)
-                           .build();
-                   mediaRepo.save(newMedia);
-                   mediaUtil.store(request,inventoryItem.getId());
-               }
-
-       }
-    }
-
-
-    @Transactional(rollbackOn = DuplicateKeyException.class)
-    public void updateMediaFile(MultipartFile[] files, Integer[] sortOrders, InventoryItem inventoryItem) {
-        if (files == null || files.length == 0) return;
-
-        // Fetch all current database records linked to this listing item partition
-        List<Media> existingMediaList = mediaRepo.findAllByInventoryItemId(inventoryItem.getId());
-
-        //  Calculate the unique SHA-256 content hashes for ALL incoming files up-front
-        List<String> incomingFileHashes = Arrays.stream(files)
-                .map(file -> {
-                    if (file.isEmpty()) return "";
-                    return calculateSHA256(file);
-                })
-                .filter(hash -> !hash.isEmpty())
-                .toList();
-
-        //   Wipes old files that are no longer part of the incoming payload array
-        existingMediaList.stream()
-                .filter(media -> media.getFileHash() != null && !incomingFileHashes.contains(media.getFileHash()))
-                .forEach(media -> {
-                    log.warn("Deduplication Shield: Removing obsolete content hash asset [{}] from system", media.getFileHash());
-                    mediaRepo.delete(media);
-                    try {
-                        mediaUtil.delete(media.getFileName()); // Cleans up physical file bytes from disk
-                    } catch (IOException e) {
-                        log.error("Storage Exception: Failed to wipe physical file matrix for key: " + media.getFileName(), e);
-                    }
-                });
-
-        //  Iterates through files to filter out updates vs. net-new additions
-        for (int i = 0; i < files.length; i++) {
-            MultipartFile requestFile = files[i];
-            if (requestFile.isEmpty()) continue;
-
-            String currentFileHash = incomingFileHashes.get(i);
-
-            // Safe dynamic extraction fallback for current image sort position order indices
-            int assignedSortOrder = (sortOrders != null && i < sortOrders.length && sortOrders[i] != null)
-                    ? sortOrders[i]
-                    : (i + 1);
-
-            // Check if this exact file content hash is already tracked in the database for this item
-            Media matchingExistingMedia = existingMediaList.stream()
-                    .filter(item -> item.getFileHash() != null && item.getFileHash().equals(currentFileHash))
-                    .findFirst()
-                    .orElse(null);
-
-            if (matchingExistingMedia != null) {
-                // 🟢 RULE MATCHED: File already exists in table! Skip file storage write, only refresh sorting order index weights
-                log.info("Deduplication Shield: Content match found inside table for hash [{}]. Refreshing sorting index position.", currentFileHash);
-                matchingExistingMedia.setSortOrder(assignedSortOrder);
-                mediaRepo.save(matchingExistingMedia);
-            } else {
-                // 🚀 RULE MATCHED: Net-new unique content detected! Generate completely fresh isolated file instance blocks on disk
-                String cleanName = UtilService.formatMediaName(requestFile.getOriginalFilename());
-                String uniqueTargetName = inventoryItem.getId() + "-" + currentFileHash.substring(0, 8) + "-" + cleanName;
-                String computedStoragePath = mediaStorageLocation.getLocation() + "/" + uniqueTargetName;
-
-                log.info("Storing net-new isolated file asset [{}] with hash [{}]", uniqueTargetName, currentFileHash);
-
-                Media newMedia = Media.builder()
-                        .contentType(requestFile.getContentType())
-                        .inventoryItem(inventoryItem)
-                        .path(computedStoragePath)
-                        .fileName(uniqueTargetName)
-                        .sortOrder(assignedSortOrder)
-                        .fileHash(currentFileHash) // Persists hash signature context safely
-                        .build();
-
-                mediaRepo.save(newMedia);
-
-                // Pass the complete target file name to your disk writer tool to write new binary blocks
-                mediaUtil.store(requestFile, uniqueTargetName);
-            }
-        }
-    }
-
-
-
-
-
-
-    @Transactional
-    public void updateCategoryImage(MultipartFile file, Category category) {
-        if (file == null || file.isEmpty()) return;
-
-        // STEP 1: Calculate the unique SHA-256 fingerprint up-front
-        String fileHash = calculateSHA256(file);
-
-        // STEP 2: Check if this specific category already has an image record allocated
-        Optional<Media> existingAsset = mediaRepo.findByCategory(category);
-
-        if (existingAsset.isPresent()) {
-            Media media = existingAsset.get();
-
-            //  Exact content hash matches! No changes detected.
-            if (media.getFileHash() != null && media.getFileHash().equals(fileHash)) {
-                log.info("Deduplication Shield: Category [{}] image content is identical. Skipping storage write.", category.getName());
-                return; // Fast-track exit!
-            }
-
-            //  Fresh image uploaded! Update the existing database row record in-place.
-            log.info("Deduplication Shield: New image detected for Category [{}]. Overwriting existing asset row.", category.getName());
-
-            String oldFileName = media.getFileName();
-
-            // Format the net-new distinct storage key definitions safely
-            String sanitizedName = UtilService.formatMediaName(file.getOriginalFilename());
-            String uniqueStorageKey = fileHash.substring(0, 8) + "-" + sanitizedName;
-            String computedStoragePath = mediaStorageLocation.getLocation() + "/" + uniqueStorageKey;
-
-            // Mutate the properties of the existing record instead of calling mediaRepo.delete()
-            media.setContentType(file.getContentType());
-            media.setFileName(uniqueStorageKey);
-            media.setPath(computedStoragePath);
-            media.setFileHash(fileHash);
-            media.setSortOrder(category.getSortOrder());
-
-            mediaRepo.save(media);
-
-            // Commit physical disk transitions safely
-            mediaUtil.store(file, uniqueStorageKey);
-            try {
-                log.info("Storage Cleanup: Wiping obsolete physical file [{}] from system", oldFileName);
-                mediaUtil.delete(oldFileName);
-            } catch (IOException e) {
-                log.error("Storage Exception: Failed to wipe old physical file matrix for key: " + oldFileName, e);
-            }
-            return; // Complete the update cycle successfully
-        }
-
-        //  Net-new category upload pass (No previous image record exists)
-        log.info("Storing brand-new isolated asset image for Category: {}", category.getName());
-        String sanitizedName = UtilService.formatMediaName(file.getOriginalFilename());
-        String uniqueStorageKey = category.getId()+"-"+fileHash.substring(0, 8) + "-" + sanitizedName;
-        String computedStoragePath = mediaStorageLocation.getLocation() + "/" + uniqueStorageKey;
-
-        Media newMedia = Media.builder()
-                .contentType(file.getContentType())
-                .category(category)
-                .fileName(uniqueStorageKey)
-                .sortOrder(category.getSortOrder())
-                .path(computedStoragePath)
-                .fileHash(fileHash)
-                .build();
-
-        mediaRepo.save(newMedia);
-        mediaUtil.store(file, uniqueStorageKey);
-    }
-
-    /*
-Retrieves images metadata using inventory item id from repository and actual image from local directory
-*/
-    public MediaResponse getCategoryImage(Category category)  {
-            Media media= mediaRepo.findByCategory(category).orElse(null);
-
-            if(media!=null){
-
-                return MediaResponse.builder()
-                        .image( MvcUriComponentsBuilder.fromMethodName(
-                                MediaController.class, "serveFile", media.getFileName()).build().toUri().toString())
-                        .sortOrder(media.getSortOrder())
-                        .id(media.getId())
-                        .build();
-
-        }
-        return null;
-    }
-
-    public Media categoryImage(Category category)  {
-       return mediaRepo.findByCategory(category).orElse(null);
-    }
-
-    public MediaResponse getListingMainImage(Long inventoryItemId)  {
-        Media media= mediaRepo.findFirstByInventoryItemId(inventoryItemId).orElse(null);
-
-        if(media!=null){
-
-            return MediaResponse.builder()
-                    .image( MvcUriComponentsBuilder.fromMethodName(
-                            MediaController.class, "serveFile", media.getFileName()).build().toUri().toString())
-                    .sortOrder(media.getSortOrder())
-                    .id(media.getId())
-                    .build();
-
-        }
-        return null;
-    }
-
-    public List<MediaResponse> getImageList(Long inventoryItemId)  {
-
-        return mediaRepo.findAllByInventoryItemId(inventoryItemId)
-                .stream().map(media->{
-                    return MediaResponse.builder()
-                            .image( MvcUriComponentsBuilder.fromMethodName(
-                                    MediaController.class, "serveFile", media.getFileName()).build().toUri().toString())
-                            .sortOrder(media.getSortOrder())
-                            .id(media.getId())
-                            .build();
-                }).toList();
-
-    }
-
-
-    public void delete(Long id)throws IOException{
-       Media media= mediaRepo.findById(id).orElse(null);
-       if(media!=null) {
-           //delete photo from database
-           mediaRepo.delete(media);
-
-           //check photo deleted
-           boolean isDeleted= mediaRepo.findById(media.getId()).isPresent();
-           if(!isDeleted){
-               mediaUtil.delete(media.getPath());
-           }
-       }
-
-    }
-
-    private void deleteMediaFromDatabase(String path){
-        mediaRepo.deleteByPath(path);
-    }
-
-    private void deleteMediaFromDatabase(List<String> path){
-        for(String item:path){
-            mediaRepo.deleteByPath(item);
-        }
-    }
-    private void deleteMediaFromDatabase(InventoryItem item){
-        mediaRepo.deleteByInventoryItem(item);
-    }
-
-    public void delete(String path)throws IOException {
-        deleteMediaFromDatabase(path);
-       mediaUtil.delete(path);
-
-    }
-
-    public void deleteAll(List<String> media) throws IOException{
-       deleteMediaFromDatabase(media);
-        mediaUtil.delete(media);
-
-    }
-
-    public void deleteAllByInventoryItem(InventoryItem item) throws IOException{
-       List<Media> media= mediaRepo.findAllByInventoryItemId(item.getId());
-        deleteMediaFromDatabase(item);
-      for(Media image :media){
-          mediaUtil.delete(image.getFileName());
-      }
-
-    }
-
-    @Transactional
-    public void deleteByCategory(Category category) throws IOException{
-        Optional<Media> attachedMedia = mediaRepo.findFirstByCategory(category);
-        if (attachedMedia.isPresent()) {
-            Media media = attachedMedia.get();
-            String physicalFilePath= media.getPath();
-
-            // Evict the image mapping row from database indices first
-            mediaRepo.delete(media);
-            mediaRepo.flush();
-
-            // Clear the actual file bytes off your persistent Railway storage volume to prevent disk leaks
-            try {
-                log.info("Storage Volume Cleanup: Wiping image file [{}] from persistent storage drive", physicalFilePath);
-                mediaUtil.delete(physicalFilePath);
-            } catch (IOException e) {
-                log.error("Storage Exception: Failed to wipe physical file matrix for key: " + physicalFilePath, e);
-                // Catch but do not rethrow so local storage glitches never lock database transaction rollbacks
-            }
-        }
-
     }
 }
-

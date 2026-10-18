@@ -22,10 +22,10 @@ public class InventoryItemPriceService {
         this.inventoryItemPriceRepo = inventoryItemPriceRepo;
     }
 
-    public InventoryItemPrice addNewPrice(InventoryItemPriceDto  dto){
+    public void addNewPrice(InventoryItemPriceDto  dto){
            InventoryItemPrice newPrice = new InventoryItemPrice(dto);
            newPrice.setInventoryItem(dto.getInventoryItem());
-        return inventoryItemPriceRepo.save(newPrice);
+        inventoryItemPriceRepo.save(newPrice);
     }
 
     public void deleteInventoryPrice(InventoryItem item){

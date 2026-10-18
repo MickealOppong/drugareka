@@ -35,4 +35,5 @@ public class SellerPayoutResponse {
     private PayoutStatus status;
 
     private Instant paidAt;
+    private String transferId;
 }

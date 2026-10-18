@@ -1,6 +1,7 @@
 package com.pages.config;
 
 import com.pages.impl.AuditAwareImpl;
+import com.pages.util.MediaStorageLocation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
@@ -31,14 +32,20 @@ public class WebConfig implements WebMvcConfigurer {
     }
 
 
-    @Value("${MEDIA_UPLOAD_DIR:./local-media/}") // Falls back to a local folder when running on your computer
-    private String mediaUploadDir;
+    private final MediaStorageLocation mediaStorageLocation;
+
+    public WebConfig(MediaStorageLocation mediaStorageLocation) {
+        this.mediaStorageLocation = mediaStorageLocation;
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        String path = "file:" + mediaUploadDir;
+        String location = mediaStorageLocation.getRoot()
+                .toUri()
+                .toString();
+
         registry.addResourceHandler("/Media/**")
-                .addResourceLocations(path);
+                .addResourceLocations(location);
     }
 
     @Bean
