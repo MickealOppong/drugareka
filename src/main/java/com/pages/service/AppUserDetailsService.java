@@ -12,11 +12,15 @@ import com.pages.repository.*;
 import com.pages.util.GlobalAddress;
 import com.pages.util.Media;
 import com.pages.util.Notification;
+import com.pages.util.UtilService;
 import jakarta.transaction.Transactional;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cglib.beans.BeanMap;
+import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.User;
@@ -33,6 +37,7 @@ import org.springframework.web.client.RestClient;
 import java.io.IOException;
 import java.security.Principal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -50,17 +55,45 @@ public class AppUserDetailsService implements UserDetailsService {
     private final AppUserRepo appUserRepo;
     private final AppUserRoleRepo appUserRoleRepo;
     private final GlobalAddressRepo globalAddressRepo;
-    private final PayUAmlService payUAmlService;
+    private final EmailNotificationService emailNotificationService;
+    private final MessageSource messageSource;
 
-    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo, PayUAmlService payUAmlService) {
+
+    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo, EmailNotificationService emailNotificationService, MessageSource messageSource) {
         this.appUserRepo = appUserRepo;
         this.appUserRoleRepo = appUserRoleRepo;
 
         this.globalAddressRepo = globalAddressRepo;
-        this.payUAmlService = payUAmlService;
+        this.emailNotificationService = emailNotificationService;
+        this.messageSource = messageSource;
     }
 
 
+    public ResponseDto<Object> resetPasswordRequest(String email){
+       AppUser appUser = appUserRepo.findByUsername(email.trim()).orElse(null);
+       if(appUser!=null){
+
+           String token = UtilService.generatePasswordResetToken();
+           appUser.setPasswordResetToken(token);
+
+           //token expires period
+           Instant expiresAt = Instant.now().plus(24, ChronoUnit.HOURS);
+           appUser.setTokenExpiresAt(expiresAt);
+           appUserRepo.save(appUser);
+
+           emailNotificationService.sendPasswordResetEmail(email,token);
+           return ResponseDto.builder()
+                   .httpStatus(HttpStatus.OK.value())
+                   .message(messageSource.getMessage("api.appUser.password.reset",null,LocaleContextHolder.getLocale()))
+                   .data(true)
+                   .build();
+       }
+        return ResponseDto.builder()
+                .httpStatus(HttpStatus.BAD_REQUEST.value())
+                .message(messageSource.getMessage("api.appUser.email.not_found",null, LocaleContextHolder.getLocale()))
+                .data(false)
+                .build();
+    }
     @Override
     public UserDetails loadUserByUsername( String username) throws UsernameNotFoundException {
         AppUser appUser = appUserRepo.findByUsername(username).orElseThrow(()->new UsernameNotFoundException(""));
@@ -373,7 +406,7 @@ public class AppUserDetailsService implements UserDetailsService {
 
 
     @Transactional
-    public ResponseDto<Object> changePassword(Jwt jwt,ChangePasswordDto passwordDto) {
+    public ResponseDto<Object> changePassword(Jwt jwt,PasswordUpdateDto passwordDto) {
 
         try {
             if(jwt==null){
@@ -474,6 +507,104 @@ public class AppUserDetailsService implements UserDetailsService {
                     .build();
         }
     }
+
+    @Transactional
+    public ResponseDto<Object> changeUserPassword(ChangePasswordDto passwordDto) {
+        Locale locale = LocaleContextHolder.getLocale();
+
+        try {
+            // 1. Fetch user profile linked to the recovery token signature
+            AppUser appUser = appUserRepo.findByPasswordResetToken(passwordDto.getToken()).orElse(null);
+            if (appUser == null) {
+                String msg = messageSource.getMessage("api.appUser.token.not_found", null, "Invalid or unrecognized token.", locale);
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(msg)
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            // 2. Enforce chronological timeline expiry guards
+            if (appUser.getTokenExpiresAt() != null && appUser.getTokenExpiresAt().isBefore(Instant.now())) {
+                String msg = messageSource.getMessage("api.appUser.password.token_expires", null, "The token has expired.", locale);
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(msg)
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            log.info("Executing transactional password override for User Account ID: {}", appUser.getId());
+
+            /*
+             * ==========================================================================
+             * FIELD CONSTRAINTS & PRESENCE VALIDATION
+             * ==========================================================================
+             */
+            if (!StringUtils.hasText(passwordDto.getNewPassword())) {
+                String msg = messageSource.getMessage("api.appUser.password.new_required", null, "New password is required.", locale);
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(msg)
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            if (!StringUtils.hasText(passwordDto.getConfirmNewPassword())) {
+                String msg = messageSource.getMessage("api.appUser.confirm.newPassword_required", null, "Confirm password is required.", locale);
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(msg)
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            String newPassword = passwordDto.getNewPassword().trim();
+            String confirmNewPassword = passwordDto.getConfirmNewPassword().trim();
+
+
+            if (!newPassword.equals(confirmNewPassword)) {
+                String msg = messageSource.getMessage("api.appUser.confirm.newPassword_required", null, "Passwords do not match.", locale);
+                return ResponseDto.builder()
+                        .data(false)
+                        .message(msg)
+                        .httpStatus(HttpStatus.BAD_REQUEST.value())
+                        .build();
+            }
+
+            /*
+             * ==========================================================================
+             * CRUCIAL SECURITY ACTION: HASH & BURN VERIFICATION TOKEN
+             * ==========================================================================
+             */
+            String encodedPassword = passwordConfig.passwordEncoder().encode(newPassword);
+
+            appUser.setPassword(encodedPassword);
+
+            // Burn credentials variables instantly to prevent replay attacks or secondary manipulation loops
+            appUser.setTokenExpiresAt(null);
+            appUser.setPasswordResetToken(null);
+
+            appUserRepo.save(appUser);
+
+            String successMsg = messageSource.getMessage("api.appUser.password.success", null, "Password reset successfully.", locale);
+            return ResponseDto.builder()
+                    .data(true)
+                    .message(successMsg)
+                    .httpStatus(HttpStatus.OK.value())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Fatal transaction dropout during password update workflow loops", e);
+            String fallbackMsg = messageSource.getMessage("api.appUser.password.failed", null, "An error occurred.", locale);
+            return ResponseDto.builder()
+                    .data(false)
+                    .message(fallbackMsg)
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }
+    }
+
 
 
     public ResponseDto<Object> deleteUserById(Long userId){

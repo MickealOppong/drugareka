@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -44,6 +45,9 @@ public class EmailNotificationService {
     @Value("${return.confirmation.url}")
     private String returnConfirmationUrl;
 
+    @Value("${password.reset.url}")
+    private String passwordResetUrl;
+
     @Value("${resend.from-email}")
     private String fromEmail;
 
@@ -55,6 +59,175 @@ public class EmailNotificationService {
     }
 
 
+    /**
+     * PASSWORD RESET LINK
+     * @param email
+     * @param token
+     */
+    @Async
+    public void sendPasswordResetEmail(String email, String token) {
+
+        String resetLink = UriComponentsBuilder
+                .fromUriString(passwordResetUrl)
+                .queryParam("token", token)
+                .build()
+                .encode()
+                .toUriString();
+
+        String subject = "Resetowanie hasła do konta Kasoa.pl";
+
+        String htmlContent = """
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Resetowanie hasła | Kasoa.pl</title>
+        </head>
+
+        <body style="margin:0; padding:0; background-color:#F5F6F1;
+                     font-family:Arial,Helvetica,sans-serif; color:#182016;">
+
+            <table role="presentation" width="100%%" cellspacing="0" cellpadding="0"
+                   style="background-color:#F5F6F1; padding:30px 12px;">
+                <tr>
+                    <td align="center">
+
+                        <table role="presentation" width="600" cellspacing="0"
+                               cellpadding="0" border="0"
+                               style="width:100%%; max-width:600px; background:#ffffff;
+                                      border-radius:12px; overflow:hidden;">
+
+                            <!-- ORIGINAL HEADER: unchanged -->
+                            <tr>
+                                <td style="background:#68764B; padding:30px 24px;
+                                           text-align:center;">
+                                    <div style="font-size:30px; font-weight:bold;
+                                                letter-spacing:1px; color:#ffffff;">
+                                        kasoa.pl
+                                    </div>
+
+                                    <div style="margin-top:8px; font-size:11px;
+                                                letter-spacing:2px; color:#F5F6F1;">
+                                        DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- PASSWORD RESET BODY -->
+                            <tr>
+                                <td style="padding:35px 30px;">
+
+                                    <h2 style="margin:0 0 20px; font-size:22px;
+                                               line-height:1.4; color:#182016;">
+                                        Resetowanie hasła / Reset your password
+                                    </h2>
+
+                                    <p style="margin:0 0 16px; font-size:15px;
+                                              line-height:1.8; color:#182016;">
+                                        Otrzymaliśmy prośbę o zresetowanie hasła
+                                        do Twojego konta w serwisie Kasoa.pl.
+                                        Kliknij poniższy przycisk, aby ustawić nowe hasło.
+                                    </p>
+
+                                    <p style="margin:0 0 24px; font-size:15px;
+                                              line-height:1.8; color:#182016;">
+                                        We received a request to reset the password
+                                        for your Kasoa.pl account. Click the button
+                                        below to create a new password.
+                                    </p>
+
+                                    <table role="presentation" cellspacing="0"
+                                           cellpadding="0" border="0" align="center"
+                                           style="margin:0 auto 28px;">
+                                        <tr>
+                                            <td align="center"
+                                                style="background:#68764B; border-radius:6px;">
+                                                <a href="%s"
+                                                   style="display:inline-block; padding:15px 28px;
+                                                          font-size:15px; font-weight:bold;
+                                                          color:#ffffff; text-decoration:none;
+                                                          border-radius:6px;">
+                                                    Zresetuj hasło / Reset password
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <table role="presentation" width="100%%"
+                                           cellspacing="0" cellpadding="0" border="0"
+                                           style="background:#EEF1E8; border-radius:8px;">
+                                        <tr>
+                                            <td style="padding:18px 20px;">
+
+                                                <p style="margin:0 0 14px; font-size:14px;
+                                                          line-height:1.8; color:#182016;">
+                                                    <strong>Ważne:</strong> Link do resetowania
+                                                    hasła wygaśnie po 24 godzinach.
+                                                    Jeśli nie prosiłeś(-aś) o zmianę hasła,
+                                                    zignoruj tę wiadomość. Twoje hasło
+                                                    pozostanie bez zmian.
+                                                </p>
+
+                                                <p style="margin:0; font-size:14px;
+                                                          line-height:1.8; color:#182016;">
+                                                    <strong>Important:</strong> This password
+                                                    reset link expires in 24 hours.
+                                                    If you did not request a password reset,
+                                                    you can ignore this email. Your password
+                                                    will remain unchanged.
+                                                </p>
+
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                </td>
+                            </tr>
+
+                            <!-- ORIGINAL FOOTER: unchanged -->
+                            <tr>
+                                <td style="background:#182016; padding:26px 24px;
+                                           text-align:center;">
+
+                                    <div style="font-size:20px; font-weight:bold;
+                                                letter-spacing:1px; color:#ffffff;">
+                                        kasoa.pl
+                                    </div>
+
+                                    <div style="margin-top:8px; font-size:13px;
+                                                color:#AEB69D;">
+                                        Good things. A second chance.
+                                    </div>
+
+                                    <div style="margin-top:20px; font-size:11px;
+                                                line-height:1.7; color:#AEB69D;">
+                                        Ta wiadomość została wysłana automatycznie.
+                                        Prosimy na nią nie odpowiadać.
+                                        <br>
+                                        This is an automated message. Please do not reply.
+                                    </div>
+
+                                    <div style="margin-top:12px; font-size:11px;
+                                                color:#AEB69D;">
+                                        © Kasoa.pl
+                                    </div>
+
+                                </td>
+                            </tr>
+
+                        </table>
+
+                    </td>
+                </tr>
+            </table>
+
+        </body>
+        </html>
+        """.formatted(escapeHtml(resetLink));
+
+        sendHtmlEmail(email, subject, htmlContent);
+    }
 
 
     /**

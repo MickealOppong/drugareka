@@ -14,6 +14,8 @@ public interface AppUserRepo extends JpaRepository<AppUser,Long> {
 
 
     Optional<AppUser> findByUsername(String username);
+    Optional<AppUser> findByPasswordResetToken(String token);
 
     boolean existsByUsername(String username);
+
 }

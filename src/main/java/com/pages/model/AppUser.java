@@ -44,6 +44,8 @@ public class AppUser extends LogEntity implements UserDetails {
     private String username;
 
     private String password;
+    private String passwordResetToken;
+    private Instant tokenExpiresAt;
 
     private LocalDate dateOfBirth;
     private boolean isSysAdmin;

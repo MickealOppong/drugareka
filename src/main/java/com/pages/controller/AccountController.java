@@ -102,7 +102,7 @@ public class AccountController {
     }
 
     @PutMapping("/change-password")
-    public ResponseDto<Object> changePassword(@AuthenticationPrincipal Jwt jwt,ChangePasswordDto dto){
+    public ResponseDto<Object> changePassword(@AuthenticationPrincipal Jwt jwt,PasswordUpdateDto dto){
         return appUserDetailsService.changePassword(jwt,dto);
     }
 

@@ -111,6 +111,16 @@ public class UtilService {
                 .withoutPadding()
                 .encodeToString(randomBytes);
     }
+    public static String generatePasswordResetToken() {
+        byte[] randomBytes = new byte[32];
+
+        SecureRandom secureRandom = new SecureRandom();
+        secureRandom.nextBytes(randomBytes);
+
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(randomBytes);
+    }
 
     public static SellerShipmentToken generateShipmentToken(){
         return SellerShipmentToken.builder()

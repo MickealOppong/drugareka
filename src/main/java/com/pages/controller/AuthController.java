@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/auth")
 public class AuthController {
 
 
@@ -69,6 +69,11 @@ public class AuthController {
 
     }
 
+
+    @PutMapping("/change-password")
+    public ResponseDto<Object> changeUserPassword(@RequestBody @Valid ChangePasswordDto dto){
+      return  userDetailsService.changeUserPassword(dto);
+    }
 
 
     @PostMapping("/login")
@@ -141,6 +146,11 @@ public class AuthController {
                     .build();
         }
 
+    }
+
+    @PostMapping("/reset-password-request")
+    public ResponseDto<Object> resetPasswordRequest(String email){
+        return userDetailsService.resetPasswordRequest(email);
     }
 
     @DeleteMapping("/logout")

@@ -16,7 +16,7 @@ public class ChangePasswordDto {
             message = "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
     )
     @ToString.Exclude
-    private String currentPassword;
+    private String newPassword;
     @NotNull(message = "Password cannot be null")
     @Size(min = 8, max = 32, message = "Password must be between 8 and 32 characters long")
     @Pattern(
@@ -24,6 +24,7 @@ public class ChangePasswordDto {
             message = "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
     )
     @ToString.Exclude
-    private String newPassword;
+    private String confirmNewPassword;
+    private String token;
 }
 
