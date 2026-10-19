@@ -428,8 +428,7 @@ public class StripePaymentProviderService {
                             .setMode(
                                     SessionCreateParams.Mode.PAYMENT
                             )
-                            .setSuccessUrl(successUrl
-                                    + "/success?session_id={CHECKOUT_SESSION_ID}")
+                            .setSuccessUrl(successUrl)
                             .setCustomText(customText)
                             .setLocale(stripeLocale)
                             .setExpiresAt(
