@@ -57,14 +57,8 @@ public class InventoryItemPrice extends LogEntity {
 
     public InventoryItemPriceResponse toPriceDto(){
        return InventoryItemPriceResponse.builder()
-                .id(this.getId())
                .sellerOLdPrice(this.getSellerOldPrice())
                 .sellerNewPrice(this.getSellerNewPrice())
-               .inventoryId(this.getInventoryItem().getId())
-                .oldServiceCharge(this.getOldServiceCharge())
-               .newServiceCharge(this.getNewServiceCharge())
-               .sellerMinPrice(this.getSellerMinPrice())
-                .reason(this.getReason())
                 .build();
     }
 }

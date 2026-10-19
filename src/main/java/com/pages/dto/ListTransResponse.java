@@ -28,6 +28,8 @@ public class ListTransResponse {
 
     private String brand;
     private Long sellerId;
+    private boolean isNegotiable;
+    private BigDecimal minPrice;
 
     private CategoryResponse category;
 
@@ -40,7 +42,8 @@ public class ListTransResponse {
     private String productCondition;
     private String itemSize;
 
-    private InventoryItemPriceResponse priceDto;
+    private BigDecimal newPrice;
+    private BigDecimal oldPrice;
 
     @Enumerated(EnumType.STRING)
     private InventoryStatus inventoryStatus;

@@ -14,6 +14,7 @@ import java.util.List;
 public class ListPageDto {
 
     private List<ListTransResponse> listings;
+    private List<ProductListResponse> productList;
     private int pageSize;
     private int page;
    private int totalPages;

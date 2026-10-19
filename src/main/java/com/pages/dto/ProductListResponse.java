@@ -1,0 +1,65 @@
+package com.pages.dto;
+
+import com.pages.enums.InventoryStatus;
+import com.pages.enums.ListingStatus;
+import com.pages.model.InventoryItemPrice;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class ProductListResponse {
+
+    private Long listingId;
+    private Long inventoryId;
+
+    private BigDecimal serviceCharge;
+    private BigDecimal shippingCost;
+    private Long productId;
+
+    private String brand;
+    private Long sellerId;
+    private boolean isNegotiable;
+    private BigDecimal minPrice;
+
+    private CategoryResponse category;
+
+    private String productName;
+
+    private String productSlug;
+
+    private String productDescription;
+
+    private String productCondition;
+    private String itemSize;
+
+    private BigDecimal newPrice;
+    private BigDecimal oldPrice;
+
+    @Enumerated(EnumType.STRING)
+    private InventoryStatus inventoryStatus;
+
+    private String sku;
+    @Enumerated(EnumType.STRING)
+    private ListingStatus listingStatus;
+    private List<MediaResponse> media;
+    private Instant createdAt;
+    private String shippingMethod;
+    private String shipping;
+    private String productionYear;
+    private String model;
+    private String width;
+    private String height;
+    private String depth;
+    private String itemNumber;
+}
+

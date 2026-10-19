@@ -397,7 +397,7 @@ public class ListingTransactionService {
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();
                     List<MediaResponse> media = mediaService.getImageList(inventoryId);
-                    InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
+                    InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
                     return ListingTransaction.toListTransResponse(listing, media, price);
                 }).toList();
     }
@@ -418,7 +418,7 @@ public class ListingTransactionService {
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();
                     List<MediaResponse> media = mediaService.getImageList(inventoryId);
-                    InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
+                    InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
                     return ListingTransaction.toListTransResponse(listing, media, price);
                 });
         return ListPageDto.builder()
@@ -443,7 +443,7 @@ public class ListingTransactionService {
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();
                     List<MediaResponse> media = mediaService.getImageList(inventoryId);
-                    InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
+                    InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
                     return ListingTransaction.toListTransResponse(listing, media, price);
                 });
         return ListPageDto.builder()
@@ -530,15 +530,15 @@ public class ListingTransactionService {
         AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
         Long currentUserId = currentUser.getId();
         Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<ListTransResponse> listings = listingTransactionRepo.findByInventorySellerUserId(currentUserId, pageable)
+        Page<ProductListResponse> listings = listingTransactionRepo.findByInventorySellerUserId(currentUserId, pageable)
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();
                     List<MediaResponse> media = mediaService.getImageList(inventoryId);
-                    InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
-                    return ListingTransaction.toListTransResponse(listing, media, price);
+                    InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
+                  return ListingTransaction.toProductListResponse(listing, media, price);
                 });
         return ListPageDto.builder()
-                .listings(listings.getContent())
+                .productList(listings.getContent())
                 .page(listings.getNumber())
                 .pageSize(listings.getSize())
                 .totalPages(listings.getTotalPages())
@@ -554,22 +554,41 @@ public class ListingTransactionService {
         return listingTransactionRepo.findByListingStatus(ListingStatus.PUBLISHED).stream().map(listing -> {
             Long inventoryId = listing.getInventory() != null ? listing.getInventory().getId() : null;
             List<MediaResponse> media = mediaService.getImageList(inventoryId);
-            InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryId).toPriceDto();
+            InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
             return ListingTransaction.toListTransResponse(listing, media, price);
         }).toList();
     }
     @Transactional(readOnly = true)
-    public ListTransResponse getProductByListingId(Long listingId) {
+    public ProductListResponse getProductById(Jwt jwt,Long listingId) {
+        if(jwt==null){
+            return ProductListResponse.builder().build();
+        }
         ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
-            InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId()).toPriceDto();
+            InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
             BigDecimal serviceCharge = pricingService.calculateServiceCharge(price.getSellerNewPrice());
             BigDecimal shipmentCost  = shippingOptionService.getShippingOption(listingTransaction.getInventory().getItemSize()).getPrice();
-            return ListingTransaction.toListTransResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
+            return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
+        }
+        return ProductListResponse.builder().build();
+    }
+
+
+    @Transactional(readOnly = true)
+    public ListTransResponse getProductByListingId(Long listingId) {
+
+        ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
+        if (listingTransaction != null) {
+            List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
+            InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
+            BigDecimal serviceCharge = pricingService.calculateServiceCharge(price.getSellerNewPrice());
+            BigDecimal shipmentCost  = shippingOptionService.getShippingOption(listingTransaction.getInventory().getItemSize()).getPrice();
+            return ListingTransaction.toListTransResponse(listingTransaction, mediaList, price);
         }
         return ListTransResponse.builder().build();
     }
+
     @Transactional(readOnly = true)
     public Long getSellerPublishedListingCount(Long sellerId) {
         return listingTransactionRepo.countByInventorySellerIdAndInventoryStatusAndListingStatus(sellerId, InventoryStatus.AVAILABLE, ListingStatus.PUBLISHED);
@@ -581,7 +600,7 @@ public class ListingTransactionService {
             return listingTransactionRepo.findAllById(ids).stream()
                     .filter(item -> !item.getInventory().getSeller().getUser().getId().equals(currentUser.getId()))
                     .map(listing -> {
-                        InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(listing.getInventory().getId()).toPriceDto();
+                        InventoryItemPrice price = inventoryItemPriceService.getPrices(listing.getInventory().getId());
                         List<MediaResponse> mediaList = mediaService.getImageList(listing.getInventory().getId());
                         return ListingTransaction.toListTransResponse(listing, mediaList, price);
                     }).toList();

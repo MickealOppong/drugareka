@@ -12,17 +12,8 @@ import java.time.Instant;
 @AllArgsConstructor
 @NoArgsConstructor
 public class InventoryItemPriceResponse {
-
-    private Long id;
-
     private BigDecimal sellerOLdPrice;
     private BigDecimal sellerNewPrice;
-    private Long inventoryId;
-
-    private BigDecimal sellerMinPrice;
-
-    private BigDecimal oldServiceCharge;
     private BigDecimal newServiceCharge;
 
-    private String reason;
 }

@@ -90,7 +90,6 @@ public class ProductController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     messageSource.getMessage("api.add_listing.automotive.item_number.error", null, LocaleContextHolder.getLocale()));
         }
-log.info("dTA:{}",productData);
         return listingTransactionService.addSellerProduct(jwt,productData);
     }
 
@@ -119,8 +118,9 @@ log.info("dTA:{}",productData);
 
 
     @GetMapping("listing/{listingId}")
-    public ListTransResponse getListItem(Long listingId){
-        return listingTransactionService.getProductByListingId(listingId);
+    public ProductListResponse getListItem(@AuthenticationPrincipal Jwt jwt
+                                           ,Long listingId){
+        return listingTransactionService.getProductById(jwt,listingId);
     }
 
     @GetMapping("/top6-categories")
