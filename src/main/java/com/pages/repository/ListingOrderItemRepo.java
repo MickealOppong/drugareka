@@ -4,12 +4,15 @@ import com.pages.enums.InventoryStatus;
 import com.pages.enums.OrderItemStatus;
 import com.pages.enums.OrderStatus;
 import com.pages.enums.ReceiptConfirmationStatus;
+import com.pages.model.ListingOrder;
 import com.pages.model.ListingOrderItem;
 import com.pages.model.ListingTransaction;
 import com.pages.model.SellerProfile;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,4 +43,13 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
         AND item.receiptConfirmedAt IS NULL
     """)
     List<ListingOrderItem> findAllPaidAndExpiredReceiptTokens(@Param("now") Instant now);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("""
+       SELECT o
+       FROM ListingOrderItem o
+       WHERE o.id = :orderId
+       """)
+    Optional<ListingOrderItem> findByIdForUpdate(
+            @Param("orderId") Long orderId
+    );
 }

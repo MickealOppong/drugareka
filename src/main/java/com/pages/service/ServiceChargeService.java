@@ -81,4 +81,38 @@ public class ServiceChargeService {
             }
 
     }
+
+    @Transactional
+    public void reverseCharge(ListingOrderItem item) {
+
+        if(item==null){
+            return;
+        }
+        ServiceCharge charge = serviceChargeRepo.findByListingOrderItem(item).orElse(null);
+        if(charge==null){
+            throw new IllegalStateException("Object does not exist");
+        }
+        ServiceCharge originalCharge = serviceChargeRepo.findByListingOrderItem(item).orElse(null);
+        if(originalCharge==null){
+           throw new IllegalStateException("Object does not exist");
+        }
+
+        BigDecimal grossServiceChargeTotal = originalCharge.getGrossAmount();
+        log.info("Billing Engine: Reversing service fee totals: {} zł for Order ID: {}",
+                grossServiceChargeTotal ,item.getId());
+
+
+        ServiceCharge serviceCharge = ServiceCharge.builder()
+                .listingOrderItem(item)
+                .buyer(originalCharge.getBuyer())
+                .currency(originalCharge.getCurrency())
+                .description("Service charge reversal for unfulfilled order")
+                .grossAmount(originalCharge.getGrossAmount().negate())
+                .netAmount(originalCharge.getNetAmount().negate())
+                .vatAmount(originalCharge.getVatAmount().negate())
+                .build();
+        serviceChargeRepo.save(serviceCharge);
+        log.info("Tax Engine: Service Charge reversal block successfully locked down for Order ID: {}", item.getId());
+
+    }
 }

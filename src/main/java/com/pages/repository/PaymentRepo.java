@@ -18,7 +18,9 @@ import java.util.Optional;
 @Repository
 public interface PaymentRepo extends JpaRepository<Payment, Long> {
 
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<Payment> findByStripePaymentIntentId(String paymentIntent);
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
 Optional<Payment> findByOrderNumber(String orderNumber);
 @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<Payment> findByProviderSessionId(String sessionId);

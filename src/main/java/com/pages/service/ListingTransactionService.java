@@ -357,7 +357,8 @@ public class ListingTransactionService {
                     .status(InventoryStatus.AVAILABLE)
                     .build();
             InventoryItem savedInventoryItem = inventoryItemService.addNewInventory(inventoryItemRequest);
-            log.info("Saved inventory {}", savedInventoryItem);
+
+            //price
             InventoryItemPriceDto inventoryItemPriceDto = InventoryItemPriceDto.builder()
                     .sellerOldPrice(productData.getPrice())
                     .sellerNewPrice(productData.getPrice())
@@ -368,12 +369,14 @@ public class ListingTransactionService {
                     .reason("Initial listing price")
                     .build();
             inventoryItemPriceService.addNewPrice(inventoryItemPriceDto);
+            //product images
             mediaService.uploadProductImage(productData.getImages(), productData.getImageSortOrder(), savedInventoryItem);
             ListTransRequest listTrans = ListTransRequest.builder()
                     .inventory(savedInventoryItem)
                     .listingStatus(getListingStatus(productData.getStatus()))
                     .build();
             CreateListing(listTrans);
+            //notifications
             emailNotificationService.sendProductCreatedNotification(appUser.getUsername(),
                     appUser.getFirstName() + " " + appUser.getLastName(), productData.getName(), BigDecimal.valueOf(Long.parseLong(String.valueOf(productData.getPrice()))));
             String successMsg = messageSource.getMessage("api.listing.create.success", null, "Listing created successfully.", locale);
@@ -426,6 +429,7 @@ public class ListingTransactionService {
                 .page(listings.getNumber())
                 .pageSize(listings.getSize())
                 .totalPages(listings.getTotalPages())
+                .accumulatedItems(getAccumulatedItemsFromPage(listings.getNumber(),listings.getSize(),listings.getTotalElements()))
                 .totalElements(listings.getTotalElements())
                 .build();
     }
@@ -450,6 +454,7 @@ public class ListingTransactionService {
                 .listings(listings.getContent())
                 .page(listings.getNumber())
                 .pageSize(listings.getSize())
+                .accumulatedItems(getAccumulatedItemsFromPage(listings.getNumber(),listings.getSize(),listings.getTotalElements()))
                 .totalPages(listings.getTotalPages())
                 .totalElements(listings.getTotalElements())
                 .build();
@@ -537,10 +542,12 @@ public class ListingTransactionService {
                     InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
                   return ListingTransaction.toProductListResponse(listing, media, price);
                 });
+
         return ListPageDto.builder()
                 .productList(listings.getContent())
                 .page(listings.getNumber())
                 .pageSize(listings.getSize())
+                .accumulatedItems(getAccumulatedItemsFromPage(listings.getNumber(),listings.getSize(),listings.getTotalElements()))
                 .totalPages(listings.getTotalPages())
                 .totalElements(listings.getTotalElements())
                 .build();
@@ -557,6 +564,24 @@ public class ListingTransactionService {
             InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryId);
             return ListingTransaction.toListTransResponse(listing, media, price);
         }).toList();
+    }
+
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
     }
     @Transactional(readOnly = true)
     public ProductListResponse getProductById(Jwt jwt,Long listingId) {

@@ -1089,11 +1089,18 @@ public class ShipmentService {
     }
 
     @Transactional
-    public Boolean updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
+    public void updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
+
         // 1. Guard clause for malformed or empty payloads
         if (request == null || request.getShipmentIds() == null) {
-            return null;
+            return;
         }
+
+        String token = request.getToken();
+       SellerShipmentToken sellerShipmentToken= sellerShipmentTokenService.validateToken(token);
+       if(sellerShipmentToken.getExpiresAt().isBefore(Instant.now())){
+           return;
+       }
 
         // 2.Construct the immutable string ONCE outside the loop
         var pickup = request.getPickupAddress();
@@ -1116,7 +1123,7 @@ public class ShipmentService {
                 .map(SellerShipment::getId)
                 .collect(Collectors.toSet());
 
-        // orders tro cancel because seller did not confirm
+        // orders to cancel because seller did not confirm
         List<SellerShipment> itemsToCancel = itemsToShip.stream()
                 .filter(item -> !confirmedIds.contains(item.getId()))
                 .toList();
@@ -1129,10 +1136,10 @@ public class ShipmentService {
             sellerShipmentRepo.save(itemToShip);
         }
 
+        //cancel unfulfilled orders
        itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
-           orderReturnService.executeSellerCancellation(item.getId());
+           orderReturnService.executeOrderPartialCancellation(item.getId());
        });
-        return true;
     }
 
 

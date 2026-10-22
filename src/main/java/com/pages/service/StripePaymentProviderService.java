@@ -6,6 +6,7 @@ import com.pages.interfaces.PaymentProvider;
 import com.pages.model.*;
 import com.pages.repository.PaymentRepo;
 import com.stripe.StripeClient;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Transfer;
@@ -131,12 +132,7 @@ public class StripePaymentProviderService {
                     .map(SellerProfile::getId)
                     .collect(Collectors.toSet());
 
-            // If the size of the set is exactly 1, every item belongs to the same seller!
-            boolean isSameSeller = uniqueSellerIds.size() == 1;
 
-            String sellerAccountId = isSameSeller
-                    ? order.getItems().get(0).getSeller().getStripeAccountId()
-                    : null;
 
             SessionCreateParams.CustomText customText =
                     SessionCreateParams.CustomText.builder()
@@ -167,7 +163,6 @@ public class StripePaymentProviderService {
                             )
                             .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder().setTransferGroup(order.getOrderNumber())
                                     .setReceiptEmail(buyerEmail)
-                                    .setOnBehalfOf(sellerAccountId)
                                     .build()
 
                             )
@@ -229,6 +224,16 @@ public class StripePaymentProviderService {
             }
 
           return  Session.create(params.build());
+        } catch (InvalidRequestException e) {
+            log.error("Stripe API Invalid Request: Code={}, Param={}", e.getCode(), e.getParam(), e);
+
+            // Bubble up Stripe's exact message (e.g., "You cannot create a charge...")
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, // Use 400 instead of 502 for client-side configuration bugs
+                    e.getMessage(),
+                    e
+            );
+
         } catch (StripeException e) {
             log.error(
                     "Stripe Checkout session creation failed. Code: {}, Message: {}",

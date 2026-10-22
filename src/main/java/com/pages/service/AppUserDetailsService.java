@@ -21,6 +21,10 @@ import org.springframework.cglib.beans.BeanMap;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.User;
@@ -42,6 +46,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.pages.util.UtilService.formatRoleInput;
+
 
 
 @Slf4j
@@ -272,9 +277,7 @@ public class AppUserDetailsService implements UserDetailsService {
                .userId(appUser.getId())
                .email(appUser.getUsername())
                .firstName(appUser.getFirstName())
-               .accountNumber(appUser.getAccountNumber())
                .lastName(appUser.getLastName())
-               .pesel(appUser.getPesel())
                .address(addressResponse)
 
                .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
@@ -290,16 +293,32 @@ public class AppUserDetailsService implements UserDetailsService {
        return appUserRepo.findByUsername(username).isPresent();
     }
 
-    public List<UserDetailsDto> allUsers(){
-       return appUserRepo.findAll().stream().map(appUser -> {
-            return UserDetailsDto.builder()
+    public ListPageUsers allUsers(int page,int size){
+
+        Pageable pageable = PageRequest.of(
+                page == 0 ? page : page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+        Page<UserDetailsDto> users = appUserRepo.findAll(pageable).map(appUser -> {
+
+         return UserDetailsDto.builder()
                     .userId(appUser.getId())
                     .firstName(appUser.getFirstName())
                     .lastName(appUser.getLastName())
                     .email(appUser.getUsername())
                     .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                     .build();
-        }).toList();
+        });
+        return ListPageUsers.builder()
+                .userList(users.getContent())
+                .page(users.getNumber())
+                .pageSize(users.getSize())
+                .accumulatedItems(getAccumulatedItemsFromPage(users.getNumber(),users.getSize(),users.getTotalElements()))
+                .totalPages(users.getTotalPages())
+                .totalElements(users.getTotalElements())
+                .build();
     }
 
 
@@ -316,6 +335,24 @@ public class AppUserDetailsService implements UserDetailsService {
             return appUser.getFirstName()+" "+appUser.getLastName();
         }
         return null;
+    }
+
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
     }
 
     @Transactional

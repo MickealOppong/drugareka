@@ -135,7 +135,7 @@ public class ProductController {
     }
 
 
-    @PreAuthorize("hasAuthority('ROLE_ADMIN') || hasAuthority('ROLE_SELLER')")
+    //@PreAuthorize("hasAuthority('ROLE_ADMIN') || hasAuthority('ROLE_SELLER')")
     @PutMapping(value = "/listing/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseDto<Object> editListing(@AuthenticationPrincipal Jwt jwt, @ModelAttribute @Valid ProductData productData) {
         if(productData.getImages()==null){

@@ -62,10 +62,18 @@ public class OrderController {
        return complaintService.allComplaints(jwt,page,size);
     }
 
-    @PreAuthorize("hasAuthority('ROLE_SELLER')")
-    @PostMapping("/cancel-order")
-    public void cancelOrderBySeller(@AuthenticationPrincipal Jwt jwt,Long orderId){
-       orderReturnService.executeSellerCancellation(jwt,orderId);
+    //@PreAuthorize("hasAuthority('ROLE_SELLER')")
+    @PostMapping("/cancel-seller-order")
+    public void cancelOrderBySeller(@AuthenticationPrincipal Jwt jwt,Long orderItemId){
+        log.info("id:{}",orderItemId);
+       orderReturnService.executeSellerCancellation(jwt,orderItemId);
+    }
+
+
+
+    @PostMapping("/cancel-buyer-order")
+    public void cancelOrderByBuyer(@AuthenticationPrincipal Jwt jwt,Long orderItemId){
+        orderReturnService.executeBuyerCancellation(jwt,orderItemId);
     }
 
     @PreAuthorize("hasAuthority('ROLE_USER')")
@@ -73,6 +81,7 @@ public class OrderController {
     public ResponseEntity<Boolean> returnIntent(@AuthenticationPrincipal Jwt jwt,@ModelAttribute OrderReturnRequest request){
        return ResponseEntity.ok(orderReturnService.executeReturn(jwt,request));
     }
+
 
 
 

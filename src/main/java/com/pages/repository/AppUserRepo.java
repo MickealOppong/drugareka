@@ -1,6 +1,8 @@
 package com.pages.repository;
 
 import com.pages.model.AppUser;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
@@ -15,7 +17,6 @@ public interface AppUserRepo extends JpaRepository<AppUser,Long> {
 
     Optional<AppUser> findByUsername(String username);
     Optional<AppUser> findByPasswordResetToken(String token);
-
     boolean existsByUsername(String username);
 
 }

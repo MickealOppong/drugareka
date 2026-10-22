@@ -36,6 +36,7 @@ public class OrderCleanupService {
         this.paymentRepo = paymentRepo;
     }
 
+    /*
     // Runs once every 5 minutes (300,000 milliseconds)
     @Scheduled(cron = "0 0/30 * * * *", zone = "Europe/Warsaw")
     @Transactional
@@ -44,8 +45,8 @@ public class OrderCleanupService {
         log.info("Executing database sweep for expired checkout reservations at timestamp: {}", now);
 
 
-        // Find orders created more than 30 minutes ago that are still stuck as PENDING
-        Instant orderTimeoutLimit = Instant.now().minusSeconds(1800); // 30 minutes
+        // Find orders created more than 45 minutes ago that are still stuck as PENDING
+        Instant orderTimeoutLimit = Instant.now().minusSeconds(2700); // 45 minutes
         List<ListingOrder> abandonedOrders = listingOrderRepo.findByOrderStatusAndCreatedAtBeforeForUpdate(
                 OrderStatus.PROCESSING, orderTimeoutLimit
         );
@@ -63,7 +64,7 @@ public class OrderCleanupService {
 
                 //inventory release
                 InventoryItem inventoryItem = lineItem.getInventoryItem();
-                if(inventoryItem.getReservedUntil().isBefore(Instant.now())){
+                if(inventoryItem.getReservedUntil() !=null && inventoryItem.getReservedUntil().isBefore(Instant.now())){
                     inventoryItem.setStatus(InventoryStatus.AVAILABLE);
                     inventoryItem.setReservedUntil(null);
                     inventoryItem.setReservedBy(null);
@@ -81,4 +82,6 @@ public class OrderCleanupService {
 
 
     }
+
+     */
 }

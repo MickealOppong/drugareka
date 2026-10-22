@@ -25,5 +25,6 @@ Optional<SellerProfile> findByStripeAccountId(String id);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("SELECT s FROM SellerProfile s WHERE s.id = :id")
     Optional<SellerProfile> findByIdForUpdate(Long id);
+    List<SellerProfile> findByStripeAccountIdIsNull();
 
 }

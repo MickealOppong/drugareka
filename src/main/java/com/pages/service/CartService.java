@@ -186,7 +186,7 @@ public class CartService {
                     continue;
                 }
 
-                InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryItem.getId()).toPriceDto();
+                InventoryItemPrice price = inventoryItemPriceService.getPrices(inventoryItem.getId());
 
                 Optional<CartItem> existingItem = cartItemRepository
                         .findByCartIdAndListingId(cart.getId(), targetListingId);
@@ -224,7 +224,7 @@ public class CartService {
                         .build();
             }
 
-// 🚀 Safe passing of dynamic sequential counts {0} and {1} straight to bundle properties arrays
+//  Safe passing of dynamic sequential counts {0} and {1} straight to bundle properties arrays
             Object[] messageParams = new Object[]{addedCount, updatedCount};
             String successMsg = messageSource.getMessage("cart.update.success", messageParams, "Cart updated.", currentLocale);
             return ResponseDto.builder()

@@ -1,6 +1,7 @@
 package com.pages.model;
 
 import com.pages.enums.ShipmentConfirmationStatus;
+import com.pages.util.LogEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.Instant;
@@ -12,7 +13,7 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SellerShipmentToken {
+public class SellerShipmentToken extends LogEntity {
 
 
     @Id

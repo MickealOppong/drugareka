@@ -18,6 +18,7 @@ public class ListPageDto {
     private int pageSize;
     private int page;
    private int totalPages;
+    private int accumulatedItems;
    private long totalElements;
 
 }

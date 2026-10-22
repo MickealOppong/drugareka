@@ -61,7 +61,8 @@ public class CheckoutService {
         try {
             ListingOrder order = listingOrderService.createBuyerOrder(jwt);
 
-            if (order == null) {
+            if (order == null ) {
+
                 String msg = messageSource.getMessage("checkout.order.creation_failed", null, "Unable to create order.", locale);
                 return ResponseDto.<String>builder()
                         .message(msg)
@@ -172,6 +173,7 @@ public class CheckoutService {
 
     @Transactional
     public ResponseDto<String> buyNowBuyerOffer(@AuthenticationPrincipal Jwt jwt, Long[] listingsId,BigDecimal offer) {
+    try {
         Locale locale = LocaleContextHolder.getLocale();
         if (jwt != null) {
             AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
@@ -203,6 +205,12 @@ public class CheckoutService {
                 .message(msg)
                 .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .build();
+    }catch (Exception e){
+        return ResponseDto.<String>builder()
+                .message(e.getMessage())
+                .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .build();
+    }
     }
 
 

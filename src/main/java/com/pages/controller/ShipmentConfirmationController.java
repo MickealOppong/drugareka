@@ -34,12 +34,6 @@ public class ShipmentConfirmationController {
     public ResponseEntity<Boolean> executeShipment(ShipmentConfirmationRequest request){
      try{
         shipmentService.updateAndOrderCourierConfirmation(request);
-         /*
-         itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
-             orderReturnService.executeSellerCancellation(item.getId());
-         });
-
-          */
          return ResponseEntity.ok(true);
      }catch (Exception e){
          return ResponseEntity.ok(false);

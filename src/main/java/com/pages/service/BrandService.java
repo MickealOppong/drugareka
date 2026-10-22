@@ -114,6 +114,7 @@ public class BrandService {
               .page(brands.getNumber())
               .pageSize(brands.getSize())
               .totalElements(brands.getTotalElements())
+              .accumulatedItems(getAccumulatedItemsFromPage(brands.getNumber(),brands.getSize(),brands.getTotalElements()))
               .totalPages(brands.getTotalPages())
               .build();
     }
@@ -183,5 +184,23 @@ public class BrandService {
 
     public Brand findByName(String name){
         return brandRepo.findByName(name).orElseThrow(()->new EntityNotFoundException("Brand does not exist"));
+    }
+
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
     }
 }

@@ -18,6 +18,7 @@ import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.interceptor.NamedCacheResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -77,10 +78,9 @@ public class StripeWebhookController {
                     case "checkout.session.async_payment_succeeded":
                         paymentService.handleCheckoutCompleted(event);
                         break;
-                    case "charge.succeeded":
-                        paymentService.handleChargeSucceeded(event);
+                    case "charge.refunded":
+                        paymentService.handleRefundSuccess(event);
                         break;
-
                     case "checkout.session.expired":
                         paymentService.handleCheckoutSessionExpired(event);
                         break;
@@ -88,13 +88,16 @@ public class StripeWebhookController {
                             paymentService.handleDelayedPaymentIntentSuccess(event);
                             break;
                     case "checkout.session.async_payment_failed":
+                         case "payment_intent.failed":
                         paymentService.handleAsyncPaymentFailed(event);
                         break;
-                    case "payment_intent.failed":
-                        paymentService.handleAsyncPaymentFailed(event);
                     case "transfer.created":
                        sellerPayoutService.handleTransferCreated(event);
                         break;
+                    // Direct processing tracking for independent charge instances
+                    case "charge.succeeded":
+                        paymentService.handleChargeSucceeded(event);
+                    break;
 
                     case "transfer.reversed":
                         sellerPayoutService.handleTransferReversed(event);

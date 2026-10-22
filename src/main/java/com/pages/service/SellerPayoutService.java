@@ -13,6 +13,7 @@ import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.Transfer;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,21 +36,15 @@ import static org.antlr.v4.runtime.tree.xpath.XPath.findAll;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class SellerPayoutService {
 
     private final SellerPayoutRepo sellerPayoutRepo;
-    private final InventoryItemPriceService inventoryItemPriceService;
     private final AppUserDetailsService appUserDetailsService;
     private final ShipmentService shipmentService;
     private final SellerProfileRepo sellerProfileRepo;
 
-    public SellerPayoutService(SellerPayoutRepo sellerPayoutRepo, InventoryItemPriceService inventoryItemPriceService, AppUserDetailsService appUserDetailsService, ShipmentService shipmentService, SellerProfileRepo sellerProfileRepo) {
-        this.sellerPayoutRepo = sellerPayoutRepo;
-        this.inventoryItemPriceService = inventoryItemPriceService;
-        this.appUserDetailsService = appUserDetailsService;
-        this.shipmentService = shipmentService;
-        this.sellerProfileRepo = sellerProfileRepo;
-    }
+
 
     public List<SellerPayoutResponse> allPayouts(Jwt jwt){
         if(jwt==null){
@@ -108,11 +103,8 @@ public class SellerPayoutService {
     }
 
     @Transactional(readOnly = true)
-    private ListPagePayout getMyPayouts(Jwt jwt,int page,int size){
-        if(jwt !=null){
-
-            AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
-            Long userId = appUser.getId();
+    private ListPagePayout getMyPayouts(Long userId,int page,int size){
+        if(userId !=null){
 
             Pageable pageable = PageRequest.of(
                     page==0?page:page-1,
@@ -137,6 +129,7 @@ public class SellerPayoutService {
                     .totalPages(payouts.getTotalPages())
                     .page(payouts.getNumber())
                     .pageSize(payouts.getSize())
+                    .accumulatedItems(getAccumulatedItemsFromPage(payouts.getNumber(),payouts.getSize(),payouts.getTotalElements()))
                     .totalElements(payouts.getTotalElements())
                     .build();
         }
@@ -171,6 +164,7 @@ public class SellerPayoutService {
                     .payouts(payouts.getContent())
                     .totalPages(payouts.getTotalPages())
                     .page(payouts.getNumber())
+                    .accumulatedItems(getAccumulatedItemsFromPage(payouts.getNumber(),payouts.getSize(),payouts.getTotalElements()))
                     .pageSize(payouts.getSize())
                     .totalElements(payouts.getTotalElements())
                     .build();
@@ -182,7 +176,7 @@ public class SellerPayoutService {
     public ListPagePayout payouts(Jwt jwt,int page,int size){
         if(jwt!=null){
             AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
-            return getMyPayouts(jwt,page,size);
+            return getMyPayouts(appUser.getId(),page,size);
         }
         return ListPagePayout.builder().build();
     }
@@ -285,12 +279,11 @@ public class SellerPayoutService {
         };
     }
 
-    public void createRefund(ListingOrderItem orderItem) {
+    public void createTotalRefund(ListingOrderItem orderItem) {
 
         if(orderItem!=null){
 
-
-            BigDecimal refundAmount =orderItem.getSellerPrice().add(orderItem.getShippingCost());
+            BigDecimal refundAmount =orderItem.getSellerPrice();
 
             SellerPayout payout = SellerPayout.builder()
                     .listingOrderItem(orderItem)
@@ -306,6 +299,44 @@ public class SellerPayoutService {
 
     }
 
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
+    }
+
+    public void createRefund(ListingOrderItem orderItem) {
+
+        if(orderItem!=null){
+
+
+            BigDecimal refundAmount =orderItem.getSellerPrice();
+
+            SellerPayout payout = SellerPayout.builder()
+                    .listingOrderItem(orderItem)
+                    .seller(orderItem.getSeller())
+                    .sellerNameSnapshot(orderItem.getSellerNameSnapshot())
+                    .amount(refundAmount.negate())
+                    .currency("PLN")
+                    .status(PayoutStatus.REFUND)
+                    .build();
+
+            sellerPayoutRepo.save(payout);
+        }
+
+    }
 
     public void handleTransferCreated(Event event) {
         Transfer transfer = null;

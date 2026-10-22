@@ -80,10 +80,8 @@ public class SellerProfileService {
 
                 // Protect arithmetic against uninstantiated null fee fields safely
                 BigDecimal itemPrice = item.getSellerPrice() != null ? item.getSellerPrice() : BigDecimal.ZERO;
-                BigDecimal shippingCost = item.getShippingCost() != null ? item.getShippingCost() : BigDecimal.ZERO;
-                BigDecimal totalLineAmount = itemPrice.add(shippingCost);
 
-                sellerOrderTotals.put(sellerId, sellerOrderTotals.getOrDefault(sellerId, BigDecimal.ZERO).add(totalLineAmount));
+                sellerOrderTotals.put(sellerId, sellerOrderTotals.getOrDefault(sellerId, itemPrice));
             }
 
             List<SellerProfile> profilesToUpdate = new ArrayList<>();
@@ -139,6 +137,53 @@ public class SellerProfileService {
         }
     }
 
+    @Transactional
+    public void updateSellerTotalSales(ListingOrderItem item) {
+        if (item == null) {
+            return ;
+        }
+
+        try {
+            // STEP 1: Aggregate order financial splits by Seller ID to prevent multiple database hits
+
+                // Protect arithmetic against uninstantiated null fee fields safely
+                BigDecimal itemPrice = item.getSellerPrice() != null ? item.getSellerPrice() : BigDecimal.ZERO;
+                BigDecimal shippingCost = item.getShippingCost() != null ? item.getShippingCost() : BigDecimal.ZERO;
+                BigDecimal totalLineAmount = itemPrice.add(shippingCost);
+
+
+            // STEP 2: Process each distinct vendor exactly once
+           Long sellerId = item.getSeller().getId();
+            SellerProfile seller = sellerProfileRepo.findByIdForUpdate(sellerId)
+                    .orElseThrow(() -> new InvalidOperationException("Seller profile not found for user ID: " + sellerId));
+
+            log.info("Financial System: Aggregating order funds for seller profile: {} [Amount: +{} zł]",
+                    seller.getUser().getUsername(), totalLineAmount);
+
+            // --- Update Lifetime Accounting Metrics ---
+            BigDecimal currentLifetimeSales = seller.getTotalSales() != null ? seller.getTotalSales() : BigDecimal.ZERO;
+            seller.setTotalSales(currentLifetimeSales.add(itemPrice));
+
+            // --- Update Calendar-Year Regulatory Counters ---
+            int currentYearCount = seller.getCurrentYearSalesCount() != null ? seller.getCurrentYearSalesCount() : 0;
+            BigDecimal currentYearVolume = seller.getCurrentYearGrossVolumePln() != null ? seller.getCurrentYearGrossVolumePln() : BigDecimal.ZERO;
+
+            seller.setCurrentYearSalesCount(currentYearCount + 1);
+            seller.setCurrentYearGrossVolumePln(currentYearVolume.add(itemPrice));
+
+
+            // STEP 4: Flush everything to your Railway instance in a single batch query!
+            sellerProfileRepo.save(seller);
+
+        } catch (InvalidOperationException e) {
+            log.error("Validation Violation: Failed to match seller entities during accounting updates", e);
+            throw e;
+        } catch (Exception e) {
+            log.error("Financial System Exception: Critical failure updating transaction rows", e);
+            throw new InvalidOperationException("Could not update seller profiles due to an internal server error.");
+        }
+    }
+
 
     /**
      *  ACCOUNTING-GRADE REFUND ADJUSTMENT ENGINE
@@ -160,21 +205,19 @@ public class SellerProfileService {
 
             // Protect arithmetic against uninstantiated null fee fields safely
             BigDecimal itemPrice = orderItem.getSellerPrice() != null ? orderItem.getSellerPrice() : BigDecimal.ZERO;
-            BigDecimal shippingCost = orderItem.getShippingCost() != null ? orderItem.getShippingCost() : BigDecimal.ZERO;
-            BigDecimal totalRefundVolume = itemPrice.add(shippingCost);
 
             //  STEP 1: PRESERVE HISTORICAL GROSS VALUES (Do NOT touch totalSales!)
             // Instead, we subtract the return volume directly out of their net payout settlement account ledger.
             BigDecimal currentSettlement = seller.getTotalSettlement() != null ? seller.getTotalSettlement() : BigDecimal.ZERO;
-            seller.setTotalSettlement(currentSettlement.subtract(totalRefundVolume));
+            seller.setTotalSettlement(currentSettlement.subtract(itemPrice));
 
 
             // STEP 2: REGULATORY CALENDAR-YEAR TAX ADJUSTMENTS
             // Note: DAC7 regulations mandate that gross volume calculations reflect actual value processing.
             // If the transaction failed before fulfillment, update the current year gross volume accordingly.
             BigDecimal currentYearVolume = seller.getCurrentYearGrossVolumePln() != null ? seller.getCurrentYearGrossVolumePln() : BigDecimal.ZERO;
-            if (currentYearVolume.compareTo(totalRefundVolume) >= 0) {
-                seller.setCurrentYearGrossVolumePln(currentYearVolume.subtract(totalRefundVolume));
+            if (currentYearVolume.compareTo(itemPrice) >= 0) {
+                seller.setCurrentYearGrossVolumePln(currentYearVolume.subtract(itemPrice));
             } else {
                 seller.setCurrentYearGrossVolumePln(BigDecimal.ZERO);
             }
@@ -183,7 +226,7 @@ public class SellerProfileService {
             sellerProfileRepo.save(seller);
 
             log.info("Refund Engine: Reversal successfully logged. Total Gross Sales preserved. Net Settlement adjusted down by -{} zł",
-                    totalRefundVolume);
+                   itemPrice);
 
         }, () -> {
             log.error("Refund Engine: Critical data desync. Seller Profile missing for User ID: {}", sellerUserId);

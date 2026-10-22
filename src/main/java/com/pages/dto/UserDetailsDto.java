@@ -24,10 +24,6 @@ public class UserDetailsDto {
     private String email;
     private Set<String> roles;
     private AddressResponse address;
-    private String accountNumber;
-    private String pesel;
-
-
 
 
 }

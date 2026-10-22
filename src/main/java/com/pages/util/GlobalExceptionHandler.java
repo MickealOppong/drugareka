@@ -1,9 +1,15 @@
 package com.pages.util;
 
+import com.pages.dto.ResponseDto;
 import com.pages.exception.*;
+import com.stripe.exception.CardException;
+import com.stripe.exception.StripeException;
+import com.stripe.exception.oauth.InvalidRequestException;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,8 +34,23 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
-    // 🚀 Inject the central Spring MessageSource message processor
+
     private final MessageSource messageSource;
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException ex) {
+        log.warn("Fulfillment validation gate intercepted: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+
+        String errorMsg = messageSource.getMessage("api.error.conflict_generic", null, "Error", LocaleContextHolder.getLocale());
+
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
+        return new ResponseEntity<>(body, HttpStatus.CONFLICT);
+    }
 
     @ExceptionHandler(InsufficientPublicPresenceException.class)
     public ResponseEntity<Map<String, Object>> handleInsufficientPublicPresence(InsufficientPublicPresenceException ex, Locale locale) {
@@ -56,6 +77,27 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
+
+
+
+    /**
+     * Catches declined cards, expired cards, and incorrect CVVs.
+     */
+    @ExceptionHandler(CardException.class)
+    public ResponseEntity<Map<String, Object>>handleCardException(
+            CardException ex, HttpServletRequest request) {
+        log.info("Card declined: Code={}, Message={}", ex.getCode(), ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        String errorMsg = messageSource.getMessage("api.error.access_denied", null, "an error occurred", LocaleContextHolder.getLocale());
+
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", errorMsg);
+        body.put("message", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(body);
+    }
+
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
@@ -147,6 +189,8 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
 
+
+
     @ExceptionHandler(AccessPermissionException.class)
     public ResponseEntity<Map<String, Object>> accessPermission(AccessPermissionException ex, Locale locale) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -158,6 +202,9 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
+
+
+
 
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<Map<String, Object>> duplicateKey(DuplicateKeyException ex, Locale locale) {

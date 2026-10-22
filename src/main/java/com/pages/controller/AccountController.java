@@ -51,8 +51,8 @@ public class AccountController {
     }
 
     @GetMapping("/all")
-    public List<UserDetailsDto> allUsers(){
-        return appUserDetailsService.allUsers();
+    public ListPageUsers allUsers(int page,int size){
+        return appUserDetailsService.allUsers(page,size);
     }
 
     @GetMapping("/user")

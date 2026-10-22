@@ -22,8 +22,8 @@ public class PayoutScheduler {
      * Runs again 2 minutes after the previous execution finishes.
      */
     @Primary
-    @Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
-   // @Scheduled(fixedDelay = 120_000)
+    //@Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
+   @Scheduled(fixedDelay = 120_000)
     public void executePayout() {
         log.info("Payout scheduler started");
 

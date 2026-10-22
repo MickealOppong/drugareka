@@ -16,6 +16,7 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString
 public class ListingOrderItem extends LogEntity {
 
 

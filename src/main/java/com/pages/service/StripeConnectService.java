@@ -2,50 +2,36 @@ package com.pages.service;
 
 import com.pages.dto.ResponseDto;
 import com.pages.dto.StripeAccountStatusResponse;
-import com.pages.model.AppUser;
-import com.pages.model.SellerProfile;
-import com.pages.repository.AppUserRepo;
-import com.pages.repository.GlobalAddressRepo;
-import com.pages.repository.SellerProfileRepo;
+import com.pages.enums.InventoryStatus;
+import com.pages.enums.OrderItemStatus;
+import com.pages.enums.OrderStatus;
+import com.pages.enums.PaymentStatus;
+import com.pages.model.*;
+import com.pages.repository.*;
 import com.stripe.model.v2.core.Account;
 import com.stripe.param.v2.core.AccountRetrieveParams;
-import com.pages.util.GlobalAddress;
-import com.stripe.Stripe;
 import com.stripe.StripeClient;
-import com.stripe.events.V2CoreAccountCreatedEvent;
-import com.stripe.events.V2CoreAccountIncludingIdentityUpdatedEventNotification;
-import com.stripe.events.V2CoreAccountUpdatedEvent;
-import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
-import com.stripe.model.Event;
-import com.stripe.model.checkout.Session;
-import com.stripe.model.v2.core.Account;
 import com.stripe.model.v2.core.AccountLink;
 import com.stripe.model.v2.core.EventNotification;
-import com.stripe.param.AccountRetrieveCurrentParams;
 
 import com.stripe.param.v2.core.AccountCreateParams;
 import com.stripe.param.v2.core.AccountLinkCreateParams;
 
-import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import static com.stripe.Stripe.apiKey;
 
 @Slf4j
 @Service
@@ -83,6 +69,7 @@ public class StripeConnectService {
 
         AccountCreateParams params = AccountCreateParams.builder()
                 .setContactEmail(email.trim())
+
                 .setDisplayName(
                         StringUtils.hasText(displayName)
                                 ? displayName.trim()
@@ -132,6 +119,7 @@ public class StripeConnectService {
                                 .build()
                 )
                 .setDashboard(AccountCreateParams.Dashboard.EXPRESS)
+
                 .build();
 
         Account account = client.v2()
@@ -382,6 +370,151 @@ public class StripeConnectService {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Slf4j
+    @Component
+    @RequiredArgsConstructor
+    public static class OrderFinalizerWorker {
+
+        private final PaymentRepo paymentRepo;
+        private final ListingOrderRepo listingOrderRepo;
+        private final InventoryItemRepo inventoryItemRepo;
+        private final ListingOrderItemRepo listingOrderItemRepo;
+        private final ServiceChargeService serviceChargeService;
+        private final SellerPayoutService sellerPayoutService;
+        private final SellerProfileService sellerProfileService;
+        private final CartService cartService;
+
+        @org.springframework.transaction.annotation.Transactional
+        public ListingOrder executeFinalization(String sessionId, Long orderId, String paymentIntentId, String chargeId) {
+            // 1. Lock and validate Payment record
+            Payment payment = paymentRepo
+                    .findByProviderSessionIdForUpdate(sessionId)
+                    .orElseThrow(() -> new IllegalStateException("Payment not found for session: " + sessionId));
+
+            if (payment.getStatus() == PaymentStatus.PAID) {
+                log.info("Payment already finalized for session {}", sessionId);
+                return null; // Idempotent shortcut exit
+            }
+
+            // 2. Lock and validate Order record
+            ListingOrder order = listingOrderRepo
+                    .findByIdForUpdate(orderId)
+                    .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+
+            if (order.getOrderStatus() == OrderStatus.PAID) {
+                log.info("Order {} is already paid", orderId);
+                return null; // Idempotent shortcut exit
+            }
+
+            Instant paidAt = Instant.now();
+
+            // 3. Update core transaction records
+            payment.setStatus(PaymentStatus.PAID);
+            payment.setPaidAt(paidAt);
+            payment.setStripePaymentIntentId(paymentIntentId);
+            payment.setStripeChargeId(chargeId);
+
+            order.setOrderStatus(OrderStatus.PAID);
+            order.setPaidAt(paidAt);
+
+            // 4. Validate and commit inventory state shifts
+            for (ListingOrderItem item : order.getItems()) {
+                InventoryItem inventory = item.getInventoryItem();
+                if (inventory.getStatus() == InventoryStatus.SOLD) {
+                    throw new IllegalStateException("Inventory conflict: item " + item.getId() + " is already sold");
+                }
+                inventory.setStatus(InventoryStatus.SOLD);
+                inventory.setReservedUntil(null);
+                inventory.setReservedBy(null);
+                inventoryItemRepo.save(inventory);
+
+                item.setOrderItemStatus(OrderItemStatus.PAID);
+                listingOrderItemRepo.save(item);
+            }
+
+            paymentRepo.save(payment);
+            ListingOrder savedOrder = listingOrderRepo.save(order);
+
+            // 5. Downstream internal structural workflows
+            serviceChargeService.createCharge(savedOrder);
+            sellerPayoutService.createPayouts(savedOrder);
+            sellerProfileService.updateSellerTotalSales(savedOrder.getItems());
+            cartService.deleteCartById(savedOrder.getBuyer().getId());
+
+            return savedOrder;
+        }
+
+        @org.springframework.transaction.annotation.Transactional
+        public ListingOrder executeDelayedPaymentSuccessFulfillment(Long orderId, String chargeId) {
+            ListingOrder order = listingOrderRepo.findByIdForUpdate(orderId)
+                    .orElseThrow(() -> new IllegalStateException("Order missing for execution: " + orderId));
+
+            // Verify inventory availability before overriding state changes
+            for (ListingOrderItem item : order.getItems()) {
+                if (item.getInventoryItem().getStatus() == InventoryStatus.SOLD) {
+                    return null; // Conflict found; inventory was lost while out-of-time
+                }
+            }
+
+            order.setOrderStatus(OrderStatus.PAID);
+            order.setPaidAt(Instant.now());
+
+            for (ListingOrderItem item : order.getItems()) {
+                InventoryItem inventory = item.getInventoryItem();
+                inventory.setStatus(InventoryStatus.SOLD);
+                inventory.setReservedBy(null);
+                inventory.setReservedUntil(null);
+                inventoryItemRepo.save(inventory);
+            }
+
+            ListingOrder savedOrder = listingOrderRepo.save(order);
+
+            serviceChargeService.createCharge(savedOrder);
+            sellerPayoutService.createPayouts(savedOrder);
+            sellerProfileService.updateSellerTotalSales(savedOrder.getItems());
+            cartService.deleteCartById(savedOrder.getBuyer().getId());
+
+            return savedOrder;
+        }
+
+        @Transactional
+        public boolean executeCheckoutCancellation(String sessionId, Long orderId) {
+            Payment payment = paymentRepo.findByProviderSessionIdForUpdate(sessionId).orElse(null);
+            if (payment != null && payment.getStatus() == PaymentStatus.PAID) {
+                return false;
+            }
+
+            ListingOrder order = listingOrderRepo.findByIdForUpdate(orderId)
+                    .orElseThrow(() -> new IllegalStateException("Order not found for eviction: " + orderId));
+
+            if (order.getOrderStatus() == OrderStatus.PAID || order.getOrderStatus() == OrderStatus.CANCELLED) {
+                return false;
+            }
+
+            if (payment != null) {
+                payment.setStatus(PaymentStatus.FAILED);
+                paymentRepo.save(payment);
+            }
+
+            order.setOrderStatus(OrderStatus.CANCELLED);
+
+            for (ListingOrderItem item : order.getItems()) {
+                InventoryItem inventory = item.getInventoryItem();
+                if (inventory.getStatus() == InventoryStatus.RESERVED) {
+                    inventory.setStatus(InventoryStatus.AVAILABLE);
+                    inventory.setReservedUntil(null);
+                    inventory.setReservedBy(null);
+                    inventoryItemRepo.save(inventory);
+                }
+                item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+                listingOrderItemRepo.save(item);
+            }
+
+            listingOrderRepo.save(order);
+            return true;
         }
     }
 }
