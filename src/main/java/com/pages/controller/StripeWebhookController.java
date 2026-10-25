@@ -48,30 +48,9 @@ public class StripeWebhookController {
             @RequestHeader("Stripe-Signature") String signature) {
 
         try {
-            JsonNode root = objectMapper.readTree(payload);
-            String objectType = root.path("object").asString();
+            Event event = Webhook.constructEvent(
+                    payload, signature, webhookSecret);
 
-
-
-            if ("v2.core.event".equals(objectType)) {
-                EventNotification notification =
-                        client.parseEventNotification(
-                                payload, signature, webhookSecret);
-
-                switch (notification.getType()) {
-                    case "v2.core.account[identity].updated":
-                    case "v2.core.account_person.updated":
-                        stripeConnectService.handleAccountUpdated(notification);
-                        break;
-
-                    default:
-                        log.debug("Unhandled Stripe thin event: {}",
-                                notification.getType());
-                }
-
-            } else {
-                Event event = Webhook.constructEvent(
-                        payload, signature, webhookSecret);
 
                 switch (event.getType()) {
                     case "checkout.session.completed":
@@ -94,6 +73,9 @@ public class StripeWebhookController {
                     case "transfer.created":
                        sellerPayoutService.handleTransferCreated(event);
                         break;
+                    case "account.updated":
+                        stripeConnectService.handleAccountUpdated(event);
+                        break;
                     // Direct processing tracking for independent charge instances
                     case "charge.succeeded":
                         paymentService.handleChargeSucceeded(event);
@@ -106,14 +88,12 @@ public class StripeWebhookController {
                         log.debug("Unhandled Stripe event: {}", event.getType());
                         break;
                 }
-            }
-
-            return ResponseEntity.ok("received");
 
         } catch (Exception e) {
             log.error("Stripe webhook processing failed :{}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Webhook processing failed");
         }
+        return null;
     }
 }

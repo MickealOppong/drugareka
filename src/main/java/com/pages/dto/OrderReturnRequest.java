@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 
@@ -19,10 +20,9 @@ public class OrderReturnRequest {
     private Long orderItemId;
 
     private String returnReason;
+    private MultipartFile[] images;
 
     @Column(name = "buyer_comment", length = 1000)
     private String buyerComment;
-
-    @Column(nullable = false)
-    private String status;
+    private String orderNumber;
 }

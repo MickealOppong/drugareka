@@ -47,6 +47,18 @@ public class SellerProfileService {
                  });
     }
 
+    public String getStripeAccountId(Jwt jwt){
+        if(jwt==null){
+            return null;
+        }
+        AppUser appUser =appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+        if ((appUser==null)){
+            return null;
+        }
+        return sellerProfileRepo.findByUserId(appUser.getId()).map(SellerProfile::getStripeAccountId)
+                .orElse(null);
+    }
+
     public SellerProfile getSellerProfile(Long userId){
         return sellerProfileRepo.findByUserId(userId).orElse(null);
     }

@@ -22,34 +22,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class AppApplication {
 
-	private MediaUtilImpl mediaUtilImpl;
-	private AppUserRoleRepo appUserRoleRepo;
-
 	public static void main(String[] args) {
 		SpringApplication.run(AppApplication.class, args);
 	}
 
-	/*
-	@Bean
-	public CommandLineRunner init(){
-		return args -> {
-			mediaUtilImpl.init();
-
-			boolean roleExistsAdmin= appUserRoleRepo.existsByRole("ROLE_ADMIN");
-			boolean roleExistsUser= appUserRoleRepo.existsByRole("ROLE_USER");
-
-			if(!roleExistsUser){
-				AppUserRole USER = new AppUserRole("ROLE_USER");
-				appUserRoleRepo.save(USER);
-			}
-			if(!roleExistsAdmin){
-				AppUserRole USER = new AppUserRole("ROLE_ADMIN");
-				appUserRoleRepo.save(USER);
-			}
-
-
-		};
-	}
-
-	 */
 }

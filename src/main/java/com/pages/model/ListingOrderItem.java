@@ -66,6 +66,8 @@ public class ListingOrderItem extends LogEntity {
     @Column(nullable = false,length = 50)
     private ShippingMethod shippingMethod;
 
+    private String itemSize;
+
 
     @Enumerated(EnumType.STRING)
     private OrderItemStatus orderItemStatus;

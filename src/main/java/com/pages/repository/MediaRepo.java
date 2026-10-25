@@ -3,6 +3,7 @@ package com.pages.repository;
 
 import com.pages.model.Category;
 import com.pages.model.InventoryItem;
+import com.pages.model.OrderDispute;
 import com.pages.util.Media;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -17,6 +18,7 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
     void deleteByInventoryItem(InventoryItem item);
     void deleteByCategory(Category category);
     Optional<Media> findByCategory(Category category);
+    List<Media> findByOrderDispute(OrderDispute dispute);
     Optional<Media> findByCategoryParent(Category parent);
     Optional<Media> findByFileName(String fileName);
 
@@ -27,6 +29,7 @@ public interface MediaRepo extends JpaRepository<Media,Long> {
     void deleteByPath(String path);
 
     List<Media> findAllByInventoryItemId(Long inventoryItemId);
+    List<Media> findAllByOrderDispute(OrderDispute orderDispute);
     Optional<Media> findFirstByInventoryItemId(Long inventoryItemId);
 
     Optional<Media> findFirstByCategory(Category category);

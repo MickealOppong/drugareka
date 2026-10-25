@@ -15,6 +15,7 @@ public interface ReturnShipmentRepo extends JpaRepository<ReturnShipment,Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<ReturnShipment> findByReceiptConfirmationToken(String token);
-    Page<ReturnShipment> findByOrderReturnListingOrderItemListingOrderBuyer(AppUser buyer, Pageable pageable);
-    Optional<ReturnShipment> findByOrderReturnId(Long id);
+    Optional<ReturnShipment> findByOrderDispute(OrderDispute dispute);
+    Page<ReturnShipment> findByOrderDisputeListingOrderItemListingOrderBuyer(AppUser buyer, Pageable pageable);
+
 }

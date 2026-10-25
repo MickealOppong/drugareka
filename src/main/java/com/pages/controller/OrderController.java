@@ -1,11 +1,9 @@
 package com.pages.controller;
 
 import com.pages.dto.*;
-import com.pages.model.OrderReturn;
-import com.pages.service.ComplaintService;
+import com.pages.service.OrderDisputeService;
 import com.pages.service.ListingOrderService;
 import com.pages.service.OrderReturnService;
-import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,12 +20,10 @@ import java.util.List;
 public class OrderController {
 
     private final ListingOrderService listingOrderService;
-    private final ComplaintService complaintService;
     private final OrderReturnService orderReturnService;
 
-    public OrderController(ListingOrderService listingOrderService, ComplaintService complaintService, OrderReturnService orderReturnService) {
+    public OrderController(ListingOrderService listingOrderService, OrderReturnService orderReturnService) {
         this.listingOrderService = listingOrderService;
-        this.complaintService = complaintService;
         this.orderReturnService = orderReturnService;
     }
 
@@ -52,20 +48,11 @@ public class OrderController {
         return listingOrderService.storeOrders(jwt,page,size);
     }
 
-    @PostMapping("/complaints/new")
-    public ResponseDto<Boolean> newComplaints(@AuthenticationPrincipal Jwt jwt, ComplaintRequest dto){
-       return complaintService.createComplaint(jwt,dto);
-    }
 
-    @GetMapping("/complaints")
-    public ListComplaintPage complaints(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page , Integer size){
-       return complaintService.allComplaints(jwt,page,size);
-    }
 
     //@PreAuthorize("hasAuthority('ROLE_SELLER')")
     @PostMapping("/cancel-seller-order")
     public void cancelOrderBySeller(@AuthenticationPrincipal Jwt jwt,Long orderItemId){
-        log.info("id:{}",orderItemId);
        orderReturnService.executeSellerCancellation(jwt,orderItemId);
     }
 
@@ -76,11 +63,7 @@ public class OrderController {
         orderReturnService.executeBuyerCancellation(jwt,orderItemId);
     }
 
-    @PreAuthorize("hasAuthority('ROLE_USER')")
-    @PostMapping(value = "/return-intent",consumes = MediaType.MULTIPART_FORM_DATA_VALUE )
-    public ResponseEntity<Boolean> returnIntent(@AuthenticationPrincipal Jwt jwt,@ModelAttribute OrderReturnRequest request){
-       return ResponseEntity.ok(orderReturnService.executeReturn(jwt,request));
-    }
+
 
 
 

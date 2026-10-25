@@ -9,6 +9,7 @@ import com.pages.enums.ShipmentStatus;
 import com.pages.model.*;
 import com.pages.repository.SellerPayoutRepo;
 import com.pages.repository.SellerProfileRepo;
+import com.pages.repository.SellerShipmentRepo;
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -41,8 +42,8 @@ public class SellerPayoutService {
 
     private final SellerPayoutRepo sellerPayoutRepo;
     private final AppUserDetailsService appUserDetailsService;
-    private final ShipmentService shipmentService;
     private final SellerProfileRepo sellerProfileRepo;
+    private final SellerShipmentRepo sellerShipmentRepo;
 
 
 
@@ -62,6 +63,8 @@ public class SellerPayoutService {
                    .build();
        }).toList();
     }
+
+
 
     public SellerPayout getSellerPayoutById(Long id){
         return sellerPayoutRepo.findById(id).orElse(null);
@@ -118,6 +121,7 @@ public class SellerPayoutService {
                        .seller(sellerPayout.getSellerNameSnapshot())
                        .amount(sellerPayout.getAmount())
                        .id(sellerPayout.getId())
+                       .transferId(sellerPayout.getTransferId())
                        .status(sellerPayout.getStatus())
                        .currency(sellerPayout.getCurrency())
                        .orderNumber(sellerPayout.getListingOrderItem().getListingOrder().getOrderNumber())
@@ -194,7 +198,8 @@ public class SellerPayoutService {
 
        if(payout!=null){
 
-           ShipmentStatus shipmentStatus =shipmentService.getShipmentStatus(payout.getListingOrderItem().getListingOrder().getOrderNumber());
+           ShipmentStatus shipmentStatus =sellerShipmentRepo.findByListingOrderItemId(payout.getListingOrderItem().getId())
+                   .orElseThrow(()->new IllegalStateException("Item must be delivered befoe payout")).getShipmentStatus();
 
            if(!shipmentStatus.equals(ShipmentStatus.DELIVERED)){
                return ResponseDto.<Object>builder()

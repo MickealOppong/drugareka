@@ -1,6 +1,7 @@
 package com.pages.controller;
 
 import com.pages.dto.AddressForm;
+import com.pages.dto.ResponseDto;
 import com.pages.dto.ShipmentConfirmationRequest;
 import com.pages.dto.ShipmentItemResponse;
 import com.pages.model.SellerShipment;
@@ -41,7 +42,7 @@ public class ShipmentConfirmationController {
     }
 
     @GetMapping("/token")
-    public List<ShipmentItemResponse> getShipmentItems(String token){
+    public ResponseDto<Object> getShipmentItems(String token){
         return shipmentService.getShipment(token);
     }
 }

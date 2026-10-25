@@ -3,10 +3,13 @@ package com.pages.controller;
 import com.pages.dto.*;
 import com.pages.service.*;
 
+import com.stripe.exception.StripeException;
 import jakarta.mail.Multipart;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -21,6 +25,7 @@ import java.util.jar.JarEntry;
 @Slf4j
 @RestController
 @RequestMapping("/api/users")
+@RequiredArgsConstructor
 public class AccountController {
 
 
@@ -29,19 +34,31 @@ public class AccountController {
     private final ListingTransactionService listingTransactionService;
     private final SellerPayoutService sellerPayoutService;
     private final StripeConnectService stripeConnectService;
+    private final SellerProfileService sellerProfileService;
 
-    public AccountController(WishListService wishListService, AppUserDetailsService appUserDetailsService, ListingTransactionService listingTransactionService, SellerPayoutService sellerPayoutService1, StripeConnectService stripeConnectService) {
-        this.wishListService = wishListService;
-        this.appUserDetailsService = appUserDetailsService;
-        this.listingTransactionService = listingTransactionService;
-        this.sellerPayoutService = sellerPayoutService1;
-        this.stripeConnectService = stripeConnectService;
-    }
+
 
     @PreAuthorize("hasAuthority('ROLE_USER')")
     @PostMapping("/add-wishlist")
     public ResponseDto<Object> toggleWishList(@AuthenticationPrincipal Jwt jwt, Long listingId){
         return wishListService.toggleWishList(listingId,jwt);
+    }
+
+    @GetMapping("/stripe/dashboard")
+    public ResponseDto<Object> openStripeDashboard(
+            @AuthenticationPrincipal Jwt jwt) throws StripeException {
+        // SellerProfile and its Stripe connected account ID.
+        String stripeAccountId =
+               sellerProfileService.getStripeAccountId(jwt);
+
+        String url = stripeConnectService.createStripeDashboardLink(
+                stripeAccountId
+        );
+
+        return ResponseDto.builder()
+                .httpStatus(HttpStatus.FOUND.value())
+                .data(URI.create(url))
+                .build();
     }
 
 

@@ -7,6 +7,7 @@ import com.pages.exception.PhotoStorageException;
 import com.pages.impl.MediaUtilImpl;
 import com.pages.model.Category;
 import com.pages.model.InventoryItem;
+import com.pages.model.OrderDispute;
 import com.pages.repository.MediaRepo;
 import com.pages.util.Media;
 import com.pages.util.MediaStorageLocation;
@@ -94,6 +95,7 @@ public class MediaService {
         }
     }
 
+
     public void saveMedia(MultipartFile image, Category category) {
         updateCategoryImage(image, category);
     }
@@ -135,6 +137,15 @@ public class MediaService {
             Integer[] sortOrders,
             InventoryItem item) {
         updateMediaFile(files, sortOrders, item);
+    }
+
+
+    @Transactional
+    public void uploadReturnImage(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            OrderDispute dispute) {
+        updateMediaFile(files, sortOrders,dispute);
     }
 
     public void saveMedia(
@@ -249,6 +260,104 @@ public class MediaService {
         }
     }
 
+    @Transactional
+    public void updateMediaFile(
+            MultipartFile[] files,
+            Integer[] sortOrders,
+            OrderDispute item) {
+
+        if (item == null || item.getId() == null) {
+            throw new IllegalArgumentException(
+                    "A persisted return is required before uploading images"
+            );
+        }
+
+        if (files == null) {
+            files = new MultipartFile[0];
+        }
+
+        List<Media> existing = mediaRepo.findByOrderDispute(item);
+        log.info("existing :{}",existing);
+
+        // Index the existing records by content hash.
+        Map<String, Media> existingByHash = new HashMap<>();
+
+        for (Media media : existing) {
+            if (media.getFileHash() != null) {
+                existingByHash.putIfAbsent(media.getFileHash(), media);
+            }
+        }
+
+        Set<String> retainedHashes = new HashSet<>();
+        List<String> obsoleteKeys = new ArrayList<>();
+
+        for (int i = 0; i < files.length; i++) {
+            MultipartFile file = files[i];
+
+            if (file == null || file.isEmpty()) {
+                continue;
+            }
+
+            String hash = calculateSHA256(file);
+            int sortOrder = resolveSortOrder(sortOrders, i);
+
+            Media matching = existingByHash.get(hash);
+
+            if (matching != null) {
+                // The same image already belongs to THIS listing.
+                matching.setSortOrder(sortOrder);
+                mediaRepo.save(matching);
+                retainedHashes.add(hash);
+                continue;
+            }
+
+            String filename = UUID.randomUUID() + "-"
+                    + safeFilename(file.getOriginalFilename());
+
+            String key = storage.getDisputeImageKey(item.getId(), filename);
+
+            Media newMedia = Media.builder()
+                    .orderDispute(item)
+                    .contentType(file.getContentType())
+                    .fileName(filename)
+                    .path(key)
+                    .fileHash(hash)
+                    .sortOrder(sortOrder)
+                    .build();
+
+
+
+            try {
+                mediaRepo.save(newMedia);
+                // Write the image to file
+                mediaUtil.store(file, key);
+            } catch (RuntimeException e) {
+                deleteQuietly(key);
+                throw e;
+            }
+
+            retainedHashes.add(hash);
+        }
+
+        // Remove records for images no longer submitted.
+        for (Media old : existing) {
+            String hash = old.getFileHash();
+
+            if (hash == null || !retainedHashes.contains(hash)) {
+                obsoleteKeys.add(old.getPath());
+                mediaRepo.delete(old);
+            }
+        }
+
+        mediaRepo.flush();
+
+        // Physical cleanup happens after database records are removed.
+        // A cleanup failure leaves an orphan file, not a broken listing.
+        for (String key : obsoleteKeys) {
+            deleteQuietly(key);
+        }
+    }
+
     public MediaResponse getListingMainImage(Long inventoryItemId) {
         return mediaRepo.findFirstByInventoryItemId(inventoryItemId)
                 .map(this::toResponse)
@@ -257,6 +366,15 @@ public class MediaService {
 
     public List<MediaResponse> getImageList(Long inventoryItemId) {
         return mediaRepo.findAllByInventoryItemId(inventoryItemId)
+                .stream()
+                .sorted(Comparator.comparing(
+                        Media::getSortOrder,
+                        Comparator.nullsLast(Integer::compareTo)))
+                .map(this::toResponse)
+                .toList();
+    }
+    public List<MediaResponse> getDisputeImageList(OrderDispute dispute) {
+        return mediaRepo.findAllByOrderDispute(dispute)
                 .stream()
                 .sorted(Comparator.comparing(
                         Media::getSortOrder,

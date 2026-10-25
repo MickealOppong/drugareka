@@ -5,6 +5,7 @@ import com.pages.dto.ResponseDto;
 import com.pages.dto.SellerPayoutResponse;
 import com.pages.service.PayoutProcessingService;
 import com.pages.service.SellerPayoutService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -14,15 +15,12 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/payouts")
+@RequiredArgsConstructor
 public class PayoutController {
 
-    private final PayoutProcessingService payoutProcessingService;
+
     private final SellerPayoutService sellerPayoutService;
 
-    public PayoutController(PayoutProcessingService payoutProcessingService, SellerPayoutService sellerPayoutService) {
-        this.payoutProcessingService = payoutProcessingService;
-        this.sellerPayoutService = sellerPayoutService;
-    }
 
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")

@@ -21,7 +21,7 @@ public class AdminInitializer implements CommandLineRunner {
     private final AppUserRepo appUserRepository;
     private final PasswordConfig passwordConfig;
     private final AppUserRoleRepo appUserRoleRepo;
-    private MediaUtilImpl mediaUtilImpl;
+    private final MediaUtilImpl mediaUtilImpl;
 
 
     @Value("${app.admin.username}")

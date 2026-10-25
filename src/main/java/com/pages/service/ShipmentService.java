@@ -2,11 +2,14 @@ package com.pages.service;
 
 import com.pages.dto.*;
 import com.pages.enums.ItemSize;
+import com.pages.enums.ShipmentConfirmationStatus;
 import com.pages.enums.ShipmentStatus;
 import com.pages.model.*;
 import com.pages.repository.ReturnShipmentRepo;
 import com.pages.repository.SellerShipmentRepo;
+import com.pages.repository.SellerShipmentTokenRepo;
 import com.pages.util.UtilService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Lazy;
@@ -29,6 +32,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ShipmentService {
 
     private final SellerShipmentRepo sellerShipmentRepo;
@@ -40,27 +44,9 @@ public class ShipmentService {
     private final MessageSource messageSource;
     private final DpdShipmentService dpdShipmentService;
     private final PackageConfigurationService packageConfigurationService;
-    private final SellerShipmentTokenService sellerShipmentTokenService;
+    private final SellerShipmentTokenRepo sellerShipmentTokenRepo;
     private final OrderReturnService orderReturnService;
 
-
-    public ShipmentService(SellerShipmentRepo sellerShipmentRepo, AppUserDetailsService appUserDetailsService,
-                           SellerProfileService sellerProfileService, EmailNotificationService emailNotificationService,
-                           ListingOrderService listingOrderService, ReturnShipmentRepo returnShipmentRepo,
-                           MessageSource messageSource, DpdShipmentService dpdShipmentService, PackageConfigurationService packageConfigurationService, SellerShipmentTokenService sellerShipmentTokenService,@Lazy OrderReturnService orderReturnService) {
-        this.sellerShipmentRepo = sellerShipmentRepo;
-        this.appUserDetailsService = appUserDetailsService;
-        this.sellerProfileService = sellerProfileService;
-        this.emailNotificationService = emailNotificationService;
-        this.listingOrderService = listingOrderService;
-        this.returnShipmentRepo = returnShipmentRepo;
-        this.messageSource = messageSource;
-        this.dpdShipmentService = dpdShipmentService;
-        this.packageConfigurationService = packageConfigurationService;
-        this.sellerShipmentTokenService = sellerShipmentTokenService;
-
-        this.orderReturnService = orderReturnService;
-    }
 
     public SellerShipment findOrCreateShipment(ListingOrderItem listingOrderItem) {
         return sellerShipmentRepo.findByListingOrderItemId(listingOrderItem.getId())
@@ -94,6 +80,30 @@ public class ShipmentService {
                     .build();
             sellerShipmentRepo.save(shipment);
         });
+    }
+
+    @Transactional
+    public void createReturnShipment(OrderDispute orderDispute) {
+       ReturnShipment shipment = returnShipmentRepo.findByOrderDispute(orderDispute)
+               .orElse(null);
+       if(shipment!=null){
+           log.info("Creating shipping for return item: dispute id:{}",orderDispute.getId());
+
+           SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(orderDispute.getListingOrderItem().getId()).orElse(null);
+           String sellerAddress =    sellerShipment!=null? sellerShipment.getCollectionAddress():null;
+
+           ReturnShipment itemShipment= ReturnShipment.builder()
+                   .orderDispute(orderDispute)
+                   .itemSize(orderDispute.getListingOrderItem().getItemSize())
+                   .sellerReturnAddress(sellerAddress)
+                   .buyerAddress(orderDispute.getListingOrderItem().getListingOrder().getShippingAddress())
+                   .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
+                   .shippedAt(null)
+                   .build();
+          returnShipmentRepo.save(itemShipment);
+       }
+
+
     }
 
     @Transactional(readOnly = true)
@@ -144,18 +154,18 @@ public class ShipmentService {
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
 
-            Page<ShipmentResponse> shipments = returnShipmentRepo.findByOrderReturnListingOrderItemListingOrderBuyer(appUser, pageable)
+            Page<ShipmentResponse> shipments = returnShipmentRepo.findByOrderDisputeListingOrderItemListingOrderBuyer(appUser, pageable)
                     .map(shipment -> {
-                        SellerProfile sellerProfile = shipment.getOrderReturn().getListingOrderItem().getSeller();
+                        SellerProfile sellerProfile = shipment.getOrderDispute().getListingOrderItem().getSeller();
 
                         //String fallbackSellerName = sellerProfile.getUser().getFirstName() + " " + sellerProfile.getUser().getLastName();
 
                         return ShipmentResponse.builder()
                                 .id(shipment.getId())
-                                .orderNumber(shipment.getOrderReturn().getListingOrderItem().getListingOrder().getOrderNumber())
+                                .orderNumber(shipment.getOrderDispute().getListingOrderItem().getListingOrder().getOrderNumber())
                                 .deliveredAt(shipment.getDeliveredAt())
-                                .deliveryAddress(shipment.getAddress())
-                                .listingOrderId(shipment.getOrderReturn().getListingOrderItem().getId())
+                                .deliveryAddress(shipment.getSellerReturnAddress())
+                                .listingOrderId(shipment.getOrderDispute().getListingOrderItem().getId())
                                 .seller("Private person")
                                 .itemSize(shipment.getItemSize())
                                 .shippedAt(shipment.getShippedAt())
@@ -203,25 +213,28 @@ public class ShipmentService {
     }
 
     @Transactional
-    public ResponseDto<Boolean> updateShippingStatus(Jwt jwt, ShipmentRequest request) {
+    public void updateShippingStatus(Jwt jwt, ShipmentRequest request) {
         if (jwt == null) {
-            return ResponseDto.<Boolean>builder()
-                    .data(false)
-                    .message(getMessage("api_errors.shipment.unauthorized"))
-                    .httpStatus(HttpStatus.UNAUTHORIZED.value())
-                    .build();
+
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.unauthorized"));
         }
+        AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
         SellerShipment shipment = sellerShipmentRepo
                 .findById(request.getShipmentId())
                 .orElse(null);
 
+
         if (shipment == null) {
-            return ResponseDto.<Boolean>builder()
-                    .data(false)
-                    .message(getMessage("api_errors.shipment.not_found"))
-                    .httpStatus(HttpStatus.NOT_FOUND.value())
-                    .build();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.not_found"));
+        }
+        //user must update their own shipping
+        if(!appUser.getId().equals(shipment.getSeller().getUser().getId())){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.unauthorized"));
+        }
+
+        if( shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!= ShipmentConfirmationStatus.CONFIRMED){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.seller.not_confirmed"));
         }
 
         if (shipment.getShipmentStatus() == ShipmentStatus.CANCELLED) {
@@ -248,7 +261,12 @@ public class ShipmentService {
             );
         }
 
-        if ("SHIPPED".equalsIgnoreCase(status)) {
+        if ("SHIPPED".equalsIgnoreCase(status) && (requestedActionDate!=null && requestedActionDate.isBefore(shipment.getCreatedAt().minus(1,ChronoUnit.DAYS)))) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_responses.shipment.shipment.date.error")
+            );
+        }else{
             shipment.setShippedAt(requestedActionDate);
         }
 
@@ -262,7 +280,7 @@ public class ShipmentService {
                 );
             }
 
-            if (requestedActionDate != null && requestedActionDate.isBefore(existingShippedAt)) {
+            if (requestedActionDate != null && requestedActionDate.isBefore(existingShippedAt.minus(1,ChronoUnit.DAYS))) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         getMessage(
@@ -326,11 +344,6 @@ public class ShipmentService {
                 token
         );
 
-        return ResponseDto.<Boolean>builder()
-                .data(true)
-                .message(getMessage("api_responses.shipment.updated_success"))
-                .httpStatus(HttpStatus.OK.value())
-                .build();
     }
 
     /**
@@ -426,7 +439,7 @@ public class ShipmentService {
         if (shipment == null) return;
 
         // STEP 1: DEFENSIVE EXTRACTION LAYER
-        OrderReturn returnOrder = shipment.getOrderReturn();
+        OrderDispute returnOrder = shipment.getOrderDispute();
         if (returnOrder == null) {
             log.error("Notification Shield: Aborting dispatch. OrderReturn relation missing for Shipment ID: {}", shipment.getId());
             return;
@@ -514,9 +527,7 @@ public class ShipmentService {
         orderItem.setReceiptConfirmedAt(now);
         orderItem.setReceiptConfirmationTokenExpiresAt(now); // Invalidates instantly
         // Optional safety: orderItem.setReceiptConfirmationToken(null);
-
         // 5. Persist the state transition to the database
-
         returnShipmentRepo.save(orderItem);
         return true;
 
@@ -605,7 +616,7 @@ public class ShipmentService {
                     .findAll(pageable)
                     .map(shipment -> {
                         SellerProfile seller = shipment
-                                .getOrderReturn()
+                                .getOrderDispute()
                                 .getListingOrderItem()
                                 .getSeller();
 
@@ -616,9 +627,9 @@ public class ShipmentService {
                         return ShipmentResponse.builder()
                                 .id(shipment.getId())
                                 .deliveredAt(shipment.getDeliveredAt())
-                                .deliveryAddress(shipment.getAddress())
+                                .deliveryAddress(shipment.getSellerReturnAddress())
                                 .listingOrderId(
-                                        shipment.getOrderReturn()
+                                        shipment.getOrderDispute()
                                                 .getListingOrderItem()
                                                 .getListingId()
                                 )
@@ -628,7 +639,7 @@ public class ShipmentService {
                                 .status(shipment.getShipmentStatus())
                                 .itemSize(shipment.getItemSize())
                                 .orderNumber(
-                                        shipment.getOrderReturn()
+                                        shipment.getOrderDispute()
                                                 .getListingOrderItem()
                                                 .getListingOrder()
                                                 .getOrderNumber()
@@ -648,21 +659,6 @@ public class ShipmentService {
         return ListPageShipment.builder().build();
     }
 
-    /**
-     * Returns shipments that can still be included
-     * in the one carrier shipment.
-     */
-    @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public List<SellerShipment> getAvailableShipments(String tokenValue) {
-
-        SellerShipmentToken token = sellerShipmentTokenService.validateToken(tokenValue);
-
-        return sellerShipmentRepo
-                .findBySellerShipmentTokenAndShipmentStatus(
-                        token,
-                        ShipmentStatus.CREATED
-                );
-    }
 
     @Transactional(readOnly = true)
     public ListPageShipment actualShipments(
@@ -764,8 +760,17 @@ public class ShipmentService {
     }
 
     @Transactional(readOnly = true)
-    public List<ShipmentItemResponse> getShipment(String token){
-     return   sellerShipmentRepo.findBySellerShipmentTokenToken(token).stream()
+    public ResponseDto<Object> getShipment(String token){
+
+       SellerShipmentToken shipmentToken = sellerShipmentTokenRepo.findByToken(token).orElse(null);
+       if(shipmentToken!=null && shipmentToken.getShipmentConfirmationStatus()==ShipmentConfirmationStatus.CONFIRMED){
+           return ResponseDto.builder()
+                   .httpStatus(HttpStatus.OK.value())
+                   .data(shipmentToken.getShipmentConfirmationStatus())
+                   .message("Shipment already confirmed")
+                   .build();
+       }
+     List<ShipmentItemResponse>  items = sellerShipmentRepo.findBySellerShipmentTokenToken(token).stream()
              .map(shipment -> {
 
                return ShipmentItemResponse.builder()
@@ -774,6 +779,10 @@ public class ShipmentService {
                         .orderNumber(shipment.getListingOrderItem().getListingOrder().getOrderNumber())
                          .build();
              }).toList();
+       return ResponseDto.builder()
+               .data(items)
+               .httpStatus(HttpStatus.OK.value())
+               .build();
     }
 
     @Transactional(readOnly = true)
@@ -788,358 +797,70 @@ public class ShipmentService {
         return   sellerShipmentRepo.findByListingOrderItemId(orderItemId).orElse(null);
     }
 
-    @Transactional
-    public void createDpdShipment(ShipmentConfirmationRequest data) {
-
-        // ============================================================
-        // VALIDATE REQUEST
-        // ============================================================
-
-        if (data == null
-                || data.getToken() == null
-                || data.getToken().isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Identyfikator przesyłki lub dane zlecenia nie mogą być puste."
-            );
-        }
-
-        if (data.getShipmentIds() == null
-                || data.getShipmentIds().isEmpty()) {
-
-            throw new IllegalArgumentException(
-                    "Nie wybrano żadnych przesyłek."
-            );
-        }
-
-        if (data.getPickupAddress() == null) {
-
-            throw new IllegalArgumentException(
-                    "Adres nadania jest wymagany."
-            );
-        }
-
-
-        // ============================================================
-        // VALIDATE TOKEN
-        // ============================================================
-
-        SellerShipmentToken sellerShipmentToken =
-                sellerShipmentTokenService.validateToken(
-                        data.getToken()
-                );
-
-
-        // ============================================================
-        // SELECT SHIPMENTS BELONGING TO TOKEN
-        // ============================================================
-
-        Set<Long> targetedShipmentIds =
-                new HashSet<>(data.getShipmentIds());
-
-        List<SellerShipment> sellerShipments =
-                sellerShipmentRepo
-                        .findBySellerShipmentToken(sellerShipmentToken)
-                        .stream()
-                        .filter(shipment ->
-                                targetedShipmentIds.contains(
-                                        shipment.getId()
-                                )
-                        )
-                        .toList();
-
-        if (sellerShipments.isEmpty()) {
-
-            throw new IllegalArgumentException(
-                    "Nieprawidłowy lub wygasły token przesyłki."
-            );
-        }
-
-
-        // ============================================================
-        // ENSURE ALL SELECTED SHIPMENTS BELONG TO ONE ORDER
-        // ============================================================
-
-        Long orderId =
-                sellerShipments.get(0)
-                        .getListingOrderItem()
-                        .getListingOrder()
-                        .getId();
-
-        boolean sameOrder =
-                sellerShipments.stream()
-                        .allMatch(shipment ->
-                                shipment.getListingOrderItem()
-                                        .getListingOrder()
-                                        .getId()
-                                        .equals(orderId)
-                        );
-
-        if (!sameOrder) {
-
-            throw new IllegalArgumentException(
-                    "Nie można utworzyć jednej przesyłki dla produktów z różnych zamówień."
-            );
-        }
-
-
-        // ============================================================
-        // COMMON ORDER DATA
-        // ============================================================
-
-        SellerShipment firstShipment =
-                sellerShipments.get(0);
-
-        ListingOrderItem firstOrderItem =
-                firstShipment.getListingOrderItem();
-
-        ListingOrder listingOrder =
-                firstOrderItem.getListingOrder();
-
-
-        // ============================================================
-        // SENDER
-        //
-        // Seller chooses the address from which the package is sent.
-        // ============================================================
-
-        String senderName =
-                data.getName() != null
-                        && !data.getName().isBlank()
-                        ? data.getName()
-                        : firstOrderItem.getSellerNameSnapshot();
-
-        Sender sender =
-                Sender.builder()
-                        .name(senderName)
-                        .street(
-                                data.getPickupAddress()
-                                        .getStreet()
-                        )
-                        .city(
-                                data.getPickupAddress()
-                                        .getCity()
-                        )
-                        .postalCode(
-                                data.getPickupAddress()
-                                        .getPostalCode()
-                        )
-                        .country(
-                                data.getPickupAddress()
-                                        .getCountry()
-                        )
-                        .phone(
-                                data.getPickupAddress()
-                                        .getContact()
-                        )
-                        .email(
-                                firstOrderItem
-                                        .getSeller()
-                                        .getUser()
-                                        .getUsername()
-                        )
-                        .build();
-
-
-        // ============================================================
-        // RECEIVER
-        //
-        // Receiver information ALWAYS comes from Kasoa.
-        // Never trust receiver information from the frontend.
-        // ============================================================
-
-        String shippingAddress =
-                listingOrder.getShippingAddress();
-
-        if (shippingAddress == null
-                || shippingAddress.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Adres odbiorcy nie jest dostępny."
-            );
-        }
-
-        String[] addressSplit =
-                shippingAddress.split(",");
-
-
-        String street =
-                addressSplit.length > 0
-                        ? addressSplit[0].trim()
-                        : "";
-
-        String postalCode =
-                addressSplit.length > 2
-                        ? addressSplit[2].trim()
-                        : "";
-
-        String city =
-                addressSplit.length > 3
-                        ? addressSplit[3].trim()
-                        : "";
-
-        String country =
-                addressSplit.length > 4
-                        ? addressSplit[4].trim()
-                        : "";
-
-        String telephone =
-                addressSplit.length > 5
-                        ? addressSplit[5].trim()
-                        : "";
-
-
-        Receiver receiver =
-                Receiver.builder()
-                        .name(
-                                listingOrder
-                                        .getBuyerNameSnapshot()
-                        )
-                        .street(street)
-                        .city(city)
-                        .postalCode(postalCode)
-                        .country(country)
-                        .phone(telephone)
-                        .email(
-                                listingOrder
-                                        .getBuyer()
-                                        .getUsername()
-                        )
-                        .build();
-
-
-        // ============================================================
-        // PACKAGE
-        //
-        // ONE SellerShipment:
-        //     use its own package configuration.
-        //
-        // MULTIPLE SellerShipments:
-        //     consolidate their dimensions into one package.
-        // ============================================================
-
-        DpdPackage dpdPackage;
-
-        if (sellerShipments.size() == 1) {
-
-            ItemSize itemSize =
-                    sellerShipments.get(0)
-                            .getItemSize();
-
-            if (itemSize == null) {
-
-                throw new IllegalArgumentException(
-                        "Nie określono rozmiaru przesyłki."
-                );
-            }
-
-            dpdPackage =
-                    packageConfigurationService
-                            .getDpdPackage(itemSize);
-
-        } else {
-
-            List<ItemSize> itemSizes =
-                    sellerShipments.stream()
-                            .map(SellerShipment::getItemSize)
-                            .toList();
-
-            if (itemSizes.stream()
-                    .anyMatch(Objects::isNull)) {
-
-                throw new IllegalArgumentException(
-                        "Jedna z wybranych przesyłek nie ma określonego rozmiaru."
-                );
-            }
-
-            dpdPackage =
-                    packageConfigurationService
-                            .getConsolidatedDpdPackage(
-                                    itemSizes
-                            );
-        }
-
-
-        // ============================================================
-        // CREATE INTERNAL SHIPMENT REQUEST
-        // ============================================================
-
-        ShipmentApiRequest shipmentApiRequest =
-                ShipmentApiRequest.builder()
-                        .sender(sender)
-                        .receiver(receiver)
-                        .orderReference(
-                                listingOrder.getOrderNumber()
-                        )
-                        .shipment(dpdPackage)
-                        .comment(data.getComment())
-                        .build();
-
-
-        // ============================================================
-        // SEND TO DPD
-        //
-        // DpdShipmentService is responsible for converting
-        // ShipmentApiRequest into the DPD generateShipment payload.
-        // ============================================================
-
-        dpdShipmentService.createShipment(
-                shipmentApiRequest
-        );
-    }
 
     @Transactional
     public void updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
 
-        // 1. Guard clause for malformed or empty payloads
-        if (request == null || request.getShipmentIds() == null) {
-            return;
+        try{
+            // 1. Guard clause for malformed or empty payloads
+            if (request == null || request.getShipmentIds() == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("Provide necessary information"));
+            }
+
+            String token = request.getToken();
+
+            SellerShipmentToken sellerShipmentToken= sellerShipmentTokenRepo.findByTokenForUpdate(request.getToken())
+                    .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("No associated token for this shipment")));
+
+            if(sellerShipmentToken.getExpiresAt().isBefore(Instant.now()) || sellerShipmentToken.getUsedAt()!=null){
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("Token has expired or been already used"));
+            }
+            //confirm token usage to prevent reuse
+            sellerShipmentToken.setUsedAt(Instant.now());
+            sellerShipmentToken.setShipmentConfirmationStatus(ShipmentConfirmationStatus.CONFIRMED);
+            sellerShipmentTokenRepo.save(sellerShipmentToken);
+
+            // 2.Construct the immutable string ONCE outside the loop
+            var pickup = request.getPickupAddress();
+            String sellerAddress = String.join(", ",
+                    request.getName(),
+                    pickup.getStreet(),
+                    pickup.getPostalCode(),
+                    pickup.getCity(),
+                    pickup.getCountry()
+            );
+
+            // 3.  Fetch all shipments in a SINGLE database query round-trip
+            List<SellerShipment> itemsToShip =
+                    sellerShipmentRepo.findBySellerShipmentTokenToken(request.getToken());
+
+            List<SellerShipment> confirmedShipments =
+                    sellerShipmentRepo.findAllById(request.getShipmentIds());
+
+            Set<Long> confirmedIds = confirmedShipments.stream()
+                    .map(SellerShipment::getId)
+                    .collect(Collectors.toSet());
+
+            // orders to cancel because seller did not confirm
+            List<SellerShipment> itemsToCancel = itemsToShip.stream()
+                    .filter(item -> !confirmedIds.contains(item.getId()))
+                    .toList();
+
+
+            // 4. Update the entities in memory
+            for (SellerShipment itemToShip : confirmedShipments) {
+                itemToShip.setCollectionAddress(sellerAddress);
+                itemToShip.setSellerComment(request.getComment());
+                sellerShipmentRepo.save(itemToShip);
+            }
+
+            //cancel unfulfilled orders
+            itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
+                orderReturnService.executeOrderPartialCancellation(item.getId());
+            });
+        }catch (Exception e){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
         }
-
-        String token = request.getToken();
-       SellerShipmentToken sellerShipmentToken= sellerShipmentTokenService.validateToken(token);
-       if(sellerShipmentToken.getExpiresAt().isBefore(Instant.now())){
-           return;
-       }
-
-        // 2.Construct the immutable string ONCE outside the loop
-        var pickup = request.getPickupAddress();
-        String sellerAddress = String.join(", ",
-                request.getName(),
-                pickup.getStreet(),
-                pickup.getPostalCode(),
-                pickup.getCity(),
-                pickup.getCountry()
-        );
-
-        // 3.  Fetch all shipments in a SINGLE database query round-trip
-        List<SellerShipment> itemsToShip =
-                sellerShipmentRepo.findBySellerShipmentTokenToken(request.getToken());
-
-        List<SellerShipment> confirmedShipments =
-                sellerShipmentRepo.findAllById(request.getShipmentIds());
-
-        Set<Long> confirmedIds = confirmedShipments.stream()
-                .map(SellerShipment::getId)
-                .collect(Collectors.toSet());
-
-        // orders to cancel because seller did not confirm
-        List<SellerShipment> itemsToCancel = itemsToShip.stream()
-                .filter(item -> !confirmedIds.contains(item.getId()))
-                .toList();
-
-
-        // 4. Update the entities in memory
-        for (SellerShipment itemToShip : confirmedShipments) {
-            itemToShip.setCollectionAddress(sellerAddress);
-            itemToShip.setSellerComment(request.getComment());
-            sellerShipmentRepo.save(itemToShip);
-        }
-
-        //cancel unfulfilled orders
-       itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
-           orderReturnService.executeOrderPartialCancellation(item.getId());
-       });
     }
 
 

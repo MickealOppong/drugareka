@@ -13,4 +13,5 @@ public class ShipmentItemResponse {
     private Long shipmentId;
     private String orderNumber;
     private String productName;
+    private String status;
 }

@@ -23,7 +23,7 @@ public class Payment extends LogEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false)
+    @JoinColumn(name = "order_id")
     private ListingOrder listingOrder;
 
     @Enumerated(EnumType.STRING)
@@ -42,6 +42,10 @@ public class Payment extends LogEntity {
 
     @Column(name = "stripe_charge_id", unique = true)
     private String stripeChargeId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dispute_id")
+    private OrderDispute dispute;
 
     /**
      * Provider-specific checkout/session identifier.

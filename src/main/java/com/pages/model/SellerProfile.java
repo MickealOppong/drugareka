@@ -67,7 +67,41 @@ public class SellerProfile extends LogEntity {
     private boolean isDac7Reportable = false;
 
     private Instant dac7FlaggedAt;
+
+    @Column(unique = true)
     private String stripeAccountId;
+
+    @Column(nullable = false)
+    private boolean stripeOnboardingComplete = false;
+
+    @Column(nullable = false)
+    private boolean stripeChargesEnabled = false;
+
+    @Column(nullable = false)
+    private boolean stripePayoutsEnabled = false;
+
+    @Column(nullable = false)
+    private boolean stripeTransfersEnabled = false;
+
+    // Store Stripe's latest reported capability status, e.g. active,
+// inactive, pending, or unrequested.
+    private String stripeTransfersStatus;
+
+    @Lob
+    private String stripeCurrentlyDue;
+
+    @Lob
+    private String stripeEventuallyDue;
+
+    @Lob
+    private String stripePastDue;
+
+    @Lob
+    private String stripeVerificationErrors;
+
+    private String stripeDisabledReason;
+
+    private Instant stripeAccountUpdatedAt;
 
 
 

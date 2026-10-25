@@ -314,15 +314,7 @@ public class ListingTransactionService {
             }
             String username = jwt.getSubject();
             AppUser appUser = appUserDetailsService.getAppUserByUsername(username);
-            boolean hasAddress = appUserDetailsService.hasAddress(appUser.getId());
-            if (!hasAddress) {
-                String msg = messageSource.getMessage("api.listing.create.address_missing", null, "Listing aborted, user does not have a registered address.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.FORBIDDEN.value())
-                        .build();
-            }
+
             SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
                     .totalSales(BigDecimal.ZERO)

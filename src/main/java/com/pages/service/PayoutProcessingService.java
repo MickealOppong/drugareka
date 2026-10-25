@@ -30,22 +30,25 @@ public class PayoutProcessingService {
     private final SellerPayoutRepo sellerPayoutRepo;
     private final PaymentRepo paymentRepo;
     private final PayoutExceptionRepo payoutExceptionRepo;
+    private final EmailNotificationService emailNotificationService;
 
-    public PayoutProcessingService(SellerPayoutRepo sellerPayoutRepo, PaymentRepo paymentRepo, PayoutExceptionRepo payoutExceptionRepo) {
+    public PayoutProcessingService(SellerPayoutRepo sellerPayoutRepo, PaymentRepo paymentRepo, PayoutExceptionRepo payoutExceptionRepo, EmailNotificationService emailNotificationService) {
         this.sellerPayoutRepo = sellerPayoutRepo;
         this.paymentRepo = paymentRepo;
         this.payoutExceptionRepo = payoutExceptionRepo;
+        this.emailNotificationService = emailNotificationService;
     }
 
 
     @Transactional
-    public void createForReview(SellerPayout payout, PayoutExceptionReason reason) {
+    public void createForReview(SellerPayout payout, PayoutExceptionReason reason,String msg) {
         try {
 
             PayoutException payoutException = PayoutException.builder()
                     .exceptionReason(reason)
                     .seller(payout.getSeller())
                     .sellerPayout(payout)
+                    .stripeMessages(msg)
                     .status(PayoutExceptionStatus.PENDING_REVIEW)
                     .build();
              payoutExceptionRepo.save(payoutException);
@@ -109,7 +112,7 @@ public class PayoutProcessingService {
                 if (accountId == null || accountId.isBlank()) {
                     String reason = "Seller has no Stripe Connect account for payout " + payoutId;
 
-                    createForReview(payout, PayoutExceptionReason.SELLER_ONBOARDING_INCOMPLETE);
+                    createForReview(payout, PayoutExceptionReason.SELLER_ONBOARDING_INCOMPLETE,reason);
                     returnToApproved(payoutId);
                   continue;
                 }
@@ -135,7 +138,7 @@ public class PayoutProcessingService {
                             availableBalance,
                             amountInGrosz
                     );
-                    createForReview(payout,PayoutExceptionReason.INSUFFICIENT_STRIPE_BALANCE);
+                    createForReview(payout,PayoutExceptionReason.INSUFFICIENT_STRIPE_BALANCE,"Insufficient balance");
 
                     // Revert the row status inside the inner atomic connection framework
                     returnToApproved(payoutId);
@@ -154,16 +157,19 @@ public class PayoutProcessingService {
                         .build();
 
                 RequestOptions options = RequestOptions.builder()
-                        .setIdempotencyKey("seller-payout-item-" + item.getId())
+                        .setIdempotencyKey("seller-payout-item-" + payoutId)
                         .build();
 
-                Transfer transfer = Transfer.create(params, options);
+                Transfer transfer = Transfer.create(params);
 
                 // Persist the terminal success token in a new, short database transaction.
                 markTransferred(
                         payoutId,
                         transfer.getId()
                 );
+
+                String email = item.getSeller().getUser().getUsername();
+                emailNotificationService.sendTransferNotification(email,sellerPrice,orderNumber,transfer.getId());
 
                 log.info(
                         "Payout engine: payout {} transferred successfully; transferId={}",

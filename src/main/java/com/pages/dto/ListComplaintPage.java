@@ -13,10 +13,11 @@ import java.util.List;
 @Builder
 public class ListComplaintPage {
 
-    List<ComplaintResponse> complaintResponseList;
+    List<DisputeResponse> complaintResponseList;
     private int pageSize;
     private int page;
     private int totalPages;
+    private int accumulatedItems;
     private long totalElements;
 
 }

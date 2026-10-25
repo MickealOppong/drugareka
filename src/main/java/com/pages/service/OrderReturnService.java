@@ -11,6 +11,7 @@ import com.pages.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource; // 🚀 i18n Core Engine
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.i18n.LocaleContextHolder; // 🚀 Dynamic language locator
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -22,24 +23,21 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.IntStream;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderReturnService {
 
-    private final OrderReturnRepo orderReturnRepo;
     private final ListingOrderItemRepo listingOrderItemRepo;
     private final ListingOrderRepo listingOrderRepo;
     private final SellerShipmentRepo sellerShipmentRepo;
     private final SellerProfileService sellerProfileService;
-    private final SellerPayoutService sellerPayoutService;
-    private final PaymentService paymentService;
+    private final PaymentRefundLedgerService paymentRefundLedgerService;
     private final InventoryItemRepo inventoryItemRepo;
-    private final ReturnShipmentRepo returnShipmentRepo;
-    private final GlobalAddressService globalAddressService;
     private final AppUserRepo appUserRepo;
     private final MessageSource messageSource;
     private final ListingTransactionRepo listingTransactionRepo;
@@ -47,209 +45,12 @@ public class OrderReturnService {
 
 
 
-    private ReturnReason getReturnReason(String reason) {
-        if (reason == null) return ReturnReason.OTHER;
-        String cleanStatus = reason.trim().toUpperCase();
-        return switch (cleanStatus) {
-            case "DAMAGED_GOODS" -> ReturnReason.DAMAGED_GOODS;
-            case "NOT_AS_DESCRIBED" -> ReturnReason.NOT_AS_DESCRIBED;
-            case "WRONG_ITEM" -> ReturnReason.WRONG_ITEM;
-            default -> ReturnReason.OTHER;
-        };
-    }
+
 
     // Dynamic bundle translation shortcut helper method
     private String getMessage(String code) {
         return messageSource.getMessage(code, null, LocaleContextHolder.getLocale());
     }
-
-    /**
-     *  PROTECTED RETURN & ANTI-WITHDRAWAL PIPELINE
-     * Prevents buyers from canceling paid orders mid-transit to protect sellers.
-     * Restricts the return flow strictly to items that have been verified as DELIVERED.
-     */
-    @Transactional
-    public Boolean executeReturn(Jwt jwt, OrderReturnRequest request) {
-        if (jwt == null) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.access_denied"));
-        }
-
-        AppUser appUser = appUserRepo.findByUsername(jwt.getSubject())
-                .orElseThrow(() -> new UsernameNotFoundException(getMessage("api_errors.order_return.user_not_found")));
-
-        ListingOrderItem orderItem = listingOrderItemRepo.findById(request.getOrderItemId())
-                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.item_not_found")));
-
-        // Strict Ownership Check: Verify that the user executing the request is the actual buyer
-        ListingOrder parentOrder = orderItem.getListingOrder();
-        if (parentOrder == null || !parentOrder.getBuyer().getId().equals(appUser.getId())) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.not_your_order"));
-        }
-
-        // Check for existing return entries to block double-filing bugs
-        OrderReturn returnItem = orderReturnRepo.findByListingOrderItem(orderItem).orElse(null);
-        if (returnItem != null) {
-            throw new DuplicateKeyException(getMessage("api_errors.order_return.duplicate_record"));
-        }
-
-        // ANTI-WITHDRAWAL SHIELD RULE 1:
-        // If the item status is PAID but the courier hasn't delivered it yet, reject any withdrawal attempts!
-        if (orderItem.getOrderItemStatus().equals(OrderItemStatus.PAID)) {
-            // Find the shipment record associated with the item to check real-time transit state
-            SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(request.getOrderItemId()).orElse(null);
-
-            if (sellerShipment == null || !sellerShipment.getShipmentStatus().equals(ShipmentStatus.DELIVERED)) {
-                log.warn("Security Shield: Prevented mid-transit withdrawal attempt by Buyer [{}] on Order Item ID [{}].",
-                        appUser.getId(), orderItem.getId());
-
-                //  EXPLICIT BUSINESS RULE REJECTION:
-                // Throws an error to the frontend explaining that the seller may have already shipped the package.
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        getMessage("api_errors.order_return.withdrawal_blocked"));
-            }
-        }
-
-        // ANTI-WITHDRAWAL SHIELD RULE 2:
-        // Ensure the order item is in an authentic state that allows returns (must not be un-paid, canceled, or pending authorization)
-        if (!orderItem.getOrderItemStatus().equals(OrderItemStatus.PAID) && !orderItem.getOrderItemStatus().equals(OrderItemStatus.RETURN_REQUESTED)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.invalid_status"));
-        }
-
-        SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(request.getOrderItemId())
-                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.undelivered_item")));
-
-        // Enforce the 24-hour return window cutoff rule tracking from deliveredAt
-        Instant deadline = sellerShipment.getDeliveredAt().plus(24, ChronoUnit.HOURS);
-        Instant now = Instant.now();
-
-        if (now.isAfter(deadline)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.deadline_expired"));
-        }
-
-        // Complete Financial Reversal Aggregation Matrix
-        BigDecimal productPrice = orderItem.getSellerPrice() != null ? orderItem.getSellerPrice() : BigDecimal.ZERO;
-
-
-        OrderReturn orderReturn = OrderReturn.builder()
-                .buyerComment(request.getBuyerComment())
-                .listingOrderItem(orderItem)
-                .returnReason(getReturnReason(request.getReturnReason()))
-                .status("PENDING_REVIEW")
-                .sellerDeductionAmount(productPrice)
-                .sellerDebited(false)
-                .build();
-
-        // Lock item status into a clear dispute tracking state to halt automated escrow payout cron tasks [INDEX]
-       // orderItem.setOrderItemStatus(OrderItemStatus.RETURN_REQUESTED);
-        listingOrderItemRepo.save(orderItem);
-
-        log.info("Fulfillment Guard: Return requested for Order #{}. Escrow payout cron successfully paused.",
-                parentOrder.getOrderNumber());
-
-        OrderReturn savedReturn = orderReturnRepo.save(orderReturn);
-        createReturnShipment(savedReturn);
-        return true;
-    }
-
-
-
-    @Transactional
-    public void createReturnShipment(OrderReturn orderReturn) {
-        if (orderReturn == null) {
-            throw new InvalidOperationException(getMessage("api_errors.logistics.shipment_not_found"));
-        }
-
-        SellerProfile sellerProfile = orderReturn.getListingOrderItem().getSeller();
-        AddressResponse sellerAddress = globalAddressService.getAddress(sellerProfile.getUser());
-
-        String address;
-        if (sellerAddress != null) {
-            address = String.join(", ",
-                    sellerAddress.street().trim(),
-                    sellerAddress.postalCode().trim(),sellerAddress.city().trim(),
-                    sellerAddress.country().trim(),sellerAddress.contact().trim()
-            );
-        } else {
-            address = "Kasoa.pl, Focus Mall, ul. Słowackiego 123, 97-300, Piotrków Trybunalski, Polska";
-            log.warn("Address metrics empty for Seller User ID: {}. Using Kasoa HQ address fallback parameters.",
-                    sellerProfile.getUser().getId());
-        }
-
-        ReturnShipment returnShipment = ReturnShipment.builder()
-                .orderReturn(orderReturn)
-                .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
-                .address(address)
-                .itemSize(orderReturn.getListingOrderItem().getInventoryItem().getItemSize().name())
-                .build();
-        returnShipmentRepo.save(returnShipment);
-    }
-
-    /**
-     *  ASYNCHRONOUS BACKGROUND RETURN RESOLUTION WORKER
-     * Executes automatically after the endpoint confirmation returns TRUE.
-     * Enforces strict pre-flight delivery verification, locks platform take-rate revenue,
-     * and securely triggers your independent wallet balance services exactly once.
-     */
-    @Transactional
-    public void executeFinancialItemRefundOnReceipt(OrderReturn orderReturn) {
-
-        //  STEP 1: MANDATORY RETURN SHIPMENT GATEWAY CHECK
-
-        if (orderReturn== null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_return.not_confirmed")
-            );
-        }
-
-        log.info("Background Tax Engine: Processing terminal return sequence for Return Ticket ID: {}", orderReturn.getId());
-
-
-        // Idempotency Shield: Prevent duplicate background execution loops
-        if (orderReturn.isSellerDebited()) {
-            log.warn("Background Tax Engine Shield: Return ID {} already processed. Standing down.",orderReturn.getId());
-            return;
-        }
-
-
-        ListingOrderItem item = orderReturn.getListingOrderItem();
-
-        //  THE NON-REFUNDABLE LOGISTICS RULE:
-        // Logistics shipping fees and platform service charges are locked as non-refundable.
-        // The seller deduction and buyer cash refund scale strictly to the product item price.
-        BigDecimal productPriceClawback = item.getSellerPrice() != null ? item.getSellerPrice() : BigDecimal.ZERO;
-        Instant now = Instant.now();
-
-        // --- TABLE 1: RECORD LOG ENTRIES TO THE AUDITING HISTORY TABLE ---
-        orderReturn.setSellerDeductionAmount(productPriceClawback);
-        orderReturn.setStatus("RETURN_COMPLETED");
-        orderReturn.setSellerDebited(true);
-        orderReturn.setResolvedAt(now);
-        orderReturnRepo.save(orderReturn);
-
-        // --- TABLE 2 & 3: DISPATCH TO THE SEPARATE WALLET BALANCER TABLES ---
-        sellerPayoutService.createRefund(item);
-        sellerProfileService.updateSellerTotalPayoutWithRefund(item);
-
-        // --- STEP 3: DISPATCH AUTOMATED PAYU CUSTOMER CASH REVERSAL ---
-        // Releases the product price from your platform hold account straight back to the buyer
-        paymentService.createRefund(item);
-
-        // --- STEP 4: UPDATE INTERMEDIATE ENUMS & CLOSE WORKFLOWS CLEANLY ---
-        item.setOrderItemStatus(OrderItemStatus.RETURNED);
-        listingOrderItemRepo.save(item);
-
-        // Defensive Inventory Management: Hide broken inventory from your frontend catalog views
-        InventoryItem inventory =item.getInventoryItem();
-
-        if (inventory != null) {
-            inventory.setStatus(InventoryStatus.AVAILABLE);
-            inventoryItemRepo.save(inventory);
-        }
-
-        log.info("Background Tax Engine Success: Item return finalized safely. Separate double-entry ledger offset saved for Item ID #{}", item.getId());
-    }
-
 
 
     @Transactional
@@ -267,9 +68,8 @@ public class OrderReturnService {
         try {
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
-            paymentService.createTotalRefund(lockedItem.getListingOrder());
-            //create refund line to reduce seller payout
-            sellerPayoutService.createTotalRefund(lockedItem);
+         paymentRefundLedgerService.createRefund(lockedItem);
+
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
 
@@ -303,9 +103,8 @@ public class OrderReturnService {
         try {
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
-            paymentService.createTotalRefund(lockedItem.getListingOrder());
-            //create refund line to reduce seller payout
-            sellerPayoutService.createTotalRefund(lockedItem);
+           paymentRefundLedgerService.createRefund(lockedItem);
+
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
 
@@ -582,7 +381,7 @@ public class OrderReturnService {
 
             //  DISPATCH PAYU CUSTOMER CASH REVERSAL
             // Fires an automated refund request to return the escrow funds back to the buyer's bank account.
-            paymentService.createRefund(orderItem);
+            paymentRefundLedgerService.createRefund(orderItem);
 
             // ACCOUNTING ADJUSTMENT INTERCEPT:
             // Because the seller was credited at checkout, we run clawback script here.

@@ -34,8 +34,30 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
 
     List<ListingOrderItem>  findByReceiptConfirmationStatusAndOrderItemStatus(ReceiptConfirmationStatus receiptConfirmationStatus, OrderItemStatus orderItemStatus);
 
-    Optional<ListingOrderItem> findByReceiptConfirmationToken(String token);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT i
+    FROM ListingOrderItem i
+    WHERE i.receiptConfirmationStatus IS NULL
+      AND i.receiptConfirmationToken IS NOT NULL
+      AND i.receiptConfirmationTokenExpiresAt IS NOT NULL
+      AND i.receiptConfirmationTokenExpiresAt <= :now
+      AND i.orderItemStatus = :paidStatus
+    """)
+    List<ListingOrderItem> findAllUnconfirmedPaidItemsForUpdate(
+            @Param("now") Instant now,
+            @Param("paidStatus") OrderItemStatus paidStatus
+    );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("""
+       SELECT o
+       FROM ListingOrderItem o
+       WHERE o.receiptConfirmationToken = :token
+       """)
+    Optional<ListingOrderItem> findByReceiptConfirmationTokenForUpdate(String token);
+
+    Optional<ListingOrderItem> findByReceiptConfirmationToken(String token);
     @Query("""
         SELECT item FROM ListingOrderItem item 
         WHERE item.orderItemStatus = com.pages.enums.OrderItemStatus.PAID 
@@ -52,4 +74,12 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
     Optional<ListingOrderItem> findByIdForUpdate(
             @Param("orderId") Long orderId
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("""
+       SELECT o
+       FROM ListingOrderItem o
+       WHERE o.orderItemStatus = :status
+       """)
+   List<ListingOrderItem> findAllByOrderStatusForUpdate(OrderItemStatus status);
 }

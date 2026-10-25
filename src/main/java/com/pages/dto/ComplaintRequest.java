@@ -1,7 +1,6 @@
 package com.pages.dto;
 
-import com.pages.enums.ComplaintStatus;
-import com.pages.model.AppUser;
+import com.pages.enums.DisputeStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,5 +16,5 @@ public class ComplaintRequest {
     private String description;
     private Long orderId;
     @Enumerated(EnumType.STRING)
-    private ComplaintStatus complaintStatus;
+    private DisputeStatus disputeStatus;
 }

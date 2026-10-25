@@ -35,8 +35,8 @@ public class ShipmentController {
     }
 
     @PutMapping("/shipment-status")
-    public ResponseDto<Boolean> updateStatus(@AuthenticationPrincipal Jwt jwt,ShipmentRequest request) {
-            return shipmentService.updateShippingStatus(jwt,request);
+    public void updateStatus(@AuthenticationPrincipal Jwt jwt,ShipmentRequest request) {
+             shipmentService.updateShippingStatus(jwt,request);
     }
 
     @PutMapping("/return-status")

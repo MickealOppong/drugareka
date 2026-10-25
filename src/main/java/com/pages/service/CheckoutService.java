@@ -9,6 +9,7 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.cfg.Environment;
 import org.springframework.context.MessageSource;
@@ -26,6 +27,7 @@ import java.util.Locale;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CheckoutService {
 
     private final ListingOrderService listingOrderService;
@@ -36,24 +38,9 @@ public class CheckoutService {
     private final AppUserDetailsService appUserDetailsService;
     private final PayUService payUService;
     private final MessageSource messageSource;
+    private final OrderDisputeRepo orderDisputeRepo;
 
-    public CheckoutService(ListingOrderService listingOrderService,
-                           PaymentService paymentService,
-                           StripePaymentProviderService stripePaymentProviderService,
-                           CartService cartService,
-                           GlobalAddressService globalAddressService,
-                           AppUserDetailsService appUserDetailsService,
-                           PayUService payUService,
-                           MessageSource messageSource) {
-        this.listingOrderService = listingOrderService;
-        this.paymentService = paymentService;
-        this.stripePaymentProviderService = stripePaymentProviderService;
-        this.cartService = cartService;
-        this.globalAddressService = globalAddressService;
-        this.appUserDetailsService = appUserDetailsService;
-        this.payUService = payUService;
-        this.messageSource = messageSource;
-    }
+
 
     @Transactional
     public ResponseDto<String> createCheckout(Jwt jwt) {
@@ -80,6 +67,43 @@ public class CheckoutService {
 
             Session session = stripePaymentProviderService.createEmbeddedConnectCheckoutSession(order, locale.getLanguage());
             return paymentService.createPayment(session, order);
+
+        } catch (StripeException e) {
+            log.error("Stripe checkout session creation failed: {}", e.getMessage());
+            String msg = messageSource.getMessage("checkout.stripe.session_failed", null, "Unable to create payment session.", locale);
+            return ResponseDto.<String>builder()
+                    .message(msg)
+                    .httpStatus(HttpStatus.BAD_GATEWAY.value())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Checkout creation failed", e);
+            String msg = messageSource.getMessage("checkout.generic.failed", null, "Unable to create checkout.", locale);
+            return ResponseDto.<String>builder()
+                    .message(msg)
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }
+    }
+
+
+    @Transactional
+    public ResponseDto<String> createReturnCheckout(Jwt jwt,Long disputeId) {
+        Locale locale = LocaleContextHolder.getLocale();
+        try {
+           OrderDispute order = orderDisputeRepo.findById(disputeId).orElse(null);
+
+            if (order == null ) {
+
+                String msg = messageSource.getMessage("checkout.order.creation_failed", null, "Unable to create order.", locale);
+                return ResponseDto.<String>builder()
+                        .message(msg)
+                        .httpStatus(HttpStatus.UNPROCESSABLE_CONTENT.value())
+                        .build();
+            }
+
+            Session session = stripePaymentProviderService.createEmbeddedConnectCheckoutSessionShipmentCost(order,LocaleContextHolder.getLocale().getLanguage());
+            return paymentService.createReturnShippingPayment(session, order);
 
         } catch (StripeException e) {
             log.error("Stripe checkout session creation failed: {}", e.getMessage());
@@ -213,7 +237,27 @@ public class CheckoutService {
     }
     }
 
+    @Transactional
+    public ResponseDto<String> returnShipping(@AuthenticationPrincipal Jwt jwt,Long disputeId) {
+        try {
+            Locale locale = LocaleContextHolder.getLocale();
+            if (jwt != null) {
 
+                    return createReturnCheckout(jwt,disputeId);
+            }
+
+            String msg = messageSource.getMessage("checkout.auth.required", null, "Something went wrong, please authenticate and try again.", locale);
+            return ResponseDto.<String>builder()
+                    .message(msg)
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }catch (Exception e){
+            return ResponseDto.<String>builder()
+                    .message(e.getMessage())
+                    .httpStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .build();
+        }
+    }
 
     @Transactional
     public ResponseDto<String> payUBuyNow(@AuthenticationPrincipal Jwt jwt, Long[] listingsId, HttpServletRequest request) {

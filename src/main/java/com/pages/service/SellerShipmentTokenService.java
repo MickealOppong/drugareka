@@ -98,7 +98,7 @@ public class SellerShipmentTokenService {
 
         //  Handle completely missing or scrambled string values natively via bundle
         SellerShipmentToken token = sellerShipmentTokenRepo
-                .findByToken(tokenValue.trim())
+                .findByTokenForUpdate(tokenValue.trim())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.shipment_token.invalid")));
 
         //  Block reusable link exploitation vulnerabilities natively via bundle

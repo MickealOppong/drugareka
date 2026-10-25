@@ -41,6 +41,14 @@ Optional<Payment> findByListingOrderIdAndStatus(Long orderId, PaymentStatus paym
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @org.springframework.data.jpa.repository.Query("""
+       SELECT p
+       FROM Payment p
+       WHERE p.dispute.id = :disputeId
+       """)
+  Optional<Payment> findByDisputeIdForUpdate(Long disputeId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @org.springframework.data.jpa.repository.Query("""
     SELECT p
     FROM Payment p
     WHERE p.status = :status

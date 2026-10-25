@@ -3,6 +3,7 @@ package com.pages.service;
 import com.pages.dto.*;
 import com.pages.enums.*;
 import com.pages.model.*;
+import com.pages.model.OrderConfirmationException;
 import com.pages.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,8 @@ public class ListingOrderService {
     private final SellerProfileService sellerProfileService;
     private final SellerShipmentRepo sellerShipmentRepo;
     private final MessageSource messageSource;
+    private final PaymentRepo paymentRepo;
+    private final OrderConfirmationExceptionRepo orderConfirmationExceptionRepo;
 
 
     private String getMessage(String code) {
@@ -159,17 +162,23 @@ public class ListingOrderService {
     public boolean validateItemDelivery(String token) {
         ListingOrderItem orderItem =
                 listingOrderItemRepo
-                        .findByReceiptConfirmationToken(token)
+                        .findByReceiptConfirmationTokenForUpdate(token)
                         .orElse(null);
 
         if (orderItem == null) {
             return false;
         }
 
-        Instant now = Instant.now();
+        if (orderItem.getReceiptConfirmationStatus()
+                == ReceiptConfirmationStatus.CONFIRMED) {
+            return true;
+        }
 
-        if (orderItem.getReceiptConfirmationTokenExpiresAt() == null
-                || orderItem.getReceiptConfirmationTokenExpiresAt().isBefore(now)) {
+        Instant now = Instant.now();
+        Instant expiresAt =
+                orderItem.getReceiptConfirmationTokenExpiresAt();
+
+        if (expiresAt == null || !expiresAt.isAfter(now)) {
             return false;
         }
 
@@ -179,11 +188,85 @@ public class ListingOrderService {
 
         orderItem.setReceiptConfirmedAt(now);
         orderItem.setReceiptConfirmationTokenExpiresAt(now);
-        orderItem.setReceiptConfirmationStatus(ReceiptConfirmationStatus.CONFIRMED);
+        orderItem.setReceiptConfirmationStatus(
+                ReceiptConfirmationStatus.CONFIRMED
+        );
 
-        ListingOrderItem item= listingOrderItemRepo.save(orderItem);
-        payoutProcessingService.approvedPayout(item);
+        ListingOrderItem savedItem = listingOrderItemRepo.save(orderItem);
+
+        payoutProcessingService.approvedPayout(savedItem);
+
         return true;
+    }
+
+
+    @Transactional
+    public void validateItemDeliveryAndApprovePayout() {
+
+        List<ListingOrderItem> items =
+                listingOrderItemRepo.findAllUnconfirmedPaidItemsForUpdate(
+                        Instant.now(),
+                        OrderItemStatus.PAID
+                );
+
+        if (items.isEmpty()) {
+            return;
+        }
+
+        Instant now = Instant.now();
+
+        for (ListingOrderItem item : items) {
+            item.setReceiptConfirmedAt(now);
+            item.setReceiptConfirmationStatus(
+                    ReceiptConfirmationStatus.CONFIRMED
+            );
+            item.setReceiptConfirmationTokenExpiresAt(now);
+
+            //log automatic confirmation
+            OrderConfirmationException orderConfirmationException = OrderConfirmationException.builder()
+                    .confirmedAt(now)
+                    .status("CONFIRMED")
+                    .orderItemId(item.getId())
+                    .reason("Buyer did not confirm within the confirmation windown and did not file a complaint")
+                            .build();
+            orderConfirmationExceptionRepo.save(orderConfirmationException);
+
+            listingOrderItemRepo.save(item);
+            payoutProcessingService.approvedPayout(item);
+
+        }
+    }
+
+    @Transactional
+    public void cleanUpAbandonOrders(){
+      List<ListingOrderItem> items = listingOrderItemRepo.findAllByOrderStatusForUpdate(OrderItemStatus.PROCESSING);
+      if(items.isEmpty()){
+          return;
+      }
+      for(ListingOrderItem item :items){
+          log.info("Processing listing order item :{}",item.getId());
+
+        List<Payment> payments = paymentRepo.findByListingOrderId(item.getListingId());
+
+        //leave it to payment cleanup service if there exist a payment
+        if(!payments.isEmpty()){
+            continue;
+        }
+
+        //cancel order
+        item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+        listingOrderItemRepo.save(item);
+
+        //release inventory
+        InventoryItem inventoryItem = item.getInventoryItem();
+        if(inventoryItem.getStatus()==InventoryStatus.RESERVED){
+            inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+            inventoryItem.setReservedBy(null);
+            inventoryItem.setReservedUntil(null);
+            inventoryItemRepo.save(inventoryItem);
+        }
+          log.info("Completed cancelling listing order item :{}",item.getId());
+      }
     }
 
     public boolean isDeliveryConfirmedAlready(String token) {
@@ -195,7 +278,7 @@ public class ListingOrderService {
         if (orderItem == null) {
             return false;
         }
-        return orderItem.getReceiptConfirmedAt() != null;
+        return orderItem.getReceiptConfirmationStatus()==ReceiptConfirmationStatus.CONFIRMED;
     }
 
     public void save(ListingOrderItem listingOrderItem){
@@ -277,12 +360,31 @@ public class ListingOrderService {
                     .orders(orders.getContent())
                     .totalElements(orders.getTotalElements())
                     .totalPages(orders.getTotalPages())
+                    .accumulatedItems(getAccumulatedItemsFromPage(orders.getNumber(),orders.getSize(),orders.getTotalElements()))
                     .page(orders.getNumber())
                     .pageSize(orders.getSize())
                     .build();
         }
         return OrderPageDto.builder()
                 .build();
+    }
+
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
     }
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public OrderPageDto storeOrders(Jwt jwt, int page , int size){
@@ -351,6 +453,7 @@ public class ListingOrderService {
                     .totalElements(orders.getTotalElements())
                     .totalPages(orders.getTotalPages())
                     .page(orders.getNumber())
+                    .accumulatedItems(getAccumulatedItemsFromPage(orders.getNumber(),orders.getSize(),orders.getTotalElements()))
                     .pageSize(orders.getSize())
                     .build();
         }

@@ -1,5 +1,6 @@
 package com.pages.service;
 
+import com.nimbusds.jose.shaded.gson.JsonParseException;
 import com.pages.dto.ResponseDto;
 import com.pages.dto.StripeAccountStatusResponse;
 import com.pages.enums.InventoryStatus;
@@ -8,6 +9,10 @@ import com.pages.enums.OrderStatus;
 import com.pages.enums.PaymentStatus;
 import com.pages.model.*;
 import com.pages.repository.*;
+import com.stripe.exception.EventDataObjectDeserializationException;
+import com.stripe.model.Event;
+import com.stripe.model.LoginLink;
+import com.stripe.model.StripeObject;
 import com.stripe.model.v2.core.Account;
 import com.stripe.param.v2.core.AccountRetrieveParams;
 import com.stripe.StripeClient;
@@ -28,10 +33,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -41,16 +48,18 @@ public class StripeConnectService {
     private final StripeClient client;
     private final SellerProfileRepo sellerProfileRepo;
     private final AppUserRepo appUserRepo;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    public StripeConnectService( StripeClient client, SellerProfileRepo sellerProfileRepo, AppUserRepo appUserRepo) {
+    public StripeConnectService(StripeClient client, SellerProfileRepo sellerProfileRepo, AppUserRepo appUserRepo, ObjectMapper objectMapper) {
         this.client = client;
 
         this.sellerProfileRepo = sellerProfileRepo;
         this.appUserRepo = appUserRepo;
 
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -127,6 +136,7 @@ public class StripeConnectService {
                 .accounts()
                 .create(params);
 
+
         if (account == null || !StringUtils.hasText(account.getId())) {
             throw new IllegalStateException(
                     "Stripe did not return a connected account ID."
@@ -192,13 +202,165 @@ public class StripeConnectService {
                 .accountLinks()
                 .create(params);
 
+
+
         return accountLink.getUrl();
     }
 
-    public void handleAccountUpdated(EventNotification notification)  {
 
-        log.info("notif:{}",notification);
 
+    public String createStripeDashboardLink(String stripeAccountId)
+            throws StripeException {
+
+        if (stripeAccountId == null || stripeAccountId.isBlank()) {
+            throw new IllegalStateException(
+                    "Seller does not have a Stripe connected account"
+            );
+        }
+
+        LoginLink loginLink = LoginLink.createOnAccount(stripeAccountId);
+        return loginLink.getUrl();
+    }
+
+    @Transactional
+    public void handleAccountUpdated(Event event) throws EventDataObjectDeserializationException {
+
+       com.stripe.model.Account account = (com.stripe.model.Account) event.getDataObjectDeserializer().deserializeUnsafe();
+
+        if (account==null) {
+            log.error(
+                    "Unable to deserialize account.updated event. eventId={}",
+                    event.getId()
+            );
+            return;
+        }
+
+        String stripeAccountId = account.getId();
+
+        if (!StringUtils.hasText(stripeAccountId)) {
+            log.error(
+                    "Stripe account ID missing. eventId={}",
+                    event.getId()
+            );
+            return;
+        }
+
+        SellerProfile seller = sellerProfileRepo
+                .findByStripeAccountId(stripeAccountId)
+                .orElse(null);
+
+        if (seller == null) {
+            log.warn(
+                    "No seller profile matches Stripe account. eventId={}, accountId={}",
+                    event.getId(),
+                    stripeAccountId
+            );
+            return;
+        }
+
+        // Core account state
+        seller.setStripeOnboardingComplete(
+                Boolean.TRUE.equals(account.getDetailsSubmitted())
+        );
+
+        seller.setStripeChargesEnabled(
+                Boolean.TRUE.equals(account.getChargesEnabled())
+        );
+
+        seller.setStripePayoutsEnabled(
+                Boolean.TRUE.equals(account.getPayoutsEnabled())
+        );
+
+        // Legacy account.updated capability state
+        String transfersStatus = null;
+
+        if (account.getCapabilities() != null) {
+            transfersStatus = account.getCapabilities().getTransfers();
+        }
+
+        seller.setStripeTransfersStatus(transfersStatus);
+        seller.setStripeTransfersEnabled(
+                "active".equalsIgnoreCase(transfersStatus)
+        );
+
+        // Outstanding requirements and verification errors
+        com.stripe.model.Account.Requirements requirements = account.getRequirements();
+
+        if (requirements != null) {
+            seller.setStripeCurrentlyDue(
+                    toJson(requirements.getCurrentlyDue())
+            );
+
+            seller.setStripeEventuallyDue(
+                    toJson(requirements.getEventuallyDue())
+            );
+
+            seller.setStripePastDue(
+                    toJson(requirements.getPastDue())
+            );
+
+            seller.setStripeDisabledReason(
+                    requirements.getDisabledReason()
+            );
+
+            List<com.stripe.model.Account.Requirements.Errors> errors =
+                    requirements.getErrors() == null
+                            ? List.of()
+                            : requirements.getErrors();
+
+            seller.setStripeVerificationErrors(
+                    toJson(
+                            errors.stream()
+                                    .map(error -> Map.of(
+                                            "code", safe(error.getCode()),
+                                            "reason", safe(error.getReason()),
+                                            "requirement",
+                                            safe(error.getRequirement())
+                                    ))
+                                    .toList()
+                    )
+            );
+        } else {
+            seller.setStripeCurrentlyDue("[]");
+            seller.setStripeEventuallyDue("[]");
+            seller.setStripePastDue("[]");
+            seller.setStripeVerificationErrors("[]");
+            seller.setStripeDisabledReason(null);
+        }
+
+        seller.setStripeAccountUpdatedAt(Instant.now());
+
+        sellerProfileRepo.save(seller);
+
+        log.info(
+                "Stripe account synchronized. eventId={}, accountId={}, " +
+                        "onboardingComplete={}, transfersStatus={}, payoutsEnabled={}, " +
+                        "chargesEnabled={}, disabledReason={}",
+                event.getId(),
+                stripeAccountId,
+                seller.isStripeOnboardingComplete(),
+                transfersStatus,
+                seller.isStripePayoutsEnabled(),
+                seller.isStripeChargesEnabled(),
+                seller.getStripeDisabledReason()
+        );
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(
+                    value == null ? List.of() : value
+            );
+        } catch (JsonParseException ex) {
+            throw new IllegalStateException(
+                    "Failed to serialize Stripe account requirements",
+                    ex
+            );
+        }
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
 

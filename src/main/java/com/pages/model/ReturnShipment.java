@@ -1,6 +1,7 @@
 package com.pages.model;
 
 import com.pages.enums.ShipmentStatus; // e.g., CREATED, IN_TRANSIT, DELIVERED
+import com.pages.repository.OrderDisputeRepo;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -20,21 +21,19 @@ public class ReturnShipment extends LogEntity {
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_return_id", nullable = false, unique = true)
-    private OrderReturn orderReturn;
+    @JoinColumn(name = "order_dispute_id", nullable = false, unique = true)
+    private OrderDispute orderDispute;
 
-    private String address;
+    private String sellerReturnAddress;
+    private String buyerAddress;
 
     private String trackingNumber;
-    private String shipmentId;
-    private String labelUrl;
-    @Column(length = 1024)
-    private String comment;
-    private String itemSize;
 
+    private String itemSize;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ShipmentStatus shipmentStatus;
+
     private Instant deliveredAt;
     private Instant shippedAt;
     private String carrierShipmentId;

@@ -42,6 +42,11 @@ public class CheckoutController {
         return checkoutService.buyNowBuyerOffer(jwt,listingId,offer);
     }
 
+    @PostMapping("/return-shipping")
+    public ResponseDto<String> checkoutShippingCost(@AuthenticationPrincipal Jwt jwt,Long disputeId) {
+        return checkoutService.createReturnCheckout(jwt,disputeId);
+    }
+
 
     @PostMapping("/payU")
     public ResponseDto<String> createPayUCheckout(@AuthenticationPrincipal Jwt jwt, HttpServletRequest request) {

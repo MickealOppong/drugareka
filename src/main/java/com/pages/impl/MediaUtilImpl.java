@@ -37,6 +37,7 @@ public class MediaUtilImpl implements MediaUtil {
         Files.createDirectories(storage.getProductCategoriesDirectory());
         Files.createDirectories(storage.getCompanyDirectory());
         Files.createDirectories(storage.getTemporaryDirectory());
+        Files.createDirectories(storage.getDisputeDirectory());
     }
 
     @Override

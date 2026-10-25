@@ -51,4 +51,6 @@ public class PayoutException extends LogEntity {
 
     @Column(name = "review_notes", length = 2000)
     private String reviewNotes;
+    @Column(name = "stripe_message", length = 2000)
+    private String stripeMessages;
 }

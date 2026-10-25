@@ -16,6 +16,7 @@ public class OrderPageDto {
     private List<OrderDto> orders;
     private int pageSize;
     private int page;
+    private int accumulatedItems;
     private int totalPages;
     private long totalElements;
 }
