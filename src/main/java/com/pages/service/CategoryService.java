@@ -337,7 +337,7 @@ public class CategoryService {
         }).toList();
     }
 
-    public List<CategoryResponse> top8Categories() {
+    public List<CategoryResponse> top12Categories() {
 
         List<Category> categories = new ArrayList<>(
                 categoryRepo.findByParentIsNullAndIsActiveIsTrue()
@@ -346,7 +346,7 @@ public class CategoryService {
         Collections.shuffle(categories);
 
         return categories.stream()
-                .limit(8)
+                .limit(12)
                 .map(category -> {
                     // Category image could be null
                     MediaResponse media = mediaService.getCategoryImage(category);
