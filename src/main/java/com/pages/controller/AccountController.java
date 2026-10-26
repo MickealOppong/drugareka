@@ -62,9 +62,9 @@ public class AccountController {
     }
 
 
-    @PostMapping("/new")
-    public ResponseDto<Object> createUser(@RequestBody @Valid UserRegistrationRequest request){
-        return appUserDetailsService.addUser(request);
+    @PostMapping(value = "/new",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public void createUser(@RequestBody @Valid @ModelAttribute UserData dataToSend){
+         appUserDetailsService.addUser(dataToSend);
     }
 
     @GetMapping("/all")

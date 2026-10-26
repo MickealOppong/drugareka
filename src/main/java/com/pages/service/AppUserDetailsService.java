@@ -41,6 +41,7 @@ import org.springframework.web.client.RestClient;
 import java.io.IOException;
 import java.security.Principal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -204,41 +205,30 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
     @Transactional
-    public ResponseDto<Object> addUser(UserRegistrationRequest request){
-
-        try{
+    public void addUser(UserData request){
 
             if(alreadyExist(request.getEmail().trim())){
                 throw new InvalidOperationException("Choose a different email");
             }
 
+            LocalDate dob = LocalDate.parse(request.getDob());
+
             AppUser appUser = AppUser.builder()
                     .firstName(request.getFirstName())
                     .lastName(request.getLastName())
                     .username(request.getEmail())
-                    .dateOfBirth(request.getDob())
-                    .password(passwordConfig.passwordEncoder().encode(request.getPassword()))
-                    .isTermsAccepted(request.isTermsAccepted())
-                    .enabled(request.isTermsAccepted())
-                    .accountNonExpired(request.isTermsAccepted())
-                    .accountNonLocked(request.isTermsAccepted())
-                    .credentialsNonExpired(request.isTermsAccepted())
+                    .dateOfBirth(dob)
+                    .password(passwordConfig.passwordEncoder().encode("password"))
+                    .isTermsAccepted(true)
+                    .enabled(request.isActive())
+                    .accountNonExpired(true)
+                    .accountNonLocked(true)
+                    .credentialsNonExpired(true)
                     .build();
 
-            appUserRoleRepo.findByRole(formatRoleInput(request.getRoles())).ifPresent(role -> appUser.setUserRoles(Set.of(role)));
+            appUserRoleRepo.findByRole(formatRoleInput(request.getRole())).ifPresent(role -> appUser.setUserRoles(Set.of(role)));
             appUserRepo.save(appUser);
-            return ResponseDto.builder()
-                    .httpStatus(HttpStatus.OK.value())
-                    .data(true)
-                    .message("Created")
-                    .build();
-        }catch (Exception e){
-            return ResponseDto.builder()
-                    .httpStatus(HttpStatus.FORBIDDEN.value())
-                    .data(false)
-                    .message(e.getMessage())
-                    .build();
-        }
+
     }
 
     public AppUser getAppUserByUsername(String username){
