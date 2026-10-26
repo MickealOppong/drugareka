@@ -12,6 +12,15 @@ import java.util.Optional;
 @Repository
 public interface ShippingOptionRepo extends JpaRepository<ShippingOption, Long> {
 
+    boolean existsByItemSizeAndShippingMethodAndIdNot(
+           ItemSize itemSize,
+            ShippingMethod shippingMethod,
+            Long id
+    );
+    boolean existsByItemSizeAndShippingMethod(
+            ItemSize itemSize,
+            ShippingMethod shippingMethod
+    );
     Optional<ShippingOption> findByItemSizeAndActiveTrue(ItemSize itemSize);
     Optional<ShippingOption> findByItemSizeAndShippingMethodAndActiveTrue(ItemSize itemSize, ShippingMethod shippingMethod);
     Optional<ShippingOption> findByItemSizeAndShippingMethod(ItemSize itemSize, ShippingMethod shippingMethod);

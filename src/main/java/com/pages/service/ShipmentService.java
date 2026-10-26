@@ -126,6 +126,7 @@ public class ShipmentService {
                             .deliveryAddress(shipment.getShippingAddress())
                             .listingOrderId(shipment.getListingOrderItem().getListingId())
                             .seller("Private person")
+                            .confirmationStatus(shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name())
                             .shippedAt(shipment.getShippedAt())
                             .trackingNumber(shipment.getTrackingNumber())
                             .itemSize(shipment.getItemSize().name())
@@ -585,6 +586,7 @@ public class ShipmentService {
                                             .getListingOrder()
                                             .getOrderNumber()
                             )
+                            .confirmationStatus(shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name())
                             .build());
 
             return ListPageShipment.builder()

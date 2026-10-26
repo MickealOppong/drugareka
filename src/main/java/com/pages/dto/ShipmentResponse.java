@@ -29,4 +29,5 @@ public class ShipmentResponse {
 
     private Instant deliveredAt;
     private String itemSize;
+    private String confirmationStatus;
 }

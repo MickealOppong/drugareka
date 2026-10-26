@@ -49,9 +49,9 @@ public class ShippingOptionService {
     public ItemSize getItemSize(String item){
         String cleanStatus = item.trim().toUpperCase();
         return switch (cleanStatus) {
-            case "MEDIUM" -> ItemSize.MEDIUM_UP_20KG;
-            case "LARGE" -> ItemSize.LARGE_UP_50KG;
-            case "HEAVY" ->ItemSize.HEAVY_OVER_50KG;
+            case "MEDIUM_UP_20KG" -> ItemSize.MEDIUM_UP_20KG;
+            case "LARGE_UP_50KG" -> ItemSize.LARGE_UP_50KG;
+            case "HEAVY_ABOVE_50KG" ->ItemSize.HEAVY_OVER_50KG;
             default -> ItemSize.SMALL_UP_10KG;
         };
     }
@@ -64,6 +64,24 @@ public class ShippingOptionService {
             default -> ShippingMethod.OTHER;
         };
 
+    }
+
+
+    @Transactional(readOnly = true)
+    public CourierResponse getCourier(Jwt jwt,Long id){
+        if(jwt==null){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"You are not authorized to view report");
+        }
+        return shippingOptionRepo.findById(id).map(item->{
+            return CourierResponse.builder()
+                    .id(item.getId())
+                    .active(item.isActive())
+                    .price(item.getPrice())
+                    .shippingMethod(item.getShippingMethod())
+                    .itemSize(item.getItemSize())
+                    .active(item.isActive())
+                    .build();
+        }).orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -83,44 +101,103 @@ public class ShippingOptionService {
         }).toList();
     }
 
-    public void addOrEditShippingOption(Jwt jwt, ShippingOptionRequest request){
-        if(jwt==null){
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"You are not authorized to add record");
+    public void editShippingOption(Jwt jwt, ShippingOptionRequest request) {
+
+        if (jwt == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "You are not authorized to edit this record"
+            );
         }
-     ShippingOption shippingOption=   shippingOptionRepo.findByItemSizeAndShippingMethod(getItemSize(request.getItemSize())
-                     ,getShippingMethod(request.getShippingMethod()))
-             .orElse(null);
 
-        if(shippingOption!=null){
-            if(StringUtils.hasText(request.getShippingMethod())){
-                shippingOption.setShippingMethod(getShippingMethod(request.getShippingMethod()));
-            }
-            if(StringUtils.hasText(request.getItemSize())){
-                shippingOption.setItemSize(getItemSize(request.getItemSize()));
-            }
-            if(request.getPrice()!=null){
-                shippingOption.setPrice(request.getPrice());
-            }
-            shippingOption.setActive(request.getActive());
-            shippingOptionRepo.save(shippingOption);
-
-        }else{
-
-            ShippingOption newOption= ShippingOption.builder()
-                    .shippingMethod(getShippingMethod(request.getShippingMethod()))
-                    .active(request.getActive())
-                    .price(request.getPrice())
-                    .itemSize(getItemSize(request.getItemSize()))
-                    .build();
-
-            shippingOptionRepo.save(newOption);
+        if (request.getId() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Shipping option ID is required for editing"
+            );
         }
+
+        ShippingOption shippingOption = shippingOptionRepo.findById(request.getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Shipping option not found"
+                ));
+
+        ShippingMethod shippingMethod =
+                getShippingMethod(request.getShippingMethod());
+
+        ItemSize itemSize =
+                getItemSize(request.getItemSize());
+
+        boolean duplicate = shippingOptionRepo
+                .existsByItemSizeAndShippingMethodAndIdNot(
+                        itemSize,
+                        shippingMethod,
+                        request.getId()
+                );
+
+        if (duplicate) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A shipping option already exists for this item size and shipping method."
+            );
+        }
+
+        shippingOption.setShippingMethod(shippingMethod);
+        shippingOption.setItemSize(itemSize);
+
+        if (request.getPrice() != null) {
+            shippingOption.setPrice(request.getPrice());
+        }
+
+        shippingOption.setActive(request.getActive());
+
+        shippingOptionRepo.save(shippingOption);
+
+        log.info("Shipping option updated. ID: {}", request.getId());
+    }
+
+
+    public void addShippingOption(Jwt jwt, ShippingOptionRequest request) {
+
+        if (jwt == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "You are not authorized to add a record"
+            );
+        }
+
+        ShippingMethod shippingMethod =
+                getShippingMethod(request.getShippingMethod());
+
+        ItemSize itemSize =
+                getItemSize(request.getItemSize());
+
+        boolean duplicate = shippingOptionRepo
+                .existsByItemSizeAndShippingMethod(itemSize, shippingMethod);
+
+        if (duplicate) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A shipping option already exists for this item size and shipping method."
+            );
+        }
+
+        log.info("Shipping option request: {}", request);
+
+        ShippingOption shippingOption = ShippingOption.builder()
+                .shippingMethod(shippingMethod)
+                .itemSize(itemSize)
+                .price(request.getPrice())
+                .active(request.getActive())
+                .build();
+
+        shippingOptionRepo.save(shippingOption);
     }
 
 
 
-
-   public BigDecimal getShippingPrice(CartItem cartItem) {
+    public BigDecimal getShippingPrice(CartItem cartItem) {
         InventoryItem inventoryItem = cartItem.getInventoryItem();
 
         return shippingOptionRepo

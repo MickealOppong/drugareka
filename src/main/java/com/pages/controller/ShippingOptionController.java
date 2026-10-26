@@ -30,8 +30,21 @@ public class ShippingOptionController {
         return shippingOptionService.getCourierList(jwt);
     }
 
+
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @GetMapping("/option/{id}")
+    public CourierResponse getShippingRate(@AuthenticationPrincipal Jwt jwt,Long id){
+        return shippingOptionService.getCourier(jwt,id);
+    }
+
     @PostMapping("/courier-charge")
     public void addCourier(@AuthenticationPrincipal Jwt jwt,@RequestBody @Valid ShippingOptionRequest request){
-        shippingOptionService.addOrEditShippingOption(jwt,request);
+        shippingOptionService.addShippingOption(jwt,request);
+    }
+
+
+    @PutMapping("/edit-courier-charge")
+    public void editCourier(@AuthenticationPrincipal Jwt jwt,@RequestBody @Valid ShippingOptionRequest request){
+        shippingOptionService.editShippingOption(jwt,request);
     }
 }
