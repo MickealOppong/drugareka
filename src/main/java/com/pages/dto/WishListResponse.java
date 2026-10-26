@@ -15,6 +15,7 @@ public class WishListResponse {
     private String image;
     private String inventoryStatus;
     private String productName;
+    private String productSlug;
     private Long listingId;
     private BigDecimal sellerPrice;
     private Instant createAt;

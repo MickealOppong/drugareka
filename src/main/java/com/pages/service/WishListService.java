@@ -133,6 +133,7 @@ public class WishListService {
                         .listingId(item.getListingTransaction().getId())
                         .id(item.getId())
                         .createAt(item.getCreatedAt())
+                        .productSlug(item.getListingTransaction().getInventory().getProductCatalog().getSlug())
                         .productName(inventoryItem.getProductCatalog().getName())
                         .inventoryStatus(inventoryItem.getStatus().name())
                         .sellerPrice(priceService.getSellerNewPrice())

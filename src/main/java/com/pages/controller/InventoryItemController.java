@@ -18,13 +18,10 @@ import java.util.List;
 @RequestMapping("/api/inventories")
 public class InventoryItemController {
 
-
-    private final InventoryItemPriceService inventoryItemPriceService;
     private final InventoryItemService inventoryItemService;
     private final AppUserDetailsService appUserDetailsService;
 
     public InventoryItemController(InventoryItemPriceService inventoryItemPriceService, InventoryItemService inventoryItemService, AppUserDetailsService appUserDetailsService) {
-        this.inventoryItemPriceService = inventoryItemPriceService;
         this.inventoryItemService = inventoryItemService;
         this.appUserDetailsService = appUserDetailsService;
     }

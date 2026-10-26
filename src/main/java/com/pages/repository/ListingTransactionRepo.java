@@ -22,6 +22,7 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
     List<ListingTransaction> findByListingStatus(ListingStatus listingStatus);
     Optional<ListingTransaction> findByIdAndInventoryStatus(Long id, InventoryStatus inventoryStatus);
     Optional<ListingTransaction> findByIdAndListingStatus(Long id, ListingStatus listingStatus);
+    Optional<ListingTransaction> findByInventoryProductCatalogSlug(String slug);
 
     List<ListingTransaction> findByListingStatusAndInventoryProductCatalogCategoryNameAndInventorySellerIdNot(
             ListingStatus listingStatus,
@@ -38,6 +39,7 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
             @Param("appUserId") Long appUserId ,
            Pageable pageable
     );
+
 
 
     List<ListingTransaction> findTop8ByInventoryStatusAndListingStatusOrderByCreatedAtDesc(InventoryStatus inventoryStatus,ListingStatus listingStatus);

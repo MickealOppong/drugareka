@@ -88,6 +88,11 @@ public class StoreController {
         return   listingTransactionService.getProductByListingId(listingId);
     }
 
+    @GetMapping("listing/slug")
+    public ListTransResponse getListingItemBySlug(@RequestParam String slug){
+        return   listingTransactionService.getProductByListingSlug(slug);
+    }
+
     @GetMapping("/top6-categories")
     public List<CategoryResponse> top6StoreCategories(){
         return categoryService.top6Categories();

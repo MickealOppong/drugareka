@@ -51,23 +51,23 @@ public class UtilService {
 
         return token.trim()
                 .toLowerCase()
-                // 1. Flatten Accent Diacritics (e.g., ł -> l, ó -> o)
-                .replaceAll("[ąą]", "a")
-                .replaceAll("[ćć]", "c")
-                .replaceAll("[ęę]", "e")
-                .replaceAll("[łł]", "l")
-                .replaceAll("[ńń]", "n")
-                .replaceAll("[óó]", "o")
-                .replaceAll("[śś]", "s")
-                .replaceAll("[źźżż]", "z")
-                // 2. Remove filler connecting words common in marketplace categories
+                .replaceAll("[ą]", "a")
+                .replaceAll("[ć]", "c")
+                .replaceAll("[ę]", "e")
+                .replaceAll("[ł]", "l")
+                .replaceAll("[ń]", "n")
+                .replaceAll("[ó]", "o")
+                .replaceAll("[ś]", "s")
+                .replaceAll("[źż]", "z")
                 .replaceAll("\\b(i|and|or)\\b", "")
-                // 3. Strip remaining non-alphanumeric special characters
-                .replaceAll("[^a-z0-9\\s-]", "")
-                // 4. Compress multiple gaps or hyphens into a single clean dash separator
-                .replaceAll("[\\s-]+", "-")
-                // 5. Clean up any trailing/leading dashes left behind by stripped words
-                .replaceAll("^-|-$", "");
+                // Keep letters, numbers, whitespace, underscores and hyphens
+                .replaceAll("[^a-z0-9\\s_-]", "")
+                // Convert spaces and hyphens to underscores
+                .replaceAll("[\\s-]+", "_")
+                // Collapse repeated underscores
+                .replaceAll("_+", "_")
+                // Remove leading or trailing underscores
+                .replaceAll("^_+|_+$", "");
     }
 
     public static String formatNameToSlug(String name) {

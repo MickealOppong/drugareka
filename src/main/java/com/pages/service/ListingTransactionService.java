@@ -607,6 +607,18 @@ public class ListingTransactionService {
     }
 
     @Transactional(readOnly = true)
+    public ListTransResponse getProductByListingSlug(String slug) {
+
+        ListingTransaction listingTransaction = listingTransactionRepo.findByInventoryProductCatalogSlug(slug).orElse(null);
+        if (listingTransaction != null) {
+            List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
+            InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
+            return ListingTransaction.toListTransResponse(listingTransaction, mediaList, price);
+        }
+        return ListTransResponse.builder().build();
+    }
+
+    @Transactional(readOnly = true)
     public Long getSellerPublishedListingCount(Long sellerId) {
         return listingTransactionRepo.countByInventorySellerIdAndInventoryStatusAndListingStatus(sellerId, InventoryStatus.AVAILABLE, ListingStatus.PUBLISHED);
     }
