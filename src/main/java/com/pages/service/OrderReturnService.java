@@ -314,7 +314,7 @@ public class OrderReturnService {
     public void executeOrderPartialCancellation(Long orderItemId) {
 
 
-        ListingOrderItem orderItem = listingOrderItemRepo.findById(orderItemId)
+        ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         getMessage("api_errors.order_cancellation.item_not_found")

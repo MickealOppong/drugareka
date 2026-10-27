@@ -11,18 +11,26 @@ import com.pages.repository.PayoutExceptionRepo;
 import com.pages.repository.SellerPayoutRepo;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Balance;
+import com.stripe.model.Refund;
 import com.stripe.model.Transfer;
 import com.stripe.net.RequestOptions;
+import com.stripe.param.RefundCreateParams;
 import com.stripe.param.TransferCreateParams;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class PayoutProcessingService {
 
 
@@ -31,13 +39,9 @@ public class PayoutProcessingService {
     private final PaymentRepo paymentRepo;
     private final PayoutExceptionRepo payoutExceptionRepo;
     private final EmailNotificationService emailNotificationService;
+    private final ServiceChargeService serviceChargeService;
 
-    public PayoutProcessingService(SellerPayoutRepo sellerPayoutRepo, PaymentRepo paymentRepo, PayoutExceptionRepo payoutExceptionRepo, EmailNotificationService emailNotificationService) {
-        this.sellerPayoutRepo = sellerPayoutRepo;
-        this.paymentRepo = paymentRepo;
-        this.payoutExceptionRepo = payoutExceptionRepo;
-        this.emailNotificationService = emailNotificationService;
-    }
+
 
 
     @Transactional
@@ -200,6 +204,117 @@ public class PayoutProcessingService {
     }
 
 
+    @Transactional
+    public void createRefundForUnconfirmedOrderItem(Payment payment,ListingOrderItem item){
+
+        try {
+
+
+            Payment refund = Payment.builder()
+                    .listingOrder(item.getListingOrder())
+                    .status(PaymentStatus.AWAITING_REFUND)
+                    .amount(item.getSellerPrice())
+                    .currency("PLN")
+                    .providerSessionId(payment.getProviderSessionId())
+                    .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                    .orderNumber(item.getListingOrder().getOrderNumber())
+                    .provider(PaymentProvider.STRIPE)
+                    .build();
+
+            paymentRepo.save(refund);
+
+            //stripe refund
+            processSingleIsolatedRefund(payment);
+
+            //change payout status to refund
+            sellerPayoutRepo.findByListingOrderItemId(item.getId()).ifPresent(payout->{
+                payout.setStatus(PayoutStatus.REFUND);
+                sellerPayoutRepo.save(payout);
+            });
+
+            //reverse service charge earned
+            serviceChargeService.reverseCharge(item);
+
+            //send email confirmation
+            String email = item.getListingOrder().getBuyer().getUsername();
+            String name = item.getListingOrder().getBuyer().getFirstName();
+            String orderNumber = item.getListingOrder().getOrderNumber();
+            String itemName = item.getProductNameSnapshot();
+            emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,item.getSellerPrice());
+        } catch (StripeException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void processSingleIsolatedRefund(Payment refund)
+            throws StripeException {
+
+        try {
+            long amountInGrosze = refund.getAmount()
+                    .abs()
+                    .setScale(2, RoundingMode.HALF_UP)
+                    .movePointRight(2)
+                    .longValueExact();
+
+            Map<String, String> metadata = new HashMap<>();
+            metadata.put("payment_ledger_id", String.valueOf(refund.getId()));
+
+            RefundCreateParams refundParams = RefundCreateParams.builder()
+                    .setPaymentIntent(refund.getStripePaymentIntentId())
+                    .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER)
+                    .setAmount(amountInGrosze)
+                    .setMetadata(metadata)
+                    .build();
+
+            Refund stripeRefund = Refund.create(refundParams);
+
+            // Update only after Stripe confirms refund creation.
+            refund.setStatus(PaymentStatus.REFUNDED);
+            paymentRepo.save(refund);
+
+
+            log.info(
+                    "Stripe refund created: {} grosze, Payment ID: {}, Stripe Refund ID: {}",
+                    amountInGrosze,
+                    refund.getId(),
+                    stripeRefund.getId()
+            );
+
+        } catch (StripeException e) {
+            log.error(
+                    "Stripe refund failed for Payment ID: {}",
+                    refund.getId(),
+                    e
+            );
+
+            throw e;
+        }
+    }
+
+
+    @Transactional
+    public void refundForUnconfirmedOrder(Payment payment,ListingOrderItem item){
+        Payment   originalPayment= paymentRepo.findByProviderSessionIdForUpdate(payment.getProviderSessionId()).orElse(null);
+        if(originalPayment!= null && originalPayment.getStatus() == PaymentStatus.PAID){
+            originalPayment.setStatus(PaymentStatus.AWAITING_REFUND);
+        }
+
+        sellerPayoutRepo.findByListingOrderItemId(item.getId()).ifPresent(payout->{
+            payout.setStatus(PayoutStatus.REFUND);
+            sellerPayoutRepo.save(payout);
+        });
+
+        //reverse service charge earned
+        serviceChargeService.reverseCharge(item);
+
+        //send email confirmation
+        String email = item.getListingOrder().getBuyer().getUsername();
+        String name = item.getListingOrder().getBuyer().getFirstName();
+        String orderNumber = item.getListingOrder().getOrderNumber();
+        String itemName = item.getProductNameSnapshot();
+        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,item.getSellerPrice());
+
+    }
     @Transactional
     public void returnToApproved(Long payoutId){
         SellerPayout payout = sellerPayoutRepo.findById(payoutId).orElse(null);

@@ -125,7 +125,7 @@ public class UtilService {
     public static SellerShipmentToken generateShipmentToken(){
         return SellerShipmentToken.builder()
                 .token(UUID.randomUUID().toString())
-                .expiresAt(Instant.now().plus(3, ChronoUnit.DAYS))
+                .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
                 .build();
     }
 

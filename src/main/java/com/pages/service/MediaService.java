@@ -233,9 +233,10 @@ public class MediaService {
 
             try {
                 mediaRepo.save(newMedia);
-            } catch (RuntimeException e) {
+            } catch (Exception e) {
+
                 deleteQuietly(key);
-                throw e;
+                throw new IllegalStateException(e.getMessage());
             }
 
             retainedHashes.add(hash);
@@ -331,9 +332,9 @@ public class MediaService {
                 mediaRepo.save(newMedia);
                 // Write the image to file
                 mediaUtil.store(file, key);
-            } catch (RuntimeException e) {
+            } catch (Exception e) {
                 deleteQuietly(key);
-                throw e;
+                throw new IllegalStateException(e.getMessage());
             }
 
             retainedHashes.add(hash);
@@ -408,9 +409,9 @@ public class MediaService {
 
         try {
             return mediaRepo.save(media);
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             deleteQuietly(key);
-            throw e;
+            throw new IllegalStateException(e.getMessage());
         }
     }
 

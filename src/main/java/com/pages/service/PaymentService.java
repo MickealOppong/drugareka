@@ -811,12 +811,12 @@ public class PaymentService{
     }
 
 
-    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processSingleIsolatedRefund(Payment refund) throws StripeException {
+    public void processSingleIsolatedRefund(Payment refund)
+            throws StripeException {
+
         try {
-            // 1. Scale the PLN amount into grosze for Stripe (e.g., 212.99 -> 21299)
             long amountInGrosze = refund.getAmount()
-                    .abs() // Ensure positive value for Stripe parameter payload
+                    .abs()
                     .setScale(2, RoundingMode.HALF_UP)
                     .movePointRight(2)
                     .longValueExact();
@@ -824,7 +824,6 @@ public class PaymentService{
             Map<String, String> metadata = new HashMap<>();
             metadata.put("payment_ledger_id", String.valueOf(refund.getId()));
 
-            // 2. Dispatch the refund request safely over the network to Stripe
             RefundCreateParams refundParams = RefundCreateParams.builder()
                     .setPaymentIntent(refund.getStripePaymentIntentId())
                     .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER)
@@ -832,16 +831,27 @@ public class PaymentService{
                     .setMetadata(metadata)
                     .build();
 
-            Refund.create(refundParams);
+            Refund stripeRefund = Refund.create(refundParams);
 
-            log.info("Stripe API: Total refund of {} grosze processed successfully for Payment ID: {}", amountInGrosze, refund.getId());
+            // Update only after Stripe confirms refund creation.
+            refund.setStatus(PaymentStatus.REFUNDED);
+            paymentRepo.save(refund);
 
-        }  catch (StripeException e) {
-            log.error("Internal Stripe execution failure on Payment ID: {}", refund.getId(), e);
-                    if(e.getCode().equals("charge_already_refunded")){
-                        refund.setStatus(PaymentStatus.REFUNDED);
-                        paymentRepo.save(refund);
-                    }
+            log.info(
+                    "Stripe refund created: {} grosze, Payment ID: {}, Stripe Refund ID: {}",
+                    amountInGrosze,
+                    refund.getId(),
+                    stripeRefund.getId()
+            );
+
+        } catch (StripeException e) {
+            log.error(
+                    "Stripe refund failed for Payment ID: {}",
+                    refund.getId(),
+                    e
+            );
+
+            throw e;
         }
     }
 

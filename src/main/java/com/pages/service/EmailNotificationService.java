@@ -16,6 +16,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -935,6 +936,276 @@ public class EmailNotificationService {
                 escapeHtml(orderNumber),
                 escapeHtml(orderNumber),
                 itemsHtml.toString(),
+                escapeHtml(total)
+        );
+
+        sendHtmlEmail(buyerEmail, subject, htmlContent);
+    }
+
+    /**
+     * REFUND CONFIRMATION TO BUYER
+     */
+    public void sendOrderCancellationRefundEmailToBuyer(
+            String buyerEmail,
+            String buyerName,
+            String orderNumber,
+            String productName,
+            BigDecimal totalAmount
+    ) {
+        String subject = "Zamówienie #" + orderNumber
+                + " anulowane — zwrot płatności";
+
+        String safeBuyerName = escapeHtml(
+                buyerName != null && !buyerName.isBlank()
+                        ? buyerName
+                        : "Kliencie"
+        );
+
+        String safeOrderNumber = escapeHtml(
+                orderNumber != null ? orderNumber : ""
+        );
+
+        String safeProductName = escapeHtml(
+                productName != null && !productName.isBlank()
+                        ? productName
+                        : "Produkt"
+        );
+
+        String total = totalAmount != null
+                ? totalAmount.abs()
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString()
+                : "0.00";
+
+        String htmlContent = """
+        <div style="
+            margin:0;
+            padding:30px 15px;
+            background-color:#F5F6F1;
+            font-family:Arial,Helvetica,sans-serif;
+            color:#182016;
+        ">
+            <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+                   style="max-width:600px;margin:0 auto;">
+
+                <!-- HEADER -->
+                <tr>
+                    <td style="
+                        background-color:#68764B;
+                        padding:28px 30px;
+                        border-radius:16px 16px 0 0;
+                    ">
+                        <div style="
+                            font-size:26px;
+                            line-height:1;
+                            font-weight:800;
+                            letter-spacing:-1px;
+                            color:#FFFFFF;
+                        ">
+                            kasoa<span style="font-weight:400;opacity:0.75;">.pl</span>
+                        </div>
+
+                        <div style="
+                            margin-top:10px;
+                            font-size:12px;
+                            color:#E9EDDF;
+                            letter-spacing:0.5px;
+                        ">
+                            DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                        </div>
+                    </td>
+                </tr>
+
+                <!-- BODY -->
+                <tr>
+                    <td style="
+                        background-color:#FFFFFF;
+                        padding:32px 30px;
+                    ">
+                        <div style="
+                            display:inline-block;
+                            padding:8px 13px;
+                            background-color:#FCE8E6;
+                            color:#B42318;
+                            border-radius:20px;
+                            font-size:11px;
+                            font-weight:800;
+                            letter-spacing:0.6px;
+                        ">
+                            ZAMÓWIENIE ANULOWANE
+                        </div>
+
+                        <h1 style="
+                            margin:18px 0 10px;
+                            font-size:25px;
+                            line-height:1.25;
+                            color:#182016;
+                            font-weight:800;
+                        ">
+                            Zamówienie zostało anulowane
+                        </h1>
+
+                        <p style="
+                            margin:0 0 24px;
+                            font-size:15px;
+                            line-height:1.7;
+                            color:#667066;
+                        ">
+                            Dzień dobry %s,
+                            <br><br>
+                            informujemy, że zamówienie
+                            <strong style="color:#182016;">#%s</strong>
+                            zostało anulowane, ponieważ sprzedawca
+                            nie potwierdził go w wymaganym terminie.
+                        </p>
+
+                        <!-- CANCELLED PRODUCT -->
+                        <table width="100%%" cellpadding="0" cellspacing="0"
+                               border="0" style="
+                            background-color:#F7F8F5;
+                            border:1px solid #E4E8DE;
+                            border-radius:12px;
+                            margin-bottom:18px;
+                        ">
+                            <tr>
+                                <td style="padding:20px;">
+                                    <div style="
+                                        font-size:10px;
+                                        font-weight:700;
+                                        color:#8A9288;
+                                        text-transform:uppercase;
+                                        letter-spacing:1px;
+                                        margin-bottom:8px;
+                                    ">
+                                        Anulowany produkt
+                                    </div>
+
+                                    <div style="
+                                        font-size:16px;
+                                        line-height:1.5;
+                                        font-weight:700;
+                                        color:#182016;
+                                        overflow-wrap:anywhere;
+                                    ">
+                                        %s
+                                    </div>
+
+                                    <div style="
+                                        margin-top:22px;
+                                        padding-top:18px;
+                                        border-top:1px solid #E4E8DE;
+                                    ">
+                                        <div style="
+                                            font-size:10px;
+                                            font-weight:700;
+                                            color:#8A9288;
+                                            text-transform:uppercase;
+                                            letter-spacing:1px;
+                                        ">
+                                            Kwota zwrotu
+                                        </div>
+
+                                        <div style="
+                                            margin-top:8px;
+                                            font-size:27px;
+                                            line-height:1.3;
+                                            font-weight:800;
+                                            color:#68764B;
+                                        ">
+                                            %s zł
+                                        </div>
+                                    </div>
+
+                                    <p style="
+                                        margin:12px 0 0;
+                                        font-size:13px;
+                                        line-height:1.7;
+                                        color:#667066;
+                                    ">
+                                        Zwrot zostanie przekazany na pierwotną
+                                        metodę płatności. Zaksięgowanie środków
+                                        może potrwać kilka dni roboczych,
+                                        w zależności od banku lub operatora
+                                        płatności.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- EXPLANATION -->
+                        <p style="
+                            margin:0;
+                            font-size:14px;
+                            line-height:1.7;
+                            color:#667066;
+                        ">
+                            Przepraszamy za niedogodności i dziękujemy
+                            za wyrozumiałość. W razie pytań możesz
+                            skontaktować się z naszym zespołem.
+                        </p>
+
+                        <!-- CTA -->
+                        <div style="margin-top:28px;text-align:center;">
+                            <a href="https://www.kasoa.pl"
+                               style="
+                                   display:inline-block;
+                                   padding:14px 28px;
+                                   background-color:#68764B;
+                                   color:#FFFFFF;
+                                   text-decoration:none;
+                                   border-radius:9px;
+                                   font-size:13px;
+                                   font-weight:700;
+                               ">
+                                Odwiedź Kasoa.pl →
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+
+                <!-- FOOTER -->
+                <tr>
+                    <td style="
+                        background-color:#182016;
+                        padding:24px 30px;
+                        border-radius:0 0 16px 16px;
+                        text-align:center;
+                    ">
+                        <div style="
+                            font-size:17px;
+                            font-weight:800;
+                            color:#FFFFFF;
+                        ">
+                            kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span>
+                        </div>
+
+                        <div style="
+                            margin-top:7px;
+                            font-size:11px;
+                            color:#AEB69D;
+                        ">
+                            Good things. A second chance.
+                        </div>
+
+                        <div style="
+                            margin-top:14px;
+                            font-size:10px;
+                            line-height:1.7;
+                            color:#AEB69D;
+                        ">
+                            Ta wiadomość została wygenerowana automatycznie.
+                            <br><br>
+                            KASAWA Sp. z o.o.
+                        </div>
+                    </td>
+                </tr>
+
+            </table>
+        </div>
+        """.formatted(
+                safeBuyerName,
+                safeOrderNumber,
+                safeProductName,
                 escapeHtml(total)
         );
 

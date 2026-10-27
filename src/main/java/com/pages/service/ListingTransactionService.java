@@ -13,6 +13,7 @@ import com.pages.util.UtilService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +24,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -378,12 +380,30 @@ public class ListingTransactionService {
                     .httpStatus(HttpStatus.OK.value())
                     .build();
         } catch (Exception e) {
-            return ResponseDto.builder()
-                    .data(false)
-                    .message(e.getMessage())
-                    .httpStatus(HttpStatus.BAD_REQUEST.value())
-                    .build();
+            if(isDuplicateMediaItemFileHash(e)){
+                throw new DuplicateKeyException(
+                      messageSource.getMessage("api.add_listing.product.duplicate.error",null,LocaleContextHolder.getLocale())
+                );
+            }
+            throw e;
         }
+    }
+
+    private boolean isDuplicateMediaItemFileHash(Throwable ex) {
+        Throwable cause = ex;
+
+        while (cause != null) {
+            String message = cause.getMessage();
+
+            if (message != null
+                    && message.contains("uk_media_item_file_hash")) {
+                return true;
+            }
+
+            cause = cause.getCause();
+        }
+
+        return false;
     }
     @Transactional(readOnly = true)
     public List<ListTransResponse> getShopLandingListing() {

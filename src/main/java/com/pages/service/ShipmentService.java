@@ -577,29 +577,37 @@ public class ShipmentService {
 
             Page<ShipmentResponse> shipments = sellerShipmentRepo
                     .findAll(pageable)
-                    .map(shipment -> ShipmentResponse.builder()
-                            .id(shipment.getId())
-                            .deliveredAt(shipment.getDeliveredAt())
-                            .deliveryAddress(shipment.getShippingAddress())
-                            .listingOrderId(
-                                    shipment.getListingOrderItem().getListingId()
-                            )
-                            .seller(
-                                    shipment.getSeller().getUser().getFirstName()
-                                            + " "
-                                            + shipment.getSeller().getUser().getLastName()
-                            )
-                            .shippedAt(shipment.getShippedAt())
-                            .itemSize(shipment.getItemSize().name())
-                            .trackingNumber(shipment.getTrackingNumber())
-                            .status(shipment.getShipmentStatus())
-                            .orderNumber(
-                                    shipment.getListingOrderItem()
-                                            .getListingOrder()
-                                            .getOrderNumber()
-                            )
-                            .confirmationStatus(shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name())
-                            .build());
+                    .map(shipment -> {
+
+                        String confirmation = shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!=null?
+                                shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name():null;
+
+                         return    ShipmentResponse.builder()
+                                        .id(shipment.getId())
+                                        .deliveredAt(shipment.getDeliveredAt())
+                                        .deliveryAddress(shipment.getShippingAddress())
+                                        .listingOrderId(
+                                                shipment.getListingOrderItem().getListingId()
+                                        )
+                                        .seller(
+                                                shipment.getSeller().getUser().getFirstName()
+                                                        + " "
+                                                        + shipment.getSeller().getUser().getLastName()
+                                        )
+                                        .shippedAt(shipment.getShippedAt())
+                                        .itemSize(shipment.getItemSize().name())
+                                        .trackingNumber(shipment.getTrackingNumber())
+                                        .status(shipment.getShipmentStatus())
+                                 .confirmationStatus(confirmation)
+                                        .orderNumber(
+                                                shipment.getListingOrderItem()
+                                                        .getListingOrder()
+                                                        .getOrderNumber()
+                                        )
+                                        .build();
+                            }
+
+                            );
 
             return ListPageShipment.builder()
                     .shipments(shipments.getContent())
@@ -823,7 +831,7 @@ public class ShipmentService {
 
             String token = request.getToken();
 
-            SellerShipmentToken sellerShipmentToken= sellerShipmentTokenRepo.findByTokenForUpdate(request.getToken())
+            SellerShipmentToken sellerShipmentToken= sellerShipmentTokenRepo.findByTokenForUpdate(token)
                     .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("No associated token for this shipment")));
 
             if(sellerShipmentToken.getExpiresAt().isBefore(Instant.now()) || sellerShipmentToken.getUsedAt()!=null){
@@ -869,9 +877,12 @@ public class ShipmentService {
             }
 
             //cancel unfulfilled orders
+            /*
             itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
                 orderReturnService.executeOrderPartialCancellation(item.getId());
             });
+
+             */
         }catch (Exception e){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
         }

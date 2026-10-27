@@ -49,6 +49,7 @@ public class ListingOrderService {
     private final OrderConfirmationExceptionRepo orderConfirmationExceptionRepo;
 
 
+
     private String getMessage(String code) {
         return messageSource.getMessage(
                 code,
@@ -228,11 +229,81 @@ public class ListingOrderService {
                     .status("CONFIRMED")
                     .orderItemId(item.getId())
                     .reason("Buyer did not confirm within the confirmation windown and did not file a complaint")
-                            .build();
+                    .build();
             orderConfirmationExceptionRepo.save(orderConfirmationException);
 
             listingOrderItemRepo.save(item);
             payoutProcessingService.approvedPayout(item);
+
+        }
+    }
+
+    @Transactional
+    public void validateSellerUnConfirmedOrderForRefund() {
+        Instant now = Instant.now();
+
+        List<SellerShipment> unconfirmedShipments =
+                sellerShipmentRepo.findAllUnconfirmedShipmentForUpdate(now);
+
+        for (SellerShipment shipment : unconfirmedShipments) {
+            ListingOrderItem item = shipment.getListingOrderItem();
+
+            // Skip items already cancelled or otherwise processed.
+            if (item == null
+                    || item.getOrderItemStatus() != OrderItemStatus.PAID
+                    || shipment.getShipmentStatus() == ShipmentStatus.CANCELLED) {
+                continue;
+            }
+
+            ListingOrder order = item.getListingOrder();
+
+            // Cancel only the affected item.
+            item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+            listingOrderItemRepo.save(item);
+
+            // Return inventory only if it is still marked SOLD.
+            InventoryItem inventoryItem = item.getInventoryItem();
+
+            if (inventoryItem != null
+                    && inventoryItem.getStatus() == InventoryStatus.SOLD) {
+                inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+                inventoryItemRepo.save(inventoryItem);
+            }
+
+            // Cancel the seller shipment.
+            shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
+            sellerShipmentRepo.save(shipment);
+
+            // Record the actual reason for cancellation.
+            OrderConfirmationException exception =
+                    OrderConfirmationException.builder()
+                            .confirmedAt(now)
+                            .status("CANCELLED")
+                            .orderItemId(item.getId())
+                            .reason(
+                                    "Seller did not confirm the shipment "
+                                            + "within the required confirmation window"
+                            )
+                            .build();
+
+            orderConfirmationExceptionRepo.save(exception);
+
+            // Refund the affected item or the full payment.
+            paymentRepo.findByListingOrderIdAndStatus(
+                            order.getId(), PaymentStatus.PAID)
+                    .ifPresent(payment -> {
+                        if (order.getItems().size() > 1) {
+                            payoutProcessingService
+                                    .createRefundForUnconfirmedOrderItem(
+                                            payment, item);
+                        } else {
+                            payoutProcessingService
+                                    .refundForUnconfirmedOrder(payment, item);
+                        }
+                    });
+
+            sellerProfileService.updateSellerTotalPayoutWithRefund(item);
+
 
         }
     }

@@ -30,6 +30,7 @@ public class OrderCleanupService {
 
 
 
+
     // Runs once every 5 minutes (300,000 milliseconds)
     @Scheduled(fixedDelay = 120_000)
     @Transactional
@@ -42,6 +43,23 @@ public class OrderCleanupService {
             log.info("Order confirmation scheduler finished");
         } catch (Exception e) {
             log.error("Order confirmation scheduler execution failed", e);
+        }
+
+    }
+
+
+    // Runs once every 5 minutes (300,000 milliseconds)
+    @Scheduled(fixedDelay = 120_000)
+    @Transactional
+    public void handleUnconfirmedPaidOrdersShipmentForRefund() {
+
+        log.info("Shipment confirmation scheduler started");
+
+        try {
+            listingOrderService.validateSellerUnConfirmedOrderForRefund();
+            log.info("Shipment confirmation scheduler finished");
+        } catch (Exception e) {
+            log.error("Shipment confirmation scheduler execution failed", e);
         }
 
     }
