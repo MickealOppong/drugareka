@@ -104,7 +104,7 @@ public class ListingTransaction extends LogEntity {
                 .newPrice(priceDto.getSellerNewPrice())
                 .oldPrice(priceDto.getSellerOldPrice())
                 .isNegotiable(priceDto.getSellerNewPrice().compareTo(priceDto.getSellerMinPrice())>0)
-                .sellerId(listing.getInventory().getSeller().getUser().getId())
+                .sellerId(listing.getInventory().getSeller().getId())
                 .media(media)
                 .build();
     }
@@ -141,7 +141,7 @@ public class ListingTransaction extends LogEntity {
                 .newPrice(priceDto.getSellerNewPrice())
                 .oldPrice(priceDto.getSellerOldPrice())
                 .isNegotiable(priceDto.getSellerNewPrice().compareTo(priceDto.getSellerMinPrice())>0)
-                .sellerId(listing.getInventory().getSeller().getUser().getId())
+                .sellerId(listing.getInventory().getSeller().getId())
                 .media(media)
                 .build();
     }
@@ -179,7 +179,7 @@ public class ListingTransaction extends LogEntity {
                 .serviceCharge(serviceCharge)
                 .shippingCost(shipmentCost)
                 .isNegotiable(priceDto.getSellerNewPrice().compareTo(priceDto.getSellerMinPrice())>0)
-                .sellerId(listing.getInventory().getSeller().getUser().getId())
+                .sellerId(listing.getInventory().getSeller().getId())
                 .media(media)
                 .build();
     }
@@ -206,7 +206,7 @@ public class ListingTransaction extends LogEntity {
                 .shipping(listing.getInventory().getDeliveryInfo())
                 .inventoryId(listing.getInventory().getId())
                 .listingStatus(listing.getListingStatus())
-                .sellerId(listing.getInventory().getSeller().getUser().getId())
+                .sellerId(listing.getInventory().getSeller().getId())
                 .newPrice(priceDto.getSellerNewPrice())
                 .oldPrice(priceDto.getSellerOldPrice())
                 .isNegotiable(priceDto.getSellerNewPrice().compareTo(priceDto.getSellerMinPrice())>0)

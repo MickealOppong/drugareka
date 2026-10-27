@@ -63,15 +63,17 @@ public class AppUserDetailsService implements UserDetailsService {
     private final GlobalAddressRepo globalAddressRepo;
     private final EmailNotificationService emailNotificationService;
     private final MessageSource messageSource;
+    private final SellerProfileRepo sellerProfileRepo;
 
 
-    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo, EmailNotificationService emailNotificationService, MessageSource messageSource) {
+    public AppUserDetailsService(AppUserRepo appUserRepo, AppUserRoleRepo appUserRoleRepo, GlobalAddressRepo globalAddressRepo, EmailNotificationService emailNotificationService, MessageSource messageSource, SellerProfileRepo sellerProfileRepo) {
         this.appUserRepo = appUserRepo;
         this.appUserRoleRepo = appUserRoleRepo;
 
         this.globalAddressRepo = globalAddressRepo;
         this.emailNotificationService = emailNotificationService;
         this.messageSource = messageSource;
+        this.sellerProfileRepo = sellerProfileRepo;
     }
 
 
@@ -251,6 +253,9 @@ public class AppUserDetailsService implements UserDetailsService {
        AppUser appUser= appUserRepo.findByUsername(jwt.getSubject())
                 .orElseThrow(()->new UsernameNotFoundException("User does not exist"));
 
+        //seller profile for id
+        Long sellerProfileId = sellerProfileRepo.findByUserId(appUser.getId()).map(SellerProfile::getId).orElse(null);
+
         //address
         GlobalAddress address =globalAddressRepo.findByAppUserId(appUser.getId()).orElse(null);
         AddressResponse addressResponse=null;
@@ -267,6 +272,7 @@ public class AppUserDetailsService implements UserDetailsService {
                .userId(appUser.getId())
                .email(appUser.getUsername())
                .firstName(appUser.getFirstName())
+               .sellerId(sellerProfileId)
                .lastName(appUser.getLastName())
                .address(addressResponse)
 
@@ -293,10 +299,13 @@ public class AppUserDetailsService implements UserDetailsService {
 
         Page<UserDetailsDto> users = appUserRepo.findAll(pageable).map(appUser -> {
 
+            Long sellerProfileId = sellerProfileRepo.findByUserId(appUser.getId()).map(SellerProfile::getId).orElse(null);
+
          return UserDetailsDto.builder()
                     .userId(appUser.getId())
                     .firstName(appUser.getFirstName())
                     .lastName(appUser.getLastName())
+                 .sellerId(sellerProfileId)
                     .email(appUser.getUsername())
                     .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                     .build();

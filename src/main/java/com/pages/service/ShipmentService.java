@@ -119,14 +119,16 @@ public class ShipmentService {
             );
 
             Page<ShipmentResponse> shipments = sellerShipmentRepo.findBySeller(seller, pageable)
-                    .map(shipment -> ShipmentResponse.builder()
+                    .map(shipment ->
+
+                            ShipmentResponse.builder()
                             .id(shipment.getId())
                             .orderNumber(shipment.getListingOrderItem().getListingOrder().getOrderNumber())
                             .deliveredAt(shipment.getDeliveredAt())
                             .deliveryAddress(shipment.getShippingAddress())
                             .listingOrderId(shipment.getListingOrderItem().getListingId())
                             .seller("Private person")
-                            .confirmationStatus(shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name())
+                            .confirmationStatus(shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!=null?shipment.getSellerShipmentToken().getShipmentConfirmationStatus().name():null)
                             .shippedAt(shipment.getShippedAt())
                             .trackingNumber(shipment.getTrackingNumber())
                             .itemSize(shipment.getItemSize().name())
@@ -229,9 +231,19 @@ public class ShipmentService {
         if (shipment == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.not_found"));
         }
-        //user must update their own shipping
-        if(!appUser.getId().equals(shipment.getSeller().getUser().getId())){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.unauthorized"));
+        // Only the seller who owns this shipment or an admin may update it.
+
+        boolean isSeller = appUser.getId().equals(
+                shipment.getSeller().getUser().getId()
+        );
+
+        boolean isAdmin = appUser.getUserRoles().contains("ROLE_ADMIN");
+
+        if (!isSeller && !isAdmin) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    getMessage("api_errors.shipment.unauthorized")
+            );
         }
 
         if( shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!= ShipmentConfirmationStatus.CONFIRMED){

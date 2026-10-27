@@ -636,6 +636,23 @@ public class ListingTransactionService {
         }
         return null;
     }
+
+
+    @Transactional(readOnly = true)
+    public List<ListTransResponse> getSellerListings(Long sellerId) {
+        if (sellerId != null) {
+
+            return listingTransactionRepo.findAllByInventorySellerId(sellerId).stream()
+                    .map(listing -> {
+                        InventoryItemPrice price = inventoryItemPriceService.getPrices(listing.getInventory().getId());
+                        List<MediaResponse> mediaList = mediaService.getImageList(listing.getInventory().getId());
+                        return ListingTransaction.toListTransResponse(listing, mediaList, price);
+                    }).toList();
+        }
+        return List.of(ListTransResponse.builder().build());
+    }
+
+
     @Transactional
     public void deleteListing(Jwt jwt, Long listing) {
         Locale locale = LocaleContextHolder.getLocale();

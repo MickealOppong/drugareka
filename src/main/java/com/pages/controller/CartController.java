@@ -11,6 +11,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 @Slf4j
 @RestController
@@ -29,6 +30,12 @@ public class CartController {
     @PostMapping("/new")
     public ResponseDto<Object> createCart(@AuthenticationPrincipal Jwt jwt, Long[] listingId) {
         return cartService.addItemToCart(listingId, jwt);
+    }
+
+    @PreAuthorize("hasAuthority('ROLE_USER')")
+    @PostMapping("/offer")
+    public ResponseDto<Object> createOfferCart(@AuthenticationPrincipal Jwt jwt, Long[] listingId, BigDecimal offer) {
+        return cartService.addItemToCartBuyerOffer(listingId,jwt,offer);
     }
 
     @GetMapping("/count")

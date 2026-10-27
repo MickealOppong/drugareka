@@ -93,6 +93,11 @@ public class StoreController {
         return   listingTransactionService.getProductByListingSlug(slug);
     }
 
+    @GetMapping("listings/seller")
+    public List<ListTransResponse> getSellerListings(@RequestParam Long sellerId){
+        return   listingTransactionService.getSellerListings(sellerId);
+    }
+
     @GetMapping("/top6-categories")
     public List<CategoryResponse> top6StoreCategories(){
         return categoryService.top6Categories();

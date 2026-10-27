@@ -22,6 +22,7 @@ public class UserDetailsDto {
     private String firstName;
     private String lastName;
     private String email;
+    private Long sellerId;
     private Set<String> roles;
     private AddressResponse address;
 

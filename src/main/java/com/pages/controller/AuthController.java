@@ -2,10 +2,7 @@ package com.pages.controller;
 
 import com.pages.dto.*;
 import com.pages.exception.InvalidOperationException;
-import com.pages.model.AppUser;
-import com.pages.model.AppUserRole;
-import com.pages.model.RefreshToken;
-import com.pages.model.SellerShipmentToken;
+import com.pages.model.*;
 import com.pages.service.*;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -35,17 +32,19 @@ public class AuthController {
     private final AppUserDetailsService userDetailsService;
     private final RefreshTokenService refreshTokenService;
     private final TokenService tokenService;
+    private final SellerProfileService sellerProfileService;
 
 
 
 
 
     public AuthController(AuthenticationManager authenticationManager, AppUserDetailsService userDetailsService,
-                          RefreshTokenService refreshTokenService, TokenService tokenService) {
+                          RefreshTokenService refreshTokenService, TokenService tokenService, SellerProfileService sellerProfileService) {
         this.authenticationManager = authenticationManager;
         this.userDetailsService = userDetailsService;
         this.refreshTokenService = refreshTokenService;
         this.tokenService = tokenService;
+        this.sellerProfileService = sellerProfileService;
     }
 
 
@@ -95,6 +94,9 @@ public class AuthController {
 
                 RefreshToken refreshToken =refreshTokenService.createToken(appUser);
 
+                //seller profiel id
+                SellerProfile sellerProfile =sellerProfileService.getSellerProfile(appUser.getId());
+                Long sellerId =sellerProfile!=null?sellerProfile.getId():null;
 
                 TokenDto tokenDto = TokenDto.builder()
                         .token(tokenService.token(authenticationResponse).orElse(null))
@@ -106,6 +108,7 @@ public class AuthController {
                         .tokenDto(tokenDto)
                         .email(appUser.getUsername())
                         .userId(appUser.getId())
+                        .sellerId(sellerId)
                         .roles(appUser.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
                         .firstName(appUser.getFirstName())
                         .hasAddress(userDetailsService.hasAddress(appUser.getId()))

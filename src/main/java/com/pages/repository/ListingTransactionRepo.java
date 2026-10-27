@@ -3,6 +3,7 @@ package com.pages.repository;
 import com.pages.enums.InventoryStatus;
 import com.pages.enums.ListingStatus;
 import com.pages.model.ListingTransaction;
+import com.pages.model.SellerProfile;
 import jdk.jfr.Registered;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -41,6 +42,7 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
     );
 
 
+    List<ListingTransaction> findAllByInventorySellerId(Long sellerIf);
 
     List<ListingTransaction> findTop8ByInventoryStatusAndListingStatusOrderByCreatedAtDesc(InventoryStatus inventoryStatus,ListingStatus listingStatus);
 

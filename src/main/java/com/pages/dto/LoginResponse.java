@@ -15,6 +15,7 @@ public class LoginResponse {
     private String firstName;
     private String lastName;
     private String email;
+    private Long sellerId;
     private TokenDto tokenDto;
     private Set<String> roles;
     private Boolean hasAddress;
