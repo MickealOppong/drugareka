@@ -213,6 +213,21 @@ public class ShippingOptionService {
 
     }
 
+    public BigDecimal getItemShippingPrice(InventoryItem item,String selectedMethod) {
+
+
+        ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
+
+        return shippingOptionRepo
+                .findByItemSizeAndShippingMethodAndActiveTrue(
+                        item.getItemSize(),shippingMethod).map(ShippingOption::getPrice)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Shipping price not configured for combination size " + item.getItemSize()+" and method "
+                                +shippingMethod
+                ));
+
+    }
+
     private boolean isHeavyOrBulky(ItemSize size) {
         return size == ItemSize.HEAVY_OVER_50KG
                 || size == ItemSize.LARGE_UP_50KG;
@@ -271,6 +286,12 @@ public class ShippingOptionService {
         );
 
         return basePrice.multiply(multiplier);
+
+    }
+
+    public BigDecimal calculateSingleShippingPrice(InventoryItem item,String method) {
+
+    return getItemShippingPrice(item,method);
 
     }
 

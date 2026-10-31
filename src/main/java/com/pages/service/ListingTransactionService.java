@@ -514,7 +514,7 @@ public class ListingTransactionService {
                 OfferResponse offerDto = OfferResponse.builder()
                         .price(offer)
                         .serviceCharge(pricingService.getServiceCharge(offer))
-                        .shipping(shippingOptionService.getShippingOption(inventory.getItemSize()).getPrice())
+                        .shipping(shippingOptionService.calculateSingleShippingPrice(inventory,ShippingMethod.COURIER.name()))
                         .build();
                 return ResponseDto.builder()
                         .data(offerDto)
@@ -592,6 +592,8 @@ public class ListingTransactionService {
         }
         return accumulatedTotal;
     }
+
+
     @Transactional(readOnly = true)
     public ProductListResponse getProductById(Jwt jwt,Long listingId) {
         if(jwt==null){
@@ -602,7 +604,7 @@ public class ListingTransactionService {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
             BigDecimal serviceCharge = pricingService.getServiceCharge(price.getSellerNewPrice());
-            BigDecimal shipmentCost  = shippingOptionService.getShippingOption(listingTransaction.getInventory().getItemSize()).getPrice();
+            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),ShippingMethod.COURIER.name());
             return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
         }
         return ProductListResponse.builder().build();

@@ -353,8 +353,6 @@ public class CartService {
                 Optional<CartItem> existingItem = cartItemRepository
                         .findByCartIdAndListingId(cart.getId(), targetListingId);
 
-                BigDecimal shippingCost = shippingOptionService.getShippingOption(inventoryItem.getItemSize())!=null?
-                        shippingOptionService.getShippingOption(inventoryItem.getItemSize()).getPrice():BigDecimal.ZERO;
 
                 if (existingItem.isPresent()) {
                     CartItem cartItem = existingItem.get();
