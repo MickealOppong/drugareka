@@ -35,8 +35,8 @@ private final PaymentService paymentService;
      */
     @Primary
     //@Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
-    @Scheduled(fixedDelay = 120_000)
-    public void executePayout() {
+    @Scheduled(fixedDelay = 240_000)
+    public void executeRefund() {
         log.info("Refund scheduler started");
 
         try {
@@ -44,6 +44,26 @@ private final PaymentService paymentService;
             log.info("Refund scheduler finished");
         } catch (Exception e) {
             log.error("Refund scheduler execution failed", e);
+        }
+    }
+
+
+
+    /**
+     * Process eligible seller payouts.
+     * Runs again 2 minutes after the previous execution finishes.
+     */
+    @Primary
+    //@Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
+    @Scheduled(fixedDelay = 120_000)
+    public void reconcileRefund() {
+        log.info("Reconciling refund to stripe ledger started");
+
+        try {
+            paymentService.reconcileRefundToStripeLedge();
+            log.info("Reconciling refund to stripe ledger finished");
+        } catch (Exception e) {
+            log.error("Reconciliation to stripe ledger finished", e);
         }
     }
 

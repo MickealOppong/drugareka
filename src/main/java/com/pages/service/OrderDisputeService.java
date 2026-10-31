@@ -166,16 +166,9 @@ public class OrderDisputeService {
                 log.info("Seller approved complaint return for order: {}. Upgrading tracking status rules.", orderNumber);
                 orderDispute.setDisputeStatus(DisputeStatus.AWAITING_RETURN_PAYMENT);
                 OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
-/*
-                Session session = stripePaymentProviderService.createEmbeddedConnectCheckoutSessionShipmentCostURL(orderDispute,
-                        LocaleContextHolder.getLocale().getLanguage());
-                String paymentURL = paymentService.createReturnShippingPayment(session,orderDispute).getData();
-                //notify seller
-                String email = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
-                emailNotificationService.sendReturnShippingPaymentRequest(email,orderNumber, orderDispute.getTicketId(),paymentURL);
 
- */
-                String email = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
+                AppUser buyer = orderDispute.getListingOrderItem().getListingOrder().getBuyer();
+                String email = buyer.getUsername();
 
                 emailNotificationService.sendSellerResponseToBuyerComplaint(email,orderNumber,decision, reason);
                 return ResponseDto.builder()
@@ -190,9 +183,11 @@ public class OrderDisputeService {
                 orderDispute.setDisputeStatus(DisputeStatus.UNDER_REVIEW);
                 orderDisputeRepo.save(orderDispute);
 
-                String email = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
+                AppUser buyer = orderDispute.getListingOrderItem().getListingOrder().getBuyer();
+                String email = buyer.getUsername();
 
                 emailNotificationService.sendSellerResponseToBuyerComplaint(email,orderNumber,decision, reason);
+
                 return ResponseDto.builder()
                         .data(null)
                         .httpStatus(HttpStatus.OK.value())

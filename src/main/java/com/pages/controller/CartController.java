@@ -60,4 +60,10 @@ public class CartController {
 
     }
 
+    @PutMapping("/shipping/method")
+    public void updateShippingMethod(@AuthenticationPrincipal Jwt jwt, @RequestParam String shippingMethod) {
+          cartService.updateCartShippingMethod(jwt, shippingMethod);
+
+    }
+
 }

@@ -33,6 +33,7 @@ public class ServiceCharge extends LogEntity {
     @JoinColumn(name = "buyer_id", nullable = false)
     private AppUser buyer;
 
+    private String orderNumber;
 
     /**
      * Amount before tax.

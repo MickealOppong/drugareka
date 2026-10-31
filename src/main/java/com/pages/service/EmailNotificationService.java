@@ -244,25 +244,48 @@ public class EmailNotificationService {
      * Adds the shared Kasoa footer at the dispatch boundary so every notification
      * uses the same brand sign-off without changing its transactional content.
      */
+    /**
+     * Applies the shared Kasoa email presentation at the dispatch boundary.
+     * Existing email content and action links are preserved; legacy brand
+     * colors are normalized and missing header/footer sections are supplied.
+     */
     private String applyKasoaEmailBranding(String htmlContent) {
         if (htmlContent == null || htmlContent.isBlank()) {
             return htmlContent;
         }
 
-        String footer = """
-            <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"
-                   style="width:100%%;border-collapse:collapse;margin-top:0;background:#182016;">
+        String branded = htmlContent
+                .replaceAll("(?i)#66704A", "#68764B")
+                .replaceAll("(?i)#5E6C6A", "#68764B");
+
+        String header = """
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%;border-collapse:collapse;background-color:#68764B;">
                 <tr>
-                    <td align="center" style="padding:24px 20px;background:#182016;">
+                    <td align="center" style="padding:26px 20px;background-color:#68764B;text-align:center;">
+                        <div style="font-family:Arial,Helvetica,sans-serif;font-size:27px;line-height:34px;
+                                    font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;">
+                            kasoa<span style="font-weight:400;color:#E4E8D9;">.pl</span>
+                        </div>
+                        <div style="margin-top:5px;font-family:Arial,Helvetica,sans-serif;
+                                    font-size:12px;line-height:18px;color:#E9EDDF;">
+                            Druga ręka. Dobre rzeczy. Mniej odpadów.
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            """;
+
+        String footer = """
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%;border-collapse:collapse;background-color:#182016;">
+                <tr>
+                    <td align="center" style="padding:25px 20px;background-color:#182016;text-align:center;">
                         <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:24px;
-                                    font-weight:800;color:#FFFFFF;">
-                            kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span>
-                        </div>
+                                    font-weight:800;color:#FFFFFF;">kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span></div>
                         <div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:11px;
-                                    line-height:18px;color:#AEB69D;">
-                            Good things. A second chance.
-                        </div>
-                        <div style="margin-top:14px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                                    line-height:18px;color:#AEB69D;">Good things. A second chance.</div>
+                        <div style="margin-top:13px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
                                     line-height:17px;color:#AEB69D;">
                             Ta wiadomość została wygenerowana automatycznie.<br>
                             Zarządzaj swoimi produktami i zamówieniami na Kasoa.pl.
@@ -272,16 +295,98 @@ public class EmailNotificationService {
             </table>
             """;
 
-        // Avoid adding a second shared footer if this template already has the exact branding.
-        if (htmlContent.contains("Good things. A second chance.")) {
-            return htmlContent;
+        String lower = branded.toLowerCase(Locale.ROOT);
+        int bodyOpen = lower.indexOf("<body");
+        int bodyContentStart = bodyOpen >= 0 ? lower.indexOf('>', bodyOpen) + 1 : 0;
+        int firstContentEnd = Math.min(branded.length(), bodyContentStart + 5000);
+        String openingContent = branded.substring(bodyContentStart, firstContentEnd);
+        boolean hasHeader = openingContent.contains("<!-- HEADER -->")
+                || (openingContent.toLowerCase(Locale.ROOT).contains("kasoa")
+                && openingContent.matches("(?is).*background(?:-color)?\\s*:\\s*#68764B.*"));
+
+        if (!hasHeader) {
+            if (bodyOpen >= 0 && bodyContentStart > 0) {
+                branded = branded.substring(0, bodyContentStart) + header + branded.substring(bodyContentStart);
+            } else {
+                branded = header + branded;
+            }
         }
 
-        int bodyEnd = htmlContent.toLowerCase(Locale.ROOT).lastIndexOf("</body>");
-        if (bodyEnd >= 0) {
-            return htmlContent.substring(0, bodyEnd) + footer + htmlContent.substring(bodyEnd);
+        // Normalize every explicitly marked header/footer, including older templates.
+        branded = normalizeKasoaSection(branded, "<!-- HEADER -->", "#68764B", "#FFFFFF");
+        branded = normalizeKasoaSection(branded, "<!-- FOOTER -->", "#182016", "#FFFFFF");
+
+        lower = branded.toLowerCase(Locale.ROOT);
+        int sloganIndex = branded.lastIndexOf("Good things. A second chance.");
+        int footerSearchStart = Math.max(0, sloganIndex - 2200);
+        boolean hasFooter = branded.contains("<!-- FOOTER -->")
+                || (sloganIndex >= 0
+                && branded.substring(footerSearchStart, sloganIndex)
+                .matches("(?is).*background(?:-color)?\\s*:\\s*#182016.*"));
+        if (!hasFooter) {
+            int bodyEnd = lower.lastIndexOf("</body>");
+            branded = bodyEnd >= 0
+                    ? branded.substring(0, bodyEnd) + footer + branded.substring(bodyEnd)
+                    : branded + footer;
         }
-        return htmlContent + footer;
+
+        // Force a centered, responsive email canvas for table- and div-based templates.
+        String centeredStyles = """
+            <style id="kasoa-email-base">
+                html, body { width:100% !important; margin:0 !important; padding:0 !important;
+                    background-color:#F5F6F1 !important; }
+                body { font-family:Arial,Helvetica,sans-serif !important; color:#182016; }
+                body > table, body > div, body > center { margin-left:auto !important; margin-right:auto !important; }
+                table { border-collapse:collapse; }
+                img { max-width:100%; height:auto; border:0; }
+                @media only screen and (max-width:600px) {
+                    table[role="presentation"] { max-width:100% !important; }
+                    .kasoa-email-content { padding-left:18px !important; padding-right:18px !important; }
+                }
+            </style>
+            """;
+        lower = branded.toLowerCase(Locale.ROOT);
+        int headEnd = lower.indexOf("</head>");
+        if (headEnd >= 0 && !lower.contains("id=\"kasoa-email-base\"")) {
+            branded = branded.substring(0, headEnd) + centeredStyles + branded.substring(headEnd);
+        } else if (headEnd < 0 && bodyOpen >= 0) {
+            int bodyTagStart = lower.indexOf("<body");
+            int bodyTagEnd = lower.indexOf('>', bodyTagStart);
+            if (bodyTagEnd >= 0) {
+                branded = branded.substring(0, bodyTagEnd + 1) + centeredStyles + branded.substring(bodyTagEnd + 1);
+            }
+        }
+
+        // Center all fixed-width email containers, regardless of whether their
+        // original template used a table or a div wrapper.
+        branded = branded.replaceAll("(?i)max-width\\s*:\\s*(600|650)px\\s*;?", "max-width:$1px;margin-left:auto;margin-right:auto;");
+        return branded;
+    }
+
+    private String normalizeKasoaSection(String html, String marker, String background, String textColor) {
+        int markerIndex = html.indexOf(marker);
+        if (markerIndex < 0) {
+            return html;
+        }
+        int tdStart = html.indexOf("<td", markerIndex + marker.length());
+        if (tdStart < 0 || tdStart - markerIndex > 1200) {
+            return html;
+        }
+        int styleStart = html.indexOf("style=\"", tdStart);
+        int tagEnd = html.indexOf('>', tdStart);
+        if (styleStart < 0 || styleStart > tagEnd) {
+            return html;
+        }
+        int styleValueStart = styleStart + 7;
+        int styleEnd = html.indexOf('"', styleValueStart);
+        if (styleEnd < 0 || styleEnd > tagEnd) {
+            return html;
+        }
+        String style = html.substring(styleValueStart, styleEnd);
+        style = style.replaceAll("(?i)background(?:-color)?\\s*:[^;]+;?", "");
+        style = style.replaceAll("(?i)text-align\\s*:[^;]+;?", "");
+        style = "background-color:" + background + ";text-align:center;" + style;
+        return html.substring(0, styleValueStart) + style + html.substring(styleEnd);
     }
 
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
@@ -1700,7 +1805,7 @@ public class EmailNotificationService {
             <div style="max-width:600px; margin:40px auto; background:#ffffff;
                         padding:32px; border-radius:8px;">
 
-                <h2 style="margin-top:0; color:#66704A;">
+                <h2 style="margin-top:0; color:#68764B;">
                     Cześć %s!
                 </h2>
 
@@ -1854,7 +1959,7 @@ public class EmailNotificationService {
             <div style="max-width:650px; margin:40px auto; background:#ffffff;
                         border-radius:8px; padding:35px;">
 
-                <h2 style="margin-top:0; color:#66704A;">
+                <h2 style="margin-top:0; color:#68764B;">
                     DAC7 Annual Tax Year Reset
                 </h2>
 
@@ -3849,12 +3954,16 @@ public class EmailNotificationService {
         String subject = "Aktualizacja dotycząca zwrotu lub reklamacji - zamówienie nr "
                 + orderNumber;
 
-        String safeOrderNumber = escapeHtml(orderNumber);
+        String safeOrderNumber = escapeHtml(
+                orderNumber == null || orderNumber.isBlank() ? "-" : orderNumber
+        );
+
         String safeDecision = escapeHtml(
                 decision == null || decision.isBlank()
                         ? "Odrzucono wniosek"
                         : decision
         );
+
         String safeReason = escapeHtml(
                 reason == null || reason.isBlank()
                         ? "Sprzedający nie podał uzasadnienia."
@@ -3862,148 +3971,206 @@ public class EmailNotificationService {
         );
 
         String html = """
-        <!DOCTYPE html>
-        <html lang="pl">
-        <body style="margin:0;padding:0;background-color:#f9f9f9;
-                     font-family:Helvetica Neue,Helvetica,Arial,sans-serif;
-                     color:#0D1313;">
-          <table role="presentation" width="100%%" cellspacing="0"
-                 cellpadding="0" border="0"
-                 style="background-color:#f9f9f9;">
-            <tr>
-              <td align="center" style="padding:24px 12px;">
-                <table role="presentation" width="100%%" cellspacing="0"
-                       cellpadding="0" border="0"
-                       style="max-width:600px;background-color:#ffffff;
-                              border:1px solid #E0E7E6;">
+    <!DOCTYPE html>
+    <html lang="pl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Aktualizacja dotycząca zwrotu lub reklamacji</title>
+    </head>
 
-                  <!-- Nagłówek -->
-                  <tr>
-                    <td style="padding:24px 28px;border-bottom:1px solid #E0E7E6;">
-                      <div style="font-size:28px;font-weight:700;color:#0D1313;">
-                        Kasoa<span style="font-weight:400;color:#5E6C6A;">.pl</span>
-                      </div>
-                    </td>
-                  </tr>
+    <body style="margin:0;padding:0;background-color:#F5F6F1;
+                 font-family:Arial,Helvetica,sans-serif;color:#182016;">
 
-                  <!-- Treść wiadomości -->
-                  <tr>
-                    <td style="padding:28px;">
+      <table role="presentation" width="100%%" cellspacing="0"
+             cellpadding="0" border="0"
+             style="width:100%%;border-collapse:collapse;background-color:#F5F6F1;">
+        <tr>
+          <td align="center" style="padding:32px 12px;">
 
-                      <h2 style="margin:0 0 16px;font-size:22px;color:#0D1313;">
-                        Aktualizacja dotycząca zwrotu lub reklamacji
-                      </h2>
+            <table role="presentation" width="100%%" cellspacing="0"
+                   cellpadding="0" border="0"
+                   style="width:100%%;max-width:600px;border-collapse:collapse;
+                          background-color:#FFFFFF;border:1px solid #E0E7E6;">
 
-                      <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-                        Sprzedający rozpatrzył Twój wniosek dotyczący zwrotu
-                        lub reklamacji i go odrzucił. Poniżej znajdziesz
-                        odpowiedź sprzedającego.
-                      </p>
+              <!-- HEADER -->
+              <tr>
+                <td align="left"
+                    style="padding:25px 30px;background-color:#68764B;">
 
-                      <!-- Szczegóły zamówienia -->
-                      <table role="presentation" width="100%%" cellspacing="0"
-                             cellpadding="0" border="0"
-                             style="background-color:#f9f9f9;
-                                    border:1px solid #E0E7E6;">
-                        <tr>
-                          <td style="padding:16px;">
+                  <div style="font-size:28px;line-height:1.2;
+                              font-weight:700;letter-spacing:-0.5px;
+                              color:#FFFFFF;">
+                    Kasoa<span style="font-weight:400;color:#E2E8D8;">.pl</span>
+                  </div>
 
-                            <p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Numer zamówienia
-                            </p>
+                  <p style="margin:7px 0 0;font-size:12px;line-height:1.5;
+                            color:#F0F2E9;">
+                    Druga ręka. Dobre rzeczy. Mniej odpadów.
+                  </p>
 
-                            <p style="margin:0 0 16px;font-size:16px;font-weight:700;">
-                              #%s
-                            </p>
+                </td>
+              </tr>
 
-                            <p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Decyzja sprzedającego
-                            </p>
+              <!-- EMAIL CONTENT -->
+              <tr>
+                <td class="kasoa-email-content"
+                    style="padding:34px 30px 32px;">
 
-                            <p style="margin:0 0 16px;font-size:15px;font-weight:700;
-                                      color:#9B2C2C;">
-                              %s
-                            </p>
+                  <h1 style="margin:0 0 18px;font-size:23px;
+                             line-height:1.35;font-weight:700;color:#182016;">
+                    Aktualizacja dotycząca zwrotu lub reklamacji
+                  </h1>
 
-                            <p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Uzasadnienie sprzedającego
-                            </p>
+                  <p style="margin:0 0 22px;font-size:15px;
+                            line-height:1.7;color:#39433A;">
+                    Sprzedający rozpatrzył Twój wniosek dotyczący zwrotu
+                    lub reklamacji i go odrzucił. Poniżej znajdziesz
+                    odpowiedź sprzedającego.
+                  </p>
 
-                            <p style="margin:0;font-size:15px;line-height:1.6;
-                                      white-space:pre-line;overflow-wrap:anywhere;">
-                              %s
-                            </p>
+                  <!-- ORDER DETAILS -->
+                  <table role="presentation" width="100%%" cellspacing="0"
+                         cellpadding="0" border="0"
+                         style="width:100%%;border-collapse:collapse;
+                                background-color:#F5F6F1;
+                                border:1px solid #E0E7E6;">
 
-                          </td>
-                        </tr>
-                      </table>
+                    <tr>
+                      <td style="padding:22px;">
 
-                      <!-- Weryfikacja przez administratora -->
-                      <table role="presentation" width="100%%" cellspacing="0"
-                             cellpadding="0" border="0"
-                             style="margin-top:24px;background-color:#EDF7F3;
-                                    border-left:4px solid #66704A;">
-                        <tr>
-                          <td style="padding:18px;">
+                        <p style="margin:0 0 6px;font-size:12px;
+                                  line-height:1.5;font-weight:600;
+                                  color:#68764B;text-transform:uppercase;
+                                  letter-spacing:0.5px;">
+                          Numer zamówienia
+                        </p>
 
-                            <h3 style="margin:0 0 12px;font-size:18px;
-                                       color:#1E3A3A;">
-                              Sprawa jest w trakcie weryfikacji
-                            </h3>
+                        <p style="margin:0 0 20px;font-size:16px;
+                                  line-height:1.5;font-weight:700;
+                                  color:#182016;">
+                          #%s
+                        </p>
 
-                            <p style="margin:0 0 12px;font-size:15px;
-                                      line-height:1.6;">
-                              Twoja sprawa została przekazana administratorowi
-                              Kasoa.pl do dalszego rozpatrzenia.
-                            </p>
+                        <p style="margin:0 0 6px;font-size:12px;
+                                  line-height:1.5;font-weight:600;
+                                  color:#68764B;text-transform:uppercase;
+                                  letter-spacing:0.5px;">
+                          Decyzja sprzedającego
+                        </p>
 
-                            <p style="margin:0 0 12px;font-size:15px;
-                                      line-height:1.6;">
-                              Administrator dokładnie przeanalizuje uzasadnienie
-                              sprzedającego, zdjęcia dowodowe przesłane przez
-                              Ciebie oraz pierwotne ogłoszenie produktu przed
-                              podjęciem ostatecznej decyzji.
-                            </p>
+                        <p style="margin:0 0 20px;font-size:15px;
+                                  line-height:1.6;font-weight:700;
+                                  color:#9B2C2C;">
+                          %s
+                        </p>
 
-                            <p style="margin:0;font-size:15px;line-height:1.6;">
-                              Powiadomimy Cię, gdy weryfikacja zostanie zakończona.
-                              Odrzucenie wniosku przez sprzedającego nie oznacza,
-                              że Kasoa.pl podjęło już ostateczną decyzję w Twojej
-                              sprawie.
-                            </p>
+                        <p style="margin:0 0 6px;font-size:12px;
+                                  line-height:1.5;font-weight:600;
+                                  color:#68764B;text-transform:uppercase;
+                                  letter-spacing:0.5px;">
+                          Uzasadnienie sprzedającego
+                        </p>
 
-                          </td>
-                        </tr>
-                      </table>
+                        <p style="margin:0;font-size:14px;
+                                  line-height:1.7;color:#39433A;
+                                  white-space:pre-line;overflow-wrap:anywhere;">
+                          %s
+                        </p>
 
-                      <p style="margin:24px 0 0;font-size:15px;line-height:1.6;">
-                        Dziękujemy za cierpliwość podczas rozpatrywania sprawy.
-                      </p>
+                      </td>
+                    </tr>
+                  </table>
 
-                      <p style="margin:20px 0 0;font-size:15px;line-height:1.6;">
-                        Pozdrawiamy,<br/>
-                        <strong>Zespół Kasoa.pl</strong>
-                      </p>
+                  <!-- ADMIN REVIEW NOTICE -->
+                  <table role="presentation" width="100%%" cellspacing="0"
+                         cellpadding="0" border="0"
+                         style="width:100%%;margin-top:24px;
+                                border-collapse:collapse;
+                                background-color:#EDF7F3;
+                                border-left:4px solid #68764B;">
 
-                    </td>
-                  </tr>
+                    <tr>
+                      <td style="padding:21px 20px;">
 
-                  <!-- Stopka -->
-                  <tr>
-                    <td style="padding:18px 28px;background-color:#263322;
-                               color:#ffffff;font-size:12px;line-height:1.6;">
-                      Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.<br/>
-                      To automatyczne powiadomienie dotyczące Twojego zamówienia.
-                    </td>
-                  </tr>
+                        <h2 style="margin:0 0 12px;font-size:17px;
+                                   line-height:1.4;font-weight:700;
+                                   color:#1E3A3A;">
+                          Sprawa jest w trakcie weryfikacji
+                        </h2>
 
-                </table>
-              </td>
-            </tr>
-          </table>
-        </body>
-        </html>
-        """.formatted(
+                        <p style="margin:0 0 12px;font-size:14px;
+                                  line-height:1.7;color:#39433A;">
+                          Twoja sprawa została przekazana administratorowi
+                          Kasoa.pl do dalszego rozpatrzenia.
+                        </p>
+
+                        <p style="margin:0 0 12px;font-size:14px;
+                                  line-height:1.7;color:#39433A;">
+                          Administrator przeanalizuje uzasadnienie
+                          sprzedającego, przesłane przez Ciebie zdjęcia
+                          dowodowe oraz pierwotne ogłoszenie produktu
+                          przed podjęciem ostatecznej decyzji.
+                        </p>
+
+                        <p style="margin:0;font-size:14px;
+                                  line-height:1.7;color:#39433A;">
+                          Powiadomimy Cię po zakończeniu weryfikacji.
+                          Odrzucenie wniosku przez sprzedającego nie oznacza,
+                          że Kasoa.pl podjęło już ostateczną decyzję
+                          w Twojej sprawie.
+                        </p>
+
+                      </td>
+                    </tr>
+                  </table>
+
+                  <p style="margin:25px 0 0;font-size:14px;
+                            line-height:1.7;color:#39433A;">
+                    Dziękujemy za cierpliwość podczas rozpatrywania sprawy.
+                  </p>
+
+                  <p style="margin:22px 0 0;font-size:14px;
+                            line-height:1.7;color:#39433A;">
+                    Pozdrawiamy,<br>
+                    <strong style="color:#182016;">Zespół Kasoa.pl</strong>
+                  </p>
+
+                </td>
+              </tr>
+
+              <!-- FOOTER -->
+              <tr>
+                <td style="padding:23px 30px;background-color:#182016;">
+
+                  <p style="margin:0 0 8px;font-size:14px;
+                            line-height:1.5;font-weight:700;color:#FFFFFF;">
+                    Good things. A second chance.
+                  </p>
+
+                  <p style="margin:0 0 8px;font-size:12px;
+                            line-height:1.6;color:#AEB69D;">
+                    Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.
+                  </p>
+
+                  <p style="margin:0;font-size:11px;
+                            line-height:1.6;color:#AEB69D;">
+                    To automatyczne powiadomienie dotyczące Twojego zamówienia.
+                    Prosimy na nie nie odpowiadać.
+                  </p>
+
+                </td>
+              </tr>
+
+            </table>
+
+          </td>
+        </tr>
+      </table>
+
+    </body>
+    </html>
+    """.formatted(
                 safeOrderNumber,
                 safeDecision,
                 safeReason
@@ -4166,7 +4333,7 @@ public class EmailNotificationService {
                   </tr>
 
                   <tr>
-                    <td style="padding:18px 28px;background-color:#263322;
+                    <td style="padding:18px 28px;background-color:#182016;
                                color:#ffffff;font-size:12px;line-height:1.6;">
                       Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.<br/>
                       To automatyczne powiadomienie dotyczące Twojego zamówienia.
@@ -5279,6 +5446,7 @@ public class EmailNotificationService {
 
 
 
+
     @Async
     public void sendShipmentStatusToBuyer(
             String buyerEmail,
@@ -5300,18 +5468,15 @@ public class EmailNotificationService {
         switch (status) {
             case "SHIPPED" -> {
                 statusLabel = "WYSŁANO (shipped)";
-                subject = "Twoje zamówienie #" + orderNumber
-                        + " zostało wysłane 📦";
+                subject = "Twoje zamówienie #" + orderNumber + " zostało wysłane 📦";
             }
             case "DELIVERED" -> {
                 statusLabel = "DOSTARCZONO (delivered)";
-                subject = "Twoje zamówienie #" + orderNumber
-                        + " zostało dostarczone ✓";
+                subject = "Twoje zamówienie #" + orderNumber + " zostało dostarczone ✓";
             }
             case "RECEIVED" -> {
                 statusLabel = "ODBIÓR POTWIERDZONY (received)";
-                subject = "Odbiór zamówienia #" + orderNumber
-                        + " został potwierdzony ✓";
+                subject = "Odbiór zamówienia #" + orderNumber + " został potwierdzony ✓";
             }
             case "PROCESSING" -> {
                 statusLabel = "W REALIZACJI (processing)";
@@ -5323,40 +5488,36 @@ public class EmailNotificationService {
             }
             case "CANCELLED" -> {
                 statusLabel = "ANULOWANO (cancelled)";
-                subject = "Twoje zamówienie #" + orderNumber
-                        + " zostało anulowane";
+                subject = "Twoje zamówienie #" + orderNumber + " zostało anulowane";
             }
             case "PENDING" -> {
                 statusLabel = "OCZEKUJE NA REALIZACJĘ (pending)";
                 subject = "Aktualizacja zamówienia #" + orderNumber;
             }
             default -> {
-                statusLabel = "ZAKTUALIZOWANO ("
-                        + status.toLowerCase(Locale.ROOT) + ")";
+                statusLabel = "ZAKTUALIZOWANO (" + status.toLowerCase(Locale.ROOT) + ")";
                 subject = "Aktualizacja zamówienia #" + orderNumber;
             }
         }
 
         String safeBuyerName = escapeHtml(
-                buyerName == null || buyerName.isBlank()
-                        ? "Kliencie"
-                        : buyerName
+                buyerName == null || buyerName.isBlank() ? "Kliencie" : buyerName
         );
         String safeOrderNumber = escapeHtml(orderNumber);
         String safeProductName = escapeHtml(productName);
         String safeShipmentStatus = escapeHtml(statusLabel);
 
-        // Receipt confirmation and 24-hour notice.
+        // Receipt confirmation is available only after delivery.
         String receiptConfirmationHtml = "";
 
-        boolean confirmationStatus =
-                "SHIPPED".equals(status) || "DELIVERED".equals(status);
+        boolean isDelivered = "DELIVERED".equals(status);
 
         boolean hasConfirmationToken =
                 receiptConfirmationToken != null
                         && !receiptConfirmationToken.isBlank();
 
-        if (confirmationStatus && hasConfirmationToken) {
+        if (isDelivered && hasConfirmationToken) {
+
             String receiptConfirmationUrl =
                     deliveryConfirmationUrl
                             + "/confirm-receipt?token="
@@ -5365,108 +5526,133 @@ public class EmailNotificationService {
                             StandardCharsets.UTF_8
                     );
 
-            String confirmationTitle = "DELIVERED".equals(status)
-                    ? "Przesyłka została dostarczona (delivered)"
-                    : "Otrzymałeś przesyłkę? (shipped)";
-
             receiptConfirmationHtml = """
-                <table role="presentation" width="100%%"
-                       cellpadding="0" cellspacing="0" border="0"
-                       style="width:100%%; table-layout:fixed;
-                              border-collapse:collapse;
-                              background:#EEF1E8;
-                              border:1px solid #DDE4D1;
-                              border-radius:14px;
-                              margin:0 0 24px 0;">
-                    <tr>
-                        <td align="center"
-                            style="padding:26px 20px; text-align:center;
-                                   overflow-wrap:anywhere;">
+            <table role="presentation" width="100%%"
+                   cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%%;table-layout:fixed;
+                          border-collapse:collapse;
+                          background:#EEF1E8;
+                          border:1px solid #DDE4D1;
+                          border-radius:14px;
+                          margin:0 0 24px 0;">
+                <tr>
+                    <td align="center"
+                        style="padding:26px 20px;text-align:center;
+                               overflow-wrap:anywhere;">
 
-                            <div style="font-size:30px; line-height:36px;
-                                        margin-bottom:10px;">
-                                📦
-                            </div>
+                        <div style="font-size:30px;line-height:36px;
+                                    margin-bottom:10px;">
+                            📦
+                        </div>
 
-                            <div style="font-size:18px; line-height:26px;
-                                        font-weight:700; color:#182016;
-                                        margin-bottom:10px;">
-                                %s
-                            </div>
+                        <div style="font-size:19px;line-height:27px;
+                                    font-weight:700;color:#182016;
+                                    margin-bottom:10px;">
+                            Otrzymałeś przesyłkę?
+                        </div>
 
-                            <div style="font-size:14px; line-height:22px;
-                                        color:#596052; margin-bottom:18px;">
-                                Otrzymałeś przesyłkę? Sprawdź przedmiot
-                                po dostawie.
-                            </div>
+                        <div style="font-size:14px;line-height:22px;
+                                    color:#596052;margin-bottom:18px;">
+                            Sprawdź otrzymany przedmiot i porównaj go
+                            z zamówieniem oraz opisem sprzedawcy.
+                        </div>
 
-                            <!-- 24-HOUR DEADLINE -->
-                            <table role="presentation" width="100%%"
-                                   cellpadding="0" cellspacing="0" border="0"
-                                   style="width:100%%; table-layout:fixed;
-                                          border-collapse:collapse;
-                                          background:#FFFFFF;
-                                          border:1px solid #DDE4D1;
-                                          margin:0 0 20px 0;">
-                                <tr>
-                                    <td style="padding:16px; text-align:left;
-                                               overflow-wrap:anywhere;
-                                               word-wrap:break-word;">
+                        <!-- 24-HOUR DEADLINE -->
+                        <table role="presentation" width="100%%"
+                               cellpadding="0" cellspacing="0" border="0"
+                               style="width:100%%;table-layout:fixed;
+                                      border-collapse:collapse;
+                                      background:#FFFFFF;
+                                      border:1px solid #DDE4D1;
+                                      margin:0 0 20px 0;">
+                            <tr>
+                                <td style="padding:16px;text-align:left;
+                                           overflow-wrap:anywhere;
+                                           word-wrap:break-word;">
 
-                                        <div style="font-size:14px;
-                                                    line-height:21px;
-                                                    font-weight:700;
-                                                    color:#263322;
-                                                    margin-bottom:8px;">
-                                            ⏰ Masz 24 godziny od dostawy
-                                        </div>
+                                    <div style="font-size:14px;
+                                                line-height:21px;
+                                                font-weight:700;
+                                                color:#182016;
+                                                margin-bottom:8px;">
+                                        ⏰ Masz 24 godziny od dostawy
+                                    </div>
 
-                                        <div style="font-size:13px;
-                                                    line-height:21px;
-                                                    color:#596052;">
-                                            W ciągu 24 godzin od dostarczenia
-                                            przesyłki zaloguj się na swoje konto
-                                            Kasoa.pl i przejdź do
-                                            <strong>Konto → Zamówienia</strong>.
-                                            <br><br>
-                                            Jeśli przedmiot jest zgodny
-                                            z zamówieniem, potwierdź odbiór.
-                                            Jeśli chcesz zgłosić problem lub
-                                            złożyć wniosek o zwrot, zrób to
-                                            w tym samym miejscu i dołącz
-                                            <strong>zdjęcia dokumentujące problem</strong>.
-                                        </div>
+                                    <div style="font-size:13px;
+                                                line-height:21px;
+                                                color:#596052;">
 
-                                    </td>
-                                </tr>
-                            </table>
+                                        <strong>Jeśli wszystko jest w porządku:</strong>
+                                        <br>
+                                        Kliknij przycisk poniżej, aby potwierdzić
+                                        odbiór przedmiotu. Nie musisz logować się
+                                        na swoje konto.
+                                        <br><br>
 
-                            <a href="%s"
-                               style="display:inline-block;
-                                      background:#66704A;
-                                      color:#FFFFFF;
-                                      text-decoration:none;
-                                      font-size:15px;
-                                      line-height:20px;
-                                      font-weight:700;
-                                      padding:14px 24px;
-                                      border-radius:10px;">
-                                ✓ Potwierdź odbiór przedmiotu
-                            </a>
+                                        <strong>Jeśli zauważysz istotne rozbieżności:</strong>
+                                        <br>
+                                        Nie potwierdzaj odbioru. Zaloguj się na
+                                        swoje konto Kasoa.pl, przejdź do
+                                        <strong>Konto → Zamówienia</strong>,
+                                        wybierz konkretne zamówienie i złóż
+                                        wniosek o zwrot, dołączając zdjęcia
+                                        lub inne dowody.
+                                        <br><br>
 
-                            <div style="font-size:11px; line-height:18px;
-                                        color:#7A8172; margin-top:16px;">
-                                Potwierdź odbiór dopiero po otrzymaniu
-                                i sprawdzeniu przesyłki.
-                            </div>
+                                        Drobne różnice wynikające na przykład
+                                        z oświetlenia lub sposobu wykonania zdjęć
+                                        nie stanowią same w sobie podstawy
+                                        do zwrotu. Zgłoszenie powinno dotyczyć
+                                        istotnych rozbieżności między ofertą
+                                        a otrzymanym przedmiotem.
+                                        <br><br>
 
-                        </td>
-                    </tr>
-                </table>
-                """.formatted(
-                    escapeHtml(confirmationTitle),
-                    escapeHtml(receiptConfirmationUrl)
-            );
+                                        <strong>Jak rozpatrywany jest wniosek?</strong>
+                                        <br>
+                                        Wniosek nie oznacza automatycznej akceptacji
+                                        zwrotu. Sprzedawca przeanalizuje zgłoszenie
+                                        i przedstawione dowody. Jeśli odrzuci
+                                        wniosek, sprawa zostanie przekazana
+                                        administratorowi Kasoa.pl do ostatecznej
+                                        oceny oferty i zgromadzonych dowodów.
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <a href="%s"
+                           style="display:inline-block;
+                                  background:#68764B;
+                                  color:#FFFFFF;
+                                  text-decoration:none;
+                                  font-size:15px;
+                                  line-height:20px;
+                                  font-weight:700;
+                                  padding:14px 24px;
+                                  border-radius:10px;">
+                            ✓ Potwierdź odbiór przedmiotu
+                        </a>
+
+                        <div style="font-size:11px;line-height:18px;
+                                    color:#7A8172;margin-top:16px;">
+                            Kliknij przycisk tylko wtedy, gdy otrzymany
+                            przedmiot jest zgodny z zamówieniem i opisem.
+                        </div>
+
+                        <div style="font-size:12px;line-height:20px;
+                                    color:#596052;margin-top:18px;
+                                    text-align:left;">
+                            <strong>Ważne:</strong>
+                            Jeśli w ciągu 24 godzin od dostawy nie potwierdzisz
+                            odbioru ani nie złożysz wniosku o zwrot,
+                            odbiór zostanie automatycznie potwierdzony,
+                            a wypłata środków sprzedawcy zostanie uruchomiona.
+                        </div>
+
+                    </td>
+                </tr>
+            </table>
+            """.formatted(escapeHtml(receiptConfirmationUrl));
         }
 
         // Tracking information.
@@ -5474,21 +5660,20 @@ public class EmailNotificationService {
 
         if (trackingNumber != null && !trackingNumber.isBlank()) {
             trackingHtml = """
-                <tr>
-                    <td style="padding:0 0 18px 0;
-                               overflow-wrap:anywhere;">
-                        <div style="font-size:12px; line-height:18px;
-                                    color:#7A8172; margin-bottom:4px;">
-                            NUMER PRZESYŁKI
-                        </div>
-                        <div style="font-size:15px; line-height:22px;
-                                    font-weight:600; color:#182016;
-                                    overflow-wrap:anywhere;">
-                            %s
-                        </div>
-                    </td>
-                </tr>
-                """.formatted(escapeHtml(trackingNumber));
+            <tr>
+                <td style="padding:0 0 18px 0;overflow-wrap:anywhere;">
+                    <div style="font-size:12px;line-height:18px;
+                                color:#7A8172;margin-bottom:4px;">
+                        NUMER PRZESYŁKI
+                    </div>
+                    <div style="font-size:15px;line-height:22px;
+                                font-weight:600;color:#182016;
+                                overflow-wrap:anywhere;">
+                        %s
+                    </div>
+                </td>
+            </tr>
+            """.formatted(escapeHtml(trackingNumber));
         }
 
         // Shipping method.
@@ -5496,361 +5681,294 @@ public class EmailNotificationService {
 
         if (shippingMethod != null && !shippingMethod.isBlank()) {
             shippingMethodHtml = """
-                <tr>
-                    <td style="padding:0 0 18px 0;
-                               overflow-wrap:anywhere;">
-                        <div style="font-size:12px; line-height:18px;
-                                    color:#7A8172; margin-bottom:4px;">
-                            SPOSÓB DOSTAWY
-                        </div>
-                        <div style="font-size:15px; line-height:22px;
-                                    font-weight:600; color:#182016;
-                                    overflow-wrap:anywhere;">
-                            %s
-                        </div>
-                    </td>
-                </tr>
-                """.formatted(escapeHtml(shippingMethod));
+            <tr>
+                <td style="padding:0 0 18px 0;overflow-wrap:anywhere;">
+                    <div style="font-size:12px;line-height:18px;
+                                color:#7A8172;margin-bottom:4px;">
+                        SPOSÓB DOSTAWY
+                    </div>
+                    <div style="font-size:15px;line-height:22px;
+                                font-weight:600;color:#182016;
+                                overflow-wrap:anywhere;">
+                        %s
+                    </div>
+                </td>
+            </tr>
+            """.formatted(escapeHtml(shippingMethod));
         }
 
         String nextStepText = escapeHtml(getNextStepText(status));
 
         // Main email template.
         String html = """
-            <!DOCTYPE html>
-            <html lang="pl">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport"
-                      content="width=device-width, initial-scale=1.0">
-                <title>Aktualizacja zamówienia - kasoa.pl</title>
-            </head>
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport"
+                  content="width=device-width, initial-scale=1.0">
+            <title>Aktualizacja zamówienia - Kasoa.pl</title>
+        </head>
 
-            <body style="margin:0; padding:0; background:#F5F6F1;
-                         font-family:Arial, Helvetica, sans-serif;
-                         color:#182016;">
+        <body style="margin:0;padding:0;background:#F5F6F1;
+                     font-family:Arial,Helvetica,sans-serif;
+                     color:#182016;">
 
-            <table role="presentation" width="100%%"
-                   cellpadding="0" cellspacing="0" border="0"
-                   style="width:100%%; border-collapse:collapse;
-                          background:#F5F6F1; padding:32px 16px;">
-                <tr>
-                    <td align="center" style="padding:0;">
+        <table role="presentation" width="100%%"
+               cellpadding="0" cellspacing="0" border="0"
+               style="width:100%%;border-collapse:collapse;
+                      background:#F5F6F1;padding:32px 16px;">
+            <tr>
+                <td align="center" style="padding:0;">
 
-                        <table role="presentation" width="100%%"
-                               cellpadding="0" cellspacing="0" border="0"
-                               style="width:100%%; max-width:640px;
-                                      table-layout:fixed;
-                                      border-collapse:collapse;
-                                      background:#FFFFFF;">
+                    <table role="presentation" width="100%%"
+                           cellpadding="0" cellspacing="0" border="0"
+                           style="width:100%%;max-width:640px;
+                                  table-layout:fixed;
+                                  border-collapse:collapse;
+                                  background:#FFFFFF;">
 
-                            <!-- HEADER -->
-                            <tr>
-                                <td align="center"
-                                    style="background:#66704A;
-                                           padding:28px 20px;
-                                           text-align:center;
-                                           overflow-wrap:anywhere;">
-                                    <div style="font-size:28px; line-height:34px;
-                                                font-weight:800;
-                                                letter-spacing:-0.5px;
-                                                color:#FFFFFF;">
-                                        kasoa.pl
-                                    </div>
-                                    <div style="margin-top:6px; font-size:13px;
-                                                line-height:20px; color:#E9EDDF;">
-                                        Druga ręka. Dobre rzeczy. Mniej odpadów.
-                                    </div>
-                                </td>
-                            </tr>
+                        <!-- OLIVE GREEN HEADER -->
+                        <tr>
+                            <td align="center"
+                                style="background:#68764B;
+                                       padding:28px 20px;text-align:center;">
+                                <div style="font-size:28px;line-height:34px;
+                                            font-weight:800;color:#FFFFFF;">
+                                    kasoa.pl
+                                </div>
+                                <div style="margin-top:6px;font-size:13px;
+                                            line-height:20px;color:#E9EDDF;">
+                                    Druga ręka. Dobre rzeczy. Mniej odpadów.
+                                </div>
+                            </td>
+                        </tr>
 
-                            <!-- CONTENT -->
-                            <tr>
-                                <td style="padding:36px 24px 32px 24px;
-                                           overflow-wrap:anywhere;
-                                           word-wrap:break-word;">
+                        <!-- CONTENT -->
+                        <tr>
+                            <td style="padding:36px 24px 32px 24px;
+                                       overflow-wrap:anywhere;
+                                       word-wrap:break-word;">
 
-                                    <div style="font-size:24px; line-height:32px;
-                                                font-weight:700; color:#182016;
-                                                margin-bottom:8px;">
-                                        Cześć %s! 👋
-                                    </div>
+                                <div style="font-size:24px;line-height:32px;
+                                            font-weight:700;color:#182016;
+                                            margin-bottom:8px;">
+                                    Cześć %s! 👋
+                                </div>
 
-                                    <div style="font-size:15px; line-height:24px;
-                                                color:#596052; margin-bottom:24px;">
-                                        Mamy aktualizację dotyczącą Twojego
-                                        zamówienia.
-                                    </div>
+                                <div style="font-size:15px;line-height:24px;
+                                            color:#596052;margin-bottom:24px;">
+                                    Mamy aktualizację dotyczącą Twojego
+                                    zamówienia.
+                                </div>
 
-                                    <!-- STATUS -->
-                                    <table role="presentation" cellpadding="0"
-                                           cellspacing="0" border="0"
-                                           style="margin:0 0 24px 0;
-                                                  max-width:100%%;">
-                                        <tr>
-                                            <td style="background:#EEF1E8;
-                                                       padding:8px 14px;
-                                                       font-size:13px;
-                                                       line-height:18px;
-                                                       font-weight:700;
-                                                       color:#66704A;
-                                                       overflow-wrap:anywhere;">
+                                <!-- STATUS -->
+                                <table role="presentation" cellpadding="0"
+                                       cellspacing="0" border="0"
+                                       style="margin:0 0 24px 0;max-width:100%%;">
+                                    <tr>
+                                        <td style="background:#EEF1E8;
+                                                   padding:8px 14px;
+                                                   font-size:13px;line-height:18px;
+                                                   font-weight:700;color:#68764B;
+                                                   overflow-wrap:anywhere;">
+                                            %s
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <!-- ORDER CARD -->
+                                <table role="presentation" width="100%%"
+                                       cellpadding="0" cellspacing="0" border="0"
+                                       style="width:100%%;table-layout:fixed;
+                                              border-collapse:collapse;
+                                              background:#F8F9F5;
+                                              border:1px solid #E4E7DE;
+                                              margin:0 0 20px 0;">
+                                    <tr>
+                                        <td style="padding:22px;
+                                                   overflow-wrap:anywhere;">
+                                            <div style="font-size:12px;
+                                                        line-height:18px;
+                                                        color:#7A8172;
+                                                        margin-bottom:5px;">
+                                                ZAMÓWIENIE
+                                            </div>
+                                            <div style="font-size:20px;
+                                                        line-height:27px;
+                                                        font-weight:700;
+                                                        color:#182016;
+                                                        margin-bottom:20px;
+                                                        overflow-wrap:anywhere;">
+                                                #%s
+                                            </div>
+
+                                            <div style="font-size:12px;
+                                                        line-height:18px;
+                                                        color:#7A8172;
+                                                        margin-bottom:5px;">
+                                                PRZEDMIOT
+                                            </div>
+                                            <div style="font-size:16px;
+                                                        line-height:23px;
+                                                        font-weight:600;
+                                                        color:#182016;
+                                                        overflow-wrap:anywhere;">
                                                 %s
-                                            </td>
-                                        </tr>
-                                    </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
 
-                                    <!-- ORDER CARD -->
-                                    <table role="presentation" width="100%%"
-                                           cellpadding="0" cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  table-layout:fixed;
-                                                  border-collapse:collapse;
-                                                  background:#F8F9F5;
-                                                  border:1px solid #E4E7DE;
-                                                  margin:0 0 20px 0;">
-                                        <tr>
-                                            <td style="padding:22px;
-                                                       overflow-wrap:anywhere;">
-                                                <div style="font-size:12px;
-                                                            line-height:18px;
-                                                            color:#7A8172;
-                                                            margin-bottom:5px;">
-                                                    ZAMÓWIENIE
-                                                </div>
-                                                <div style="font-size:20px;
-                                                            line-height:27px;
-                                                            font-weight:700;
-                                                            color:#182016;
-                                                            margin-bottom:20px;
-                                                            overflow-wrap:anywhere;">
-                                                    #%s
-                                                </div>
+                                <!-- SHIPPING CARD -->
+                                <table role="presentation" width="100%%"
+                                       cellpadding="0" cellspacing="0" border="0"
+                                       style="width:100%%;table-layout:fixed;
+                                              border-collapse:collapse;
+                                              background:#FFFFFF;
+                                              border:1px solid #E4E7DE;
+                                              margin:0 0 24px 0;">
+                                    <tr>
+                                        <td style="padding:22px;
+                                                   overflow-wrap:anywhere;">
+                                            <div style="font-size:17px;
+                                                        line-height:24px;
+                                                        font-weight:700;
+                                                        color:#182016;
+                                                        margin-bottom:20px;">
+                                                📦 Informacje o przesyłce
+                                            </div>
+                                            <table role="presentation"
+                                                   width="100%%"
+                                                   cellpadding="0"
+                                                   cellspacing="0"
+                                                   border="0"
+                                                   style="width:100%%;
+                                                          table-layout:fixed;
+                                                          border-collapse:collapse;">
+                                                %s
+                                                %s
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
 
-                                                <div style="font-size:12px;
-                                                            line-height:18px;
-                                                            color:#7A8172;
-                                                            margin-bottom:5px;">
-                                                    PRZEDMIOT
-                                                </div>
-                                                <div style="font-size:16px;
-                                                            line-height:23px;
-                                                            font-weight:600;
-                                                            color:#182016;
-                                                            overflow-wrap:anywhere;
-                                                            word-wrap:break-word;">
-                                                    %s
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </table>
+                                <!-- RECEIPT CONFIRMATION -->
+                                %s
 
-                                    <!-- SHIPPING CARD -->
-                                    <table role="presentation" width="100%%"
-                                           cellpadding="0" cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  table-layout:fixed;
-                                                  border-collapse:collapse;
-                                                  background:#FFFFFF;
-                                                  border:1px solid #E4E7DE;
-                                                  margin:0 0 24px 0;">
-                                        <tr>
-                                            <td style="padding:22px;
-                                                       overflow-wrap:anywhere;">
-                                                <div style="font-size:17px;
-                                                            line-height:24px;
-                                                            font-weight:700;
-                                                            color:#182016;
-                                                            margin-bottom:20px;">
-                                                    📦 Informacje o przesyłce
-                                                </div>
-                                                <table role="presentation"
-                                                       width="100%%"
-                                                       cellpadding="0"
-                                                       cellspacing="0"
-                                                       border="0"
-                                                       style="width:100%%;
-                                                              table-layout:fixed;
-                                                              border-collapse:collapse;">
-                                                    %s
-                                                    %s
-                                                </table>
-                                            </td>
-                                        </tr>
-                                    </table>
+                                <!-- TRANSACTION INFORMATION -->
+                                <table role="presentation" width="100%%"
+                                       cellpadding="0" cellspacing="0" border="0"
+                                       style="width:100%%;table-layout:fixed;
+                                              border-collapse:collapse;
+                                              background:#F8F9F5;
+                                              border:1px solid #E4E7DE;
+                                              margin:0 0 24px 0;">
+                                    <tr>
+                                        <td style="padding:22px;
+                                                   overflow-wrap:anywhere;">
+                                            <div style="font-size:17px;
+                                                        line-height:24px;
+                                                        font-weight:700;
+                                                        color:#182016;
+                                                        margin-bottom:10px;">
+                                                🔒 Bezpieczna transakcja
+                                            </div>
+                                            <div style="font-size:14px;
+                                                        line-height:22px;
+                                                        color:#596052;">
+                                                Płatność jest zabezpieczona
+                                                w systemie Kasoa.pl.
+                                                Środki zostaną rozliczone
+                                                zgodnie z zasadami transakcji
+                                                po zakończeniu procesu.
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
 
-                                    <!-- RECEIPT CONFIRMATION -->
-                                    %s
+                                <!-- NEXT STEP -->
+                                <table role="presentation" width="100%%"
+                                       cellpadding="0" cellspacing="0" border="0"
+                                       style="width:100%%;table-layout:fixed;
+                                              border-collapse:collapse;
+                                              background:#EEF1E8;
+                                              margin:0 0 28px 0;">
+                                    <tr>
+                                        <td style="padding:22px;
+                                                   overflow-wrap:anywhere;">
+                                            <div style="font-size:17px;
+                                                        line-height:24px;
+                                                        font-weight:700;
+                                                        color:#182016;
+                                                        margin-bottom:12px;">
+                                                Co dalej?
+                                            </div>
+                                            <div style="font-size:14px;
+                                                        line-height:23px;
+                                                        color:#4F5849;">
+                                                %s
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
 
-                                    <!-- TRANSACTION INFORMATION -->
-                                    <table role="presentation" width="100%%"
-                                           cellpadding="0" cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  table-layout:fixed;
-                                                  border-collapse:collapse;
-                                                  background:#F8F9F5;
-                                                  border:1px solid #E4E7DE;
-                                                  margin:0 0 24px 0;">
-                                        <tr>
-                                            <td style="padding:22px;
-                                                       overflow-wrap:anywhere;">
-                                                <div style="font-size:17px;
-                                                            line-height:24px;
-                                                            font-weight:700;
-                                                            color:#182016;
-                                                            margin-bottom:10px;">
-                                                    🔒 Bezpieczna transakcja
-                                                </div>
-                                                <div style="font-size:14px;
-                                                            line-height:22px;
-                                                            color:#596052;">
-                                                    Płatność jest zabezpieczona
-                                                    w systemie Kasoa.pl.
-                                                    Środki zostaną rozliczone
-                                                    zgodnie z zasadami transakcji
-                                                    po zakończeniu procesu.
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </table>
+                                <!-- WEBSITE CTA -->
+                                <table role="presentation" width="100%%"
+                                       cellpadding="0" cellspacing="0" border="0"
+                                       style="width:100%%;border-collapse:collapse;
+                                              margin:0 0 8px 0;">
+                                    <tr>
+                                        <td align="center" style="text-align:center;">
+                                            <a href="https://www.kasoa.pl"
+                                               style="display:inline-block;
+                                                      background:#68764B;
+                                                      color:#FFFFFF;
+                                                      text-decoration:none;
+                                                      font-size:15px;
+                                                      line-height:20px;
+                                                      font-weight:700;
+                                                      padding:14px 28px;
+                                                      border-radius:10px;">
+                                                Przejdź do kasoa.pl →
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
 
-                                    <!-- NEXT STEP -->
-                                    <table role="presentation" width="100%%"
-                                           cellpadding="0" cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  table-layout:fixed;
-                                                  border-collapse:collapse;
-                                                  background:#EEF1E8;
-                                                  margin:0 0 28px 0;">
-                                        <tr>
-                                            <td style="padding:22px;
-                                                       overflow-wrap:anywhere;">
-                                                <div style="font-size:17px;
-                                                            line-height:24px;
-                                                            font-weight:700;
-                                                            color:#182016;
-                                                            margin-bottom:12px;">
-                                                    Co dalej?
-                                                </div>
-                                                <div style="font-size:14px;
-                                                            line-height:23px;
-                                                            color:#4F5849;">
-                                                    %s
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </table>
+                            </td>
+                        </tr>
 
-                                    <!-- CTA -->
-                                    <table role="presentation" width="100%%"
-                                           cellpadding="0" cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  border-collapse:collapse;
-                                                  margin:0 0 8px 0;">
-                                        <tr>
-                                            <td align="center"
-                                                style="text-align:center;">
-                                                <a href="https://www.kasoa.pl"
-                                                   style="display:inline-block;
-                                                          background:#66704A;
-                                                          color:#FFFFFF;
-                                                          text-decoration:none;
-                                                          font-size:15px;
-                                                          line-height:20px;
-                                                          font-weight:700;
-                                                          padding:14px 28px;
-                                                          border-radius:10px;">
-                                                    Przejdź do kasoa.pl →
-                                                </a>
-                                            </td>
-                                        </tr>
-                                    </table>
+                        <!-- BLACK FOOTER -->
+                        <tr>
+                            <td style="padding:24px 20px;
+                                       background:#182016;text-align:center;">
+                                <div style="font-size:17px;line-height:24px;
+                                            font-weight:800;color:#FFFFFF;">
+                                    kasoa<span style="font-weight:400;
+                                                      color:#AEB69D;">.pl</span>
+                                </div>
+                                <div style="margin-top:7px;font-size:11px;
+                                            line-height:18px;color:#AEB69D;">
+                                    Good things. A second chance.
+                                </div>
+                                <div style="margin-top:14px;font-size:10px;
+                                            line-height:17px;color:#AEB69D;">
+                                    Ta wiadomość została wygenerowana
+                                    automatycznie.<br>
+                                    Zarządzaj swoimi zamówieniami na Kasoa.pl.
+                                </div>
+                            </td>
+                        </tr>
 
-                                </td>
-                            </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
 
-                            <!-- FULL-WIDTH DARK GREEN FOOTER -->
-                            <tr>
-                                <td width="100%%"
-                                    style="width:100%%; padding:0;
-                                           background-color:#263322;">
-                                    <table role="presentation"
-                                           width="100%%"
-                                           cellpadding="0"
-                                           cellspacing="0"
-                                           border="0"
-                                           style="width:100%%;
-                                                  min-width:100%%;
-                                                  table-layout:fixed;
-                                                  border-collapse:collapse;
-                                                  background-color:#263322;">
-                                        <tr>
-                                            <td align="center"
-                                                width="100%%"
-                                                style="width:100%%;
-                                                       padding:24px 20px;
-                                                       background-color:#263322;
-                                                       text-align:center;
-                                                       overflow-wrap:anywhere;
-                                                       word-wrap:break-word;">
-
-                                                <div style="font-family:Arial,
-                                                            Helvetica,sans-serif;
-                                                            font-size:17px;
-                                                            line-height:24px;
-                                                            font-weight:800;
-                                                            color:#FFFFFF;">
-                                                    kasoa<span
-                                                        style="font-weight:400;
-                                                               color:#AEB69D;">.pl</span>
-                                                </div>
-
-                                                <div style="margin-top:7px;
-                                                            font-family:Arial,
-                                                            Helvetica,sans-serif;
-                                                            font-size:11px;
-                                                            line-height:18px;
-                                                            color:#AEB69D;
-                                                            overflow-wrap:anywhere;
-                                                            word-wrap:break-word;">
-                                                    Good things. A second chance.
-                                                </div>
-
-                                                <div style="margin-top:14px;
-                                                            font-family:Arial,
-                                                            Helvetica,sans-serif;
-                                                            font-size:10px;
-                                                            line-height:17px;
-                                                            color:#AEB69D;
-                                                            overflow-wrap:anywhere;
-                                                            word-wrap:break-word;">
-                                                    Ta wiadomość została wygenerowana
-                                                    automatycznie.
-                                                    <br>
-                                                    Zarządzaj swoimi zamówieniami
-                                                    na Kasoa.pl.
-                                                </div>
-
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-
-                        </table>
-
-                    </td>
-                </tr>
-            </table>
-
-            </body>
-            </html>
-            """.formatted(
+        </body>
+        </html>
+        """.formatted(
                 safeBuyerName,
                 safeShipmentStatus,
                 safeOrderNumber,
@@ -5863,6 +5981,7 @@ public class EmailNotificationService {
 
         sendHtmlEmail(buyerEmail, subject, html);
     }
+
 
 
 

@@ -29,4 +29,8 @@ public interface SellerPayoutRepo extends JpaRepository<SellerPayout,Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("SELECT p FROM SellerPayout p WHERE p.id = :id")
     Optional<SellerPayout> findByIdForUpdate(@Param("id") Long id);
+
+    List<SellerPayout> findAllByStatus(PayoutStatus payoutStatus);
+
+
 }

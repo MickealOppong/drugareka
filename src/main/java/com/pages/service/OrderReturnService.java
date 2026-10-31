@@ -63,12 +63,12 @@ public class OrderReturnService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.user_not_found")));
 
         // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
-        ListingOrderItem lockedItem = this.processSellerCancellationDbTx(authenticatedUser.getId(), orderItemId);
+        ListingOrderItem lockedItem = this.processSellerCancellationDbTx(authenticatedUser, orderItemId);
 
         try {
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
-         paymentRefundLedgerService.createRefund(lockedItem);
+         paymentRefundLedgerService.createRefundFromSellerCancellation(lockedItem);
 
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
@@ -98,12 +98,12 @@ public class OrderReturnService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.user_not_found")));
 
         // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
-        ListingOrderItem lockedItem = this.processBuyerCancellationDbTx(authenticatedUser.getId(), orderItemId);
+        ListingOrderItem lockedItem = this.processBuyerCancellationDbTx(authenticatedUser, orderItemId);
 
         try {
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
-           paymentRefundLedgerService.createRefund(lockedItem);
+           paymentRefundLedgerService.createBuyerRefund(lockedItem);
 
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
@@ -127,16 +127,25 @@ public class OrderReturnService {
 
 
     @Transactional
-    protected ListingOrderItem processSellerCancellationDbTx(Long authenticatedUserId, Long orderItemId) {
+    protected ListingOrderItem processSellerCancellationDbTx(AppUser authenticatedUser, Long orderItemId) {
 
         // Enforce pessimistic write lock to completely block duplicate concurrent button clicks
         ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
 
         SellerProfile sellerProfile = orderItem.getSeller();
+// Only the seller or an admin can cancel the order.
+        boolean isSeller = sellerProfile.getUser().getId()
+                .equals(authenticatedUser.getId());
 
-        if (sellerProfile == null || !sellerProfile.getUser().getId().equals(authenticatedUserId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api_errors.order_cancellation.forbidden"));
+        boolean isAdmin = authenticatedUser.getUserRoles().stream()
+                .anyMatch(role -> "ROLE_ADMIN".equals(role.getRole()));
+
+        if (!isSeller && !isAdmin) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    getMessage("api_errors.order_cancellation.forbidden")
+            );
         }
 
         SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId()).orElse(null);
@@ -190,20 +199,35 @@ public class OrderReturnService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    protected ListingOrderItem processBuyerCancellationDbTx(Long authenticatedUserId, Long orderItemId) {
+    protected ListingOrderItem processBuyerCancellationDbTx(AppUser authenticatedUser, Long orderItemId) {
 
         // Enforce pessimistic write lock to completely block duplicate concurrent button clicks
         ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
 
 
-        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId()).orElse(null);
-        if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
-        }
-        if(!orderItem.getListingOrder().getBuyer().getId().equals(authenticatedUserId)){
+        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId())
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
+
+       ShipmentConfirmationStatus shipmentConfirmation = shipment.getSellerShipmentToken()!=null?shipment.getSellerShipmentToken()
+               .getShipmentConfirmationStatus():null;
+
+        //only buyer or admin can cancel order
+        boolean isBuyer =!orderItem.getListingOrder().getBuyer().getId().equals(authenticatedUser.getId());
+        boolean isAdmin  = authenticatedUser.getUserRoles().stream().anyMatch(role->role.getRole().equals("ROLE_ADMIN"));
+
+        if(!isBuyer && !isAdmin){
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api_errors.order_cancellation.forbidden"));
         }
+
+        if(shipmentConfirmation !=null && !isAdmin){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api.errors.order_cancellation.confirmed"));
+        }
+        if (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
+        }
+
+
 
         if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_cancelled"));
@@ -237,10 +261,10 @@ public class OrderReturnService {
             listingOrderRepo.save(parent);
         }
 
-        if (shipment != null) {
+
             shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
             sellerShipmentRepo.save(shipment);
-        }
+
 
         return orderItem;
     }
@@ -309,97 +333,6 @@ public class OrderReturnService {
             sellerShipmentRepo.save(shipment);
         });
     }
-
-    @Transactional
-    public void executeOrderPartialCancellation(Long orderItemId) {
-
-
-        ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        getMessage("api_errors.order_cancellation.item_not_found")
-                ));
-
-
-        // Validate shipping history parameters to prevent mid-transit cancellations
-        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId()).orElse(null);
-        if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_cancellation.already_shipped")
-            );
-        }
-
-        if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_cancellation.already_cancelled")
-            );
-        }
-
-        log.warn("Fulfillment System: Seller is cancelling Order Item #{} [Executing balance clawbacks...]",
-                 orderItem.getId());
-
-        try {
-            // Defensive Inventory Management: Hide broken inventory from your frontend catalog views
-            InventoryItem inventory = orderItem.getInventoryItem();
-            if (inventory != null) {
-                inventory.setStatus(InventoryStatus.AVAILABLE);
-                inventoryItemRepo.save(inventory);
-            }
-
-            // Lock order item status to CANCELLED
-            orderItem.setOrderItemStatus(OrderItemStatus.CANCELLED);
-            listingOrderItemRepo.save(orderItem);
-
-            // Flush changes directly down to database row indexes to eliminate query race conditions
-            listingOrderItemRepo.flush();
-
-            // Evaluate if this cancellation completely closes out the parent order structure
-            List<ListingOrderItem> siblingItems = listingOrderItemRepo.findByListingOrderId(orderItem.getListingOrder().getId());
-            boolean areAllItemsCancelled = siblingItems.stream()
-                    .allMatch(item -> item.getOrderItemStatus() == OrderItemStatus.CANCELLED);
-
-            if (areAllItemsCancelled) {
-                ListingOrder parent = orderItem.getListingOrder();
-                parent.setOrderStatus(OrderStatus.CANCELLED);
-                listingOrderRepo.save(parent);
-                log.info("Fulfillment System: Master Order #{} automatically set to CANCELLED.", parent.getOrderNumber());
-            }
-
-            if (shipment != null) {
-                shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
-                sellerShipmentRepo.save(shipment);
-            }
-
-
-            //change listing to draft
-            listingTransactionRepo.findById(orderItem.getListingId()).ifPresent(listing->{
-                listing.setListingStatus(ListingStatus.DRAFT);
-                listingTransactionRepo.save(listing);
-            });
-
-            //  DISPATCH PAYU CUSTOMER CASH REVERSAL
-            // Fires an automated refund request to return the escrow funds back to the buyer's bank account.
-            paymentRefundLedgerService.createRefund(orderItem);
-
-            // ACCOUNTING ADJUSTMENT INTERCEPT:
-            // Because the seller was credited at checkout, we run clawback script here.
-            // This safely deducts the item price out of totalSettlement and increases cancelledOrders.
-            sellerProfileService.updateSellerTotalPayoutWithRefund(orderItem);
-
-
-            log.info("Fulfillment System Success: Merchant balance clawback locked down. Order Item #{} successfully archived.", orderItem.getId());
-
-        } catch (Exception e) {
-            log.error("Fulfillment System Error: Critical failure executing merchant cancellation for ID: {}", orderItemId, e);
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY,
-                    getMessage("api_errors.order_cancellation.gateway_failure")
-            );
-        }
-    }
-
 
 
 

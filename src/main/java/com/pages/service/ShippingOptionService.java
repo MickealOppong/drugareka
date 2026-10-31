@@ -34,7 +34,6 @@ import java.util.stream.Collectors;
 public class ShippingOptionService {
 
     private final ShippingOptionRepo shippingOptionRepo;
-    private final CategoryRepo categoryRepo;
 
     public ShippingOption getShippingOption(ItemSize itemSize) {
 
@@ -56,12 +55,13 @@ public class ShippingOptionService {
         };
     }
 
-    private ShippingMethod getShippingMethod(String method) {
+    public ShippingMethod getShippingMethod(String method) {
         String cleanStatus = method.trim().toUpperCase();
         return switch (cleanStatus) {
             case "INPOST" ->ShippingMethod.INPOST_COURIER;
             case "DPD" -> ShippingMethod.DPD;
-            default -> ShippingMethod.OTHER;
+            case "COURIER" -> ShippingMethod.COURIER;
+            default -> ShippingMethod.LOCKER;
         };
 
     }
@@ -197,15 +197,18 @@ public class ShippingOptionService {
 
 
 
-    public BigDecimal getShippingPrice(CartItem cartItem) {
+    public BigDecimal getShippingPrice(CartItem cartItem,String selectedMethod) {
+
         InventoryItem inventoryItem = cartItem.getInventoryItem();
+
+        ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
 
         return shippingOptionRepo
                 .findByItemSizeAndShippingMethodAndActiveTrue(
-                        inventoryItem.getItemSize(),ShippingMethod.DPD).map(ShippingOption::getPrice)
+                        inventoryItem.getItemSize(),shippingMethod).map(ShippingOption::getPrice)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Shipping price not configured for "
-                                + inventoryItem.getItemSize()
+                        "Shipping price not configured for combination size " + inventoryItem.getItemSize()+" and method "
+                               +shippingMethod
                 ));
 
     }
@@ -244,9 +247,9 @@ public class ShippingOptionService {
     }
 
 
-    public BigDecimal calculateStandardShippingPrice(List<CartItem> items) {
+    public BigDecimal calculateStandardShippingPrice(List<CartItem> items,String method) {
 
-        BigDecimal basePrice = items.stream().map(this::getShippingPrice)
+        BigDecimal basePrice = items.stream().map(item->getShippingPrice(item,method))
                 .max(BigDecimal::compareTo)
                         .orElse(BigDecimal.ZERO);
 

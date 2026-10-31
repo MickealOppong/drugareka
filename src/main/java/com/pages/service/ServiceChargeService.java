@@ -72,6 +72,7 @@ public class ServiceChargeService {
                         .buyer(listingOrder.getBuyer())
                         .currency(listingOrder.getCurrency())
                         .description("Service charge earned")
+                        .orderNumber(listingOrder.getOrderNumber())
                         .grossAmount(grossServiceChargeTotal)
                         .netAmount(grossServiceChargeTotal.subtract(vatAmount))
                         .vatAmount(vatAmount)
@@ -108,6 +109,7 @@ public class ServiceChargeService {
                 .currency(originalCharge.getCurrency())
                 .description("Service charge reversal for unfulfilled order")
                 .grossAmount(originalCharge.getGrossAmount().negate())
+                .orderNumber(item.getListingOrder().getOrderNumber())
                 .netAmount(originalCharge.getNetAmount().negate())
                 .vatAmount(originalCharge.getVatAmount().negate())
                 .build();

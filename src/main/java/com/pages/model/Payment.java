@@ -42,6 +42,8 @@ public class Payment extends LogEntity {
 
     @Column(name = "stripe_charge_id", unique = true)
     private String stripeChargeId;
+    @Column(name = "stripe_refund_id", unique = true)
+    private String stripeRefundId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dispute_id")

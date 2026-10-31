@@ -2,18 +2,14 @@ package com.pages.service;
 
 import com.pages.enums.*;
 import com.pages.exception.EntityNotFoundException;
-import com.pages.model.ListingOrderItem;
-import com.pages.model.Payment;
-import com.pages.model.PayoutException;
-import com.pages.model.SellerPayout;
+import com.pages.model.*;
 import com.pages.repository.PaymentRepo;
 import com.pages.repository.PayoutExceptionRepo;
 import com.pages.repository.SellerPayoutRepo;
 import com.stripe.exception.StripeException;
-import com.stripe.model.Balance;
-import com.stripe.model.Refund;
-import com.stripe.model.Transfer;
+import com.stripe.model.*;
 import com.stripe.net.RequestOptions;
+import com.stripe.param.ChargeRetrieveParams;
 import com.stripe.param.RefundCreateParams;
 import com.stripe.param.TransferCreateParams;
 import jakarta.transaction.Transactional;
@@ -24,9 +20,11 @@ import org.springframework.transaction.annotation.Propagation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Ref;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 
 @Slf4j
 @Service
@@ -68,11 +66,117 @@ public class PayoutProcessingService {
     }
 
 
+    /**
+     * Calculates the seller's proportional share of the actual Stripe fee.
+     *
+     * @param stripeFee actual Stripe processing fee
+     * @param checkoutTotal total amount charged to the buyer
+     * @param sellerItemValue seller's gross payout before Stripe fee deduction
+     * @param shippingCost courier charge related to order
+     * @return seller's share of the Stripe fee, rounded to two decimal places
+     */
+    public BigDecimal getSellerStripeFeeShare(
+            BigDecimal stripeFee,
+            BigDecimal checkoutTotal,
+            BigDecimal sellerItemValue,
+            BigDecimal shippingCost) {
+
+        if (stripeFee == null || checkoutTotal == null
+                || sellerItemValue == null || shippingCost == null) {
+            throw new IllegalArgumentException(
+                    "Stripe fee, checkout total, item value, and shipping cost are required."
+            );
+        }
+
+        if (checkoutTotal.signum() <= 0
+                || stripeFee.signum() < 0
+                || sellerItemValue.signum() < 0
+                || shippingCost.signum() < 0) {
+            throw new IllegalArgumentException(
+                    "Amounts must be non-negative and checkout total must be positive."
+            );
+        }
+
+        BigDecimal sellerFeeBase = sellerItemValue.add(shippingCost);
+
+        return stripeFee
+                .multiply(sellerFeeBase)
+                .divide(checkoutTotal, 10, RoundingMode.HALF_UP)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+
+
+    /**
+     * Retreive stripe fee for a checkout charge
+     * @param stripeChargeId
+     * @return
+     * @throws StripeException
+     */
+    public BigDecimal getStripeFee(String stripeChargeId)
+            throws StripeException {
+
+        ChargeRetrieveParams params = ChargeRetrieveParams.builder()
+                .addExpand("balance_transaction")
+                .build();
+
+        Charge charge = Charge.retrieve(
+                stripeChargeId,
+                params,
+                null
+        );
+
+        BalanceTransaction balanceTransaction =
+                charge.getBalanceTransactionObject();
+
+        if (balanceTransaction == null || balanceTransaction.getFee() == null) {
+            throw new IllegalStateException(
+                    "Stripe balance transaction or fee is not available yet."
+            );
+        }
+
+        // Stripe returns the fee in the currency's smallest unit.
+        return BigDecimal.valueOf(balanceTransaction.getFee())
+                .movePointLeft(2)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Deducts the seller's proportional share of the Stripe processing fee
+     * before transferring the payout.
+     *
+     * @param stripeFee actual Stripe processing fee
+     * @param checkoutTotal total amount charged to the buyer
+     * @param sellerItemValue seller's gross payout before fee deduction
+     * @param shippingCost courier charge related to order
+     * @return seller's net payout after their share of the Stripe fee
+     */
+    private BigDecimal getSellerNetAmountAfterStripeFee(
+            BigDecimal stripeFee,
+            BigDecimal checkoutTotal,
+            BigDecimal sellerItemValue,
+            BigDecimal shippingCost) {
+
+        BigDecimal sellerStripeFeeShare = getSellerStripeFeeShare(
+                stripeFee,
+                checkoutTotal,
+                sellerItemValue,
+                shippingCost
+        );
+
+        return sellerItemValue
+                .subtract(sellerStripeFeeShare)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+
     @Transactional
     public void confirmReceiptAndReleaseFunds() {
 
         List<SellerPayout> approvedPayouts =
                 sellerPayoutRepo.findByStatus(PayoutStatus.APPROVED);
+
+        log.info("approved payouts count:{}",approvedPayouts.size());
 
         if (approvedPayouts.isEmpty()) {
             log.info("Payout engine: no approved payouts to process");
@@ -104,6 +208,8 @@ public class PayoutProcessingService {
 
                 String chargeId = payment.getStripeChargeId();
 
+                //get stripe fee associated with this charge
+               BigDecimal stripeFee =  getStripeFee(chargeId);
 
                 if (chargeId == null || (!chargeId.startsWith("ch_") && !chargeId.startsWith("py_"))) {
                     throw new IllegalStateException(
@@ -121,23 +227,26 @@ public class PayoutProcessingService {
                   continue;
                 }
 
-                BigDecimal sellerPrice = item.getSellerPrice();
+                //get service charge associate with this order
 
-                if (sellerPrice == null || sellerPrice.signum() <= 0) {
-                    throw new IllegalStateException(
-                            "Invalid payout amount for payout " + payoutId
-                    );
-                }
+                log.info("Stripe fee :{} charge id :{} original payment :{} seller Gross payout:{}",stripeFee,chargeId,payment.getAmount(),item.getSellerPrice());
 
-                long amountInGrosz = sellerPrice
-                        .movePointRight(2)
-                        .longValueExact();
+                BigDecimal sellerNetPayout = getSellerNetAmountAfterStripeFee(stripeFee,payment.getAmount(),item.getSellerPrice(),item.getShippingCost());
 
+                //get any unpaid stripe fee
+                BigDecimal outStandingFeeToRecover = sellerPayoutRepo.findAllByStatus(PayoutStatus.CHARGE_BACK).stream().map(SellerPayout::getAmount)
+                        .reduce(BigDecimal.ZERO,BigDecimal::add);
+
+                log.info("net payout :{} outstanding fee :{}",sellerNetPayout,outStandingFeeToRecover.negate());
+
+                long amountInGrosz = getAmountInGrosz(sellerNetPayout, outStandingFeeToRecover, payoutId);
+
+                log.info("to pay seller after stripe fee :{} outstanding fee :{}",amountInGrosz,outStandingFeeToRecover.negate());
                 long availableBalance = getAvailablePlnBalanceInGrosz();
 
                 if (availableBalance < amountInGrosz) {
                     log.warn(
-                            "Insufficient Stripe PLN balance for payout {}. Available: {} grosz, required: {} grosz",
+                            "Insufficient Stripe PLN balance for payout # {}. Available: {} grosz, required: {} grosz",
                             payoutId,
                             availableBalance,
                             amountInGrosz
@@ -173,7 +282,7 @@ public class PayoutProcessingService {
                 );
 
                 String email = item.getSeller().getUser().getUsername();
-                emailNotificationService.sendTransferNotification(email,sellerPrice,orderNumber,transfer.getId());
+                emailNotificationService.sendTransferNotification(email,item.getSellerPrice(),orderNumber,transfer.getId());
 
                 log.info(
                         "Payout engine: payout {} transferred successfully; transferId={}",
@@ -203,50 +312,91 @@ public class PayoutProcessingService {
         }
     }
 
+    public static long getAmountInGrosz(BigDecimal sellerNetPayout, BigDecimal outStandingFeeToRecover, Long payoutId) {
+        BigDecimal sellerNetPayoutAfterDeductingStripeFeeOnCancelledOrders = sellerNetPayout.add(outStandingFeeToRecover);
+
+        if (sellerNetPayoutAfterDeductingStripeFeeOnCancelledOrders.signum() <= 0) {
+            throw new IllegalStateException(
+                    "Invalid payout amount for payout " + payoutId
+            );
+        }
+
+        return sellerNetPayoutAfterDeductingStripeFeeOnCancelledOrders
+                .movePointRight(2)
+                .longValueExact();
+    }
+
+    private  void createPayoutRefund(ListingOrderItem item){
+        SellerPayout payout = SellerPayout.builder()
+                .listingOrderItem(item)
+                .seller(item.getSeller())
+                .amount(item.getSellerPrice().negate())
+                .sellerNameSnapshot(item.getSellerNameSnapshot())
+                .currency("PLN")
+                .status(PayoutStatus.REFUND)
+                .build();
+
+         sellerPayoutRepo.save(payout);
+    }
+
+    public   void createStripeFeeRefund(ListingOrderItem item,BigDecimal fee){
+        SellerPayout payout = SellerPayout.builder()
+                .listingOrderItem(item)
+                .seller(item.getSeller())
+                .amount(fee.negate())
+                .sellerNameSnapshot(item.getSellerNameSnapshot())
+                .currency("PLN")
+                .status(PayoutStatus.CHARGE_BACK)
+                .build();
+
+        sellerPayoutRepo.save(payout);
+    }
+
+    private  void createStripeFeeRelatedToOrderCancellation(ListingOrderItem item,BigDecimal stripeFee){
+        SellerPayout payout = SellerPayout.builder()
+                .listingOrderItem(item)
+                .seller(item.getSeller())
+                .amount(stripeFee.negate())
+                .sellerNameSnapshot(item.getSellerNameSnapshot())
+                .currency("PLN")
+                .status(PayoutStatus.CHARGE_BACK)
+                .build();
+
+        sellerPayoutRepo.save(payout);
+    }
+
 
     @Transactional
     public void createRefundForUnconfirmedOrderItem(Payment payment,ListingOrderItem item){
 
-        try {
+
+        Payment refund = Payment.builder()
+                .listingOrder(item.getListingOrder())
+                .status(PaymentStatus.AWAITING_REFUND)
+                .amount((item.getSellerPrice()).negate())
+                .currency("PLN")
+                .providerSessionId(payment.getProviderSessionId())
+                .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                .orderNumber(item.getListingOrder().getOrderNumber())
+                .provider(PaymentProvider.STRIPE)
+                .build();
+
+        paymentRepo.save(refund);
+
+        //adjust seller payout for refund
+        createPayoutRefund(item);
 
 
-            Payment refund = Payment.builder()
-                    .listingOrder(item.getListingOrder())
-                    .status(PaymentStatus.AWAITING_REFUND)
-                    .amount(item.getSellerPrice())
-                    .currency("PLN")
-                    .providerSessionId(payment.getProviderSessionId())
-                    .stripePaymentIntentId(payment.getStripePaymentIntentId())
-                    .orderNumber(item.getListingOrder().getOrderNumber())
-                    .provider(PaymentProvider.STRIPE)
-                    .build();
-
-            paymentRepo.save(refund);
-
-            //stripe refund
-            processSingleIsolatedRefund(payment);
-
-            //change payout status to refund
-            sellerPayoutRepo.findByListingOrderItemId(item.getId()).ifPresent(payout->{
-                payout.setStatus(PayoutStatus.REFUND);
-                sellerPayoutRepo.save(payout);
-            });
-
-            //reverse service charge earned
-            serviceChargeService.reverseCharge(item);
-
-            //send email confirmation
-            String email = item.getListingOrder().getBuyer().getUsername();
-            String name = item.getListingOrder().getBuyer().getFirstName();
-            String orderNumber = item.getListingOrder().getOrderNumber();
-            String itemName = item.getProductNameSnapshot();
-            emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,item.getSellerPrice());
-        } catch (StripeException e) {
-            throw new RuntimeException(e);
-        }
+        //send email confirmation
+        String email = item.getListingOrder().getBuyer().getUsername();
+        String name = item.getListingOrder().getBuyer().getFirstName();
+        String orderNumber = item.getListingOrder().getOrderNumber();
+        String itemName = item.getProductNameSnapshot();
+        BigDecimal amount = item.getSellerPrice();
+        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,amount);
     }
 
-    public void processSingleIsolatedRefund(Payment refund)
+    public Refund processStripeOrderRefund(Payment refund)
             throws StripeException {
 
         try {
@@ -268,10 +418,6 @@ public class PayoutProcessingService {
 
             Refund stripeRefund = Refund.create(refundParams);
 
-            // Update only after Stripe confirms refund creation.
-            refund.setStatus(PaymentStatus.REFUNDED);
-            paymentRepo.save(refund);
-
 
             log.info(
                     "Stripe refund created: {} grosze, Payment ID: {}, Stripe Refund ID: {}",
@@ -279,6 +425,7 @@ public class PayoutProcessingService {
                     refund.getId(),
                     stripeRefund.getId()
             );
+            return stripeRefund;
 
         } catch (StripeException e) {
             log.error(
@@ -291,28 +438,92 @@ public class PayoutProcessingService {
         }
     }
 
+    public Refund processStripeSingleIsolatedRefund(Payment refund,BigDecimal amount)
+            throws StripeException {
+
+        try {
+            long amountInGrosze =amount
+                    .abs()
+                    .setScale(2, RoundingMode.HALF_UP)
+                    .movePointRight(2)
+                    .longValueExact();
+
+            Map<String, String> metadata = new HashMap<>();
+            metadata.put("payment_ledger_id", String.valueOf(refund.getId()));
+
+            RefundCreateParams refundParams = RefundCreateParams.builder()
+                    .setPaymentIntent(refund.getStripePaymentIntentId())
+                    .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER)
+                    .setAmount(amountInGrosze)
+                    .setMetadata(metadata)
+                    .build();
+
+            Refund stripeRefund = Refund.create(refundParams);
+
+
+            log.info(
+                    "Stripe refund created: {} grosze, Payment ID: {}, Stripe Refund ID: {}",
+                    amountInGrosze,
+                    refund.getId(),
+                    stripeRefund.getId()
+            );
+            return stripeRefund;
+
+        } catch (StripeException e) {
+            log.error(
+                    "Stripe refund failed for Payment ID: {}",
+                    refund.getId(),
+                    e
+            );
+
+            throw e;
+        }
+    }
 
     @Transactional
-    public void refundForUnconfirmedOrder(Payment payment,ListingOrderItem item){
-        Payment   originalPayment= paymentRepo.findByProviderSessionIdForUpdate(payment.getProviderSessionId()).orElse(null);
-        if(originalPayment!= null && originalPayment.getStatus() == PaymentStatus.PAID){
-            originalPayment.setStatus(PaymentStatus.AWAITING_REFUND);
-        }
+    public void refundForUnconfirmedOrder(Payment payment) {
 
-        sellerPayoutRepo.findByListingOrderItemId(item.getId()).ifPresent(payout->{
-            payout.setStatus(PayoutStatus.REFUND);
+        Payment refund = Payment.builder()
+                .listingOrder(payment.getListingOrder())
+                .status(PaymentStatus.AWAITING_REFUND)
+                .amount(payment.getAmount().negate())
+                .currency("PLN")
+                .providerSessionId(payment.getProviderSessionId())
+                .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                .orderNumber(payment.getOrderNumber())
+                .provider(PaymentProvider.STRIPE)
+                .build();
+
+        paymentRepo.save(refund);
+
+        for( ListingOrderItem item :payment.getListingOrder().getItems()){
+
+            //refund payout
+            String sellerName = item.getSellerNameSnapshot();
+
+            SellerPayout payout = SellerPayout.builder()
+                    .listingOrderItem(item)
+                    .seller(item.getSeller())
+                    .amount((item.getSellerPrice().add(item.getShippingCost())).negate())
+                    .sellerNameSnapshot(sellerName)
+                    .currency("PLN")
+                    .status(PayoutStatus.REFUND)
+                    .build();
+
             sellerPayoutRepo.save(payout);
-        });
 
-        //reverse service charge earned
-        serviceChargeService.reverseCharge(item);
+            //reverse service charge earned
+            serviceChargeService.reverseCharge(item);
 
-        //send email confirmation
-        String email = item.getListingOrder().getBuyer().getUsername();
-        String name = item.getListingOrder().getBuyer().getFirstName();
-        String orderNumber = item.getListingOrder().getOrderNumber();
-        String itemName = item.getProductNameSnapshot();
-        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,item.getSellerPrice());
+
+            //send email confirmation
+            String email = item.getListingOrder().getBuyer().getUsername();
+            String name = item.getListingOrder().getBuyer().getFirstName();
+            String orderNumber = item.getListingOrder().getOrderNumber();
+            String itemName = item.getProductNameSnapshot();
+            emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,item.getSellerPrice());
+
+        }
 
     }
     @Transactional

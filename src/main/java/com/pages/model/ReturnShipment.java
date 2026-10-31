@@ -1,5 +1,6 @@
 package com.pages.model;
 
+import com.pages.enums.ShipmentConfirmationStatus;
 import com.pages.enums.ShipmentStatus; // e.g., CREATED, IN_TRANSIT, DELIVERED
 import com.pages.repository.OrderDisputeRepo;
 import com.pages.util.LogEntity;
@@ -46,4 +47,9 @@ public class ReturnShipment extends LogEntity {
 
     @Column(name = "receipt_confirmed_at")
     private Instant receiptConfirmedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status",length = 50)
+    private ShipmentConfirmationStatus shipmentConfirmationStatus;
+
 }

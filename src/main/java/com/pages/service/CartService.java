@@ -1,9 +1,7 @@
 package com.pages.service;
 
 import com.pages.dto.*;
-import com.pages.enums.CartStatus;
-import com.pages.enums.InventoryStatus;
-import com.pages.enums.ListingStatus;
+import com.pages.enums.*;
 import com.pages.model.*;
 import com.pages.repository.CartItemRepo;
 import com.pages.repository.CartRepo;
@@ -17,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -38,11 +37,53 @@ public class CartService {
     private final InventoryItemPriceService inventoryItemPriceService;
     private final GlobalAddressService globalAddressService;
     private final ShippingOptionService shippingOptionService;
-    private final SellerProfileRepo sellerProfileRepo;
     private final MessageSource messageSource;
     private final PricingService pricingService;
 
     private static final Duration RESERVATION_WINDOW = Duration.ofMinutes(15);
+
+
+    public void updateCartShippingMethod(Jwt jwt,String shippingSelected){
+        if(jwt==null){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    messageSource.getMessage("cart.auth.required",null,LocaleContextHolder.getLocale()));
+        }
+        AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
+
+
+        if(appUser==null){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    messageSource.getMessage("cart.auth.required",null,LocaleContextHolder.getLocale()));
+        }
+
+        Long userId = appUser.getId();
+        Cart cart = cartRepository.findByBuyerIdAndStatus(userId,CartStatus.ACTIVE).orElseThrow(()-> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                messageSource.getMessage("cart.items.none_added",null,LocaleContextHolder.getLocale())));
+
+        Long cartUSerId =cart.getBuyer().getId();
+
+        if(!userId.equals(cartUSerId)){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    messageSource.getMessage("cart.auth.required",null,LocaleContextHolder.getLocale()));
+        }
+        List<CartItem> cartItems = cartItemRepository.findAllByCartBuyerId(userId);
+
+        if(cartItems.isEmpty()){
+           throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    messageSource.getMessage("cart.items.none_added",null,LocaleContextHolder.getLocale()));
+        }
+
+        boolean isAllMinimumItemSize = cartItems.stream().allMatch(item->item.getInventoryItem().getItemSize()== ItemSize.SMALL_UP_10KG);
+        if(!isAllMinimumItemSize && shippingSelected.equalsIgnoreCase("locker")){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    messageSource.getMessage("cart.items.shipping.locker-forbidden",null,LocaleContextHolder.getLocale()));
+        }
+
+       ShippingMethod shippingMethod= shippingOptionService.getShippingMethod(shippingSelected);
+       cart.setShippingMethod(shippingMethod);
+       cartRepository.save(cart);
+
+    }
 
     /**
      * RETRIEVE CURRENT ACTIVE BUYER CART LOCK
@@ -194,7 +235,7 @@ public class CartService {
                 if (existingItem.isPresent()) {
                     CartItem cartItem = existingItem.get();
                     cartItem.setPrice(price.getSellerNewPrice());
-                    cartItem.setServiceCharge(price.getNewServiceCharge());
+                    cartItem.setServiceCharge(pricingService.getServiceCharge(price.getSellerNewPrice()));
                     cartItem.setReservedUntil(reservedUntil);
                     cartItemRepository.save(cartItem);
                     updatedCount++;
@@ -204,7 +245,7 @@ public class CartService {
                             .inventoryItem(inventoryItem)
                             .listingId(targetListingId)
                             .price(price.getSellerNewPrice())
-                            .serviceCharge(price.getNewServiceCharge())
+                            .serviceCharge(pricingService.getServiceCharge(price.getSellerNewPrice()))
                             .reservedUntil(reservedUntil)
                             .build();
 
@@ -306,15 +347,18 @@ public class CartService {
                     continue;
                 }
 
-                InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryItem.getId()).toPriceDto();
+               // InventoryItemPriceResponse price = inventoryItemPriceService.getPrices(inventoryItem.getId()).toPriceDto();
 
                 Optional<CartItem> existingItem = cartItemRepository
                         .findByCartIdAndListingId(cart.getId(), targetListingId);
 
+                BigDecimal shippingCost = shippingOptionService.getShippingOption(inventoryItem.getItemSize())!=null?
+                        shippingOptionService.getShippingOption(inventoryItem.getItemSize()).getPrice():BigDecimal.ZERO;
+
                 if (existingItem.isPresent()) {
                     CartItem cartItem = existingItem.get();
                     cartItem.setPrice(offer);
-                    cartItem.setServiceCharge(pricingService.calculateServiceCharge(offer));
+                    cartItem.setServiceCharge(pricingService.getServiceCharge(offer));
                     cartItem.setReservedUntil(reservedUntil);
                     cartItemRepository.save(cartItem);
                     updatedCount++;
@@ -324,7 +368,7 @@ public class CartService {
                             .inventoryItem(inventoryItem)
                             .listingId(targetListingId)
                             .price(offer)
-                            .serviceCharge(pricingService.calculateServiceCharge(offer))
+                            .serviceCharge(pricingService.getServiceCharge(offer))
                             .reservedUntil(reservedUntil)
                             .build();
 
@@ -426,6 +470,7 @@ public class CartService {
                         .cartId(cart.getId())
                         .status(cart.getStatus())
                         .address(address)
+                        .shippingMethod(cart.getShippingMethod().name())
                         .cartItemList(flatCartItemDtoList)
                         .build();
             }
@@ -437,37 +482,70 @@ public class CartService {
                                 ));
                         return listing.getInventory().getSeller().getId();
                     }));
-            for (Map.Entry<Long, List<CartItem>> sellerGroup : itemsGroupedBySeller.entrySet()) {
+
+
+            for (Map.Entry<Long, List<CartItem>> sellerGroup
+                    : itemsGroupedBySeller.entrySet()) {
+
                 List<CartItem> bundledItems = sellerGroup.getValue();
+
+                BigDecimal bundleValue = bundledItems.stream()
+                        .map(CartItem::getPrice)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                // Calculate the service charge once for this seller's bundle.
+                BigDecimal bundleServiceCharge =
+                        pricingService.getServiceCharge(bundleValue);
+
+                BigDecimal bundleShipping =shippingOptionService.calculateStandardShippingPrice(bundledItems,cart.getShippingMethod().name());
+
                 for (int i = 0; i < bundledItems.size(); i++) {
+
                     CartItem cartItem = bundledItems.get(i);
-                    MediaResponse media = mediaService.getListingMainImage(cartItem.getInventoryItem().getId());
-                    InventoryItem inventoryItem = inventoryItemService.getInventoryItem(cartItem.getInventoryItem().getId(), InventoryStatus.AVAILABLE);
-                    String productName = inventoryItem != null ? inventoryItem.getProductCatalog().getName() : null;
-                    BigDecimal assignedItemShipping = BigDecimal.ZERO;
-                    if (i == 0) {
-                        assignedItemShipping = shippingOptionService.calculateStandardShippingPrice(sellerGroup.getValue());
-                    }
+
+                    MediaResponse media = mediaService.getListingMainImage(
+                            cartItem.getInventoryItem().getId()
+                    );
+
+                    InventoryItem inventoryItem =
+                            inventoryItemService.getInventoryItem(
+                                    cartItem.getInventoryItem().getId(),
+                                    InventoryStatus.AVAILABLE
+                            );
+
+                    String productName = inventoryItem != null
+                            ? inventoryItem.getProductCatalog().getName()
+                            : null;
+
+                    boolean firstItem = i == 0;
+
                     CartItemDto dto = CartItemDto.builder()
                             .price(cartItem.getPrice())
                             .listingId(cartItem.getListingId())
                             .cartItemId(cartItem.getId())
                             .inventoryId(cartItem.getInventoryItem().getId())
-                            .shipping(assignedItemShipping)
+                            .shipping(firstItem
+                                    ? bundleShipping
+                                    : BigDecimal.ZERO)
+                            .serviceCharge(firstItem
+                                    ? bundleServiceCharge
+                                    : BigDecimal.ZERO)
                             .image(media != null ? media.getImage() : null)
                             .productName(productName)
-                            .serviceCharge(cartItem.getServiceCharge())
                             .reservedUntil(cartItem.getReservedUntil())
                             .sellerId(cartItem.getInventoryItem().getSeller().getId())
                             .build();
+
                     flatCartItemDtoList.add(dto);
                 }
             }
+
             return CartResponse.builder()
                     .cartId(cart.getId())
                     .status(cart.getStatus())
                     .address(address)
                     .buyerId(cart.getBuyer().getId())
+                    .shippingMethod(cart.getShippingMethod().name())
                     .cartItemList(flatCartItemDtoList)
                     .build();
         }
@@ -477,6 +555,8 @@ public class CartService {
                 .cartId(null)
                 .build();
     }
+
+
     public List<CartItem> getCartItems(Long buyerId) {
         return cartItemRepository.findAllByCartBuyerId(buyerId);
     }

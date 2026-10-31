@@ -12,5 +12,6 @@ public enum PayoutStatus {
     TRANSFERRED,
     READY_FOR_REVIEW,
     APPROVED,
-    REVERSED
+    REVERSED,
+    CHARGE_BACK
 }

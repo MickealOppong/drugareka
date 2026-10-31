@@ -25,9 +25,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static java.util.Arrays.stream;
 
 
 @Slf4j
@@ -47,6 +48,7 @@ public class ListingOrderService {
     private final MessageSource messageSource;
     private final PaymentRepo paymentRepo;
     private final OrderConfirmationExceptionRepo orderConfirmationExceptionRepo;
+    private final OrderReturnService orderReturnService;
 
 
 
@@ -176,13 +178,14 @@ public class ListingOrderService {
         }
 
         Instant now = Instant.now();
-        Instant expiresAt =
-                orderItem.getReceiptConfirmationTokenExpiresAt();
+        Instant expiresAt = orderItem.getReceiptConfirmationTokenExpiresAt();
 
+// Token missing or confirmation deadline has passed.
         if (expiresAt == null || !expiresAt.isAfter(now)) {
             return false;
         }
 
+// Receipt has already been confirmed.
         if (orderItem.getReceiptConfirmedAt() != null) {
             return false;
         }
@@ -240,10 +243,13 @@ public class ListingOrderService {
 
     @Transactional
     public void validateSellerUnConfirmedOrderForRefund() {
+
+
         Instant now = Instant.now();
 
         List<SellerShipment> unconfirmedShipments =
                 sellerShipmentRepo.findAllUnconfirmedShipmentForUpdate(now);
+
 
         for (SellerShipment shipment : unconfirmedShipments) {
             ListingOrderItem item = shipment.getListingOrderItem();
@@ -255,7 +261,6 @@ public class ListingOrderService {
                 continue;
             }
 
-            ListingOrder order = item.getListingOrder();
 
             // Cancel only the affected item.
             item.setOrderItemStatus(OrderItemStatus.CANCELLED);
@@ -288,24 +293,126 @@ public class ListingOrderService {
 
             orderConfirmationExceptionRepo.save(exception);
 
+            ListingOrder order = item.getListingOrder();
+
+
+            boolean isAllRefunded = order.getItems().stream()
+                    .allMatch(orderItem->orderItem.getOrderItemStatus().equals(OrderItemStatus.CANCELLED));
+
+            if(isAllRefunded){
+                order.setOrderStatus(OrderStatus.CANCELLED);
+                listingOrderRepo.save(order);
+            }
             // Refund the affected item or the full payment.
             paymentRepo.findByListingOrderIdAndStatus(
                             order.getId(), PaymentStatus.PAID)
                     .ifPresent(payment -> {
-                        if (order.getItems().size() > 1) {
-                            payoutProcessingService
-                                    .createRefundForUnconfirmedOrderItem(
-                                            payment, item);
-                        } else {
-                            payoutProcessingService
-                                    .refundForUnconfirmedOrder(payment, item);
-                        }
+                        payoutProcessingService
+                                .createRefundForUnconfirmedOrderItem(
+                                        payment, item);
+                        sellerProfileService.updateSellerTotalPayoutWithRefund(item);
                     });
-
-            sellerProfileService.updateSellerTotalPayoutWithRefund(item);
-
-
         }
+    }
+
+    @Transactional
+    public void executeBuyerReturnItemRefund(ListingOrderItem orderItem) {
+
+
+        // Cancel only the affected item.
+        orderItem.setOrderItemStatus(OrderItemStatus.RETURNED);
+        listingOrderItemRepo.save(orderItem);
+
+        // Return inventory only if it is still marked SOLD.
+        InventoryItem inventoryItem = orderItem.getInventoryItem();
+
+        if (inventoryItem != null
+                && inventoryItem.getStatus() == InventoryStatus.SOLD) {
+            inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+            inventoryItemRepo.save(inventoryItem);
+        }
+
+        ListingOrder order = orderItem.getListingOrder();
+
+
+        boolean isAllRefunded = order.getItems().stream()
+                .allMatch(item->orderItem.getOrderItemStatus().equals(OrderItemStatus.RETURNED));
+
+        if(isAllRefunded){
+            order.setOrderStatus(OrderStatus.REFUNDED);
+            listingOrderRepo.save(order);
+        }
+        // Refund the affected item or the full payment.
+        paymentRepo.findByListingOrderIdAndStatus(
+                        order.getId(), PaymentStatus.PAID)
+                .ifPresent(payment -> {
+                    payoutProcessingService
+                            .createRefundForUnconfirmedOrderItem(
+                                    payment, orderItem);
+                    sellerProfileService.updateSellerTotalPayoutWithRefund(orderItem);
+                });
+
+    }
+
+    @Transactional
+    public void cancelUnconfirmedShipment(ListingOrderItem item) {
+        // Skip items already cancelled or otherwise processed.
+        if (item == null
+                || item.getOrderItemStatus() != OrderItemStatus.PAID)
+        {
+           return;
+        }
+
+
+        // Cancel only the affected item.
+        item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+        listingOrderItemRepo.save(item);
+
+        // Return inventory only if it is still marked SOLD.
+        InventoryItem inventoryItem = item.getInventoryItem();
+
+        if (inventoryItem != null
+                && inventoryItem.getStatus() == InventoryStatus.SOLD) {
+            inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+            inventoryItemRepo.save(inventoryItem);
+        }
+        Instant now = Instant.now();
+
+        // Record the actual reason for cancellation.
+        OrderConfirmationException exception =
+                OrderConfirmationException.builder()
+                        .confirmedAt(now)
+                        .status("CANCELLED")
+                        .orderItemId(item.getId())
+                        .reason(
+                                "Seller did not confirm the shipment "
+                                        + "within the required confirmation window"
+                        )
+                        .build();
+
+        orderConfirmationExceptionRepo.save(exception);
+
+        ListingOrder order = item.getListingOrder();
+        log.info("Order has :{} items",order.getItems().size());
+
+        boolean isAllRefunded = order.getItems().stream()
+                .allMatch(orderItem->orderItem.getOrderItemStatus().equals(OrderItemStatus.CANCELLED));
+
+        if(isAllRefunded){
+            order.setOrderStatus(OrderStatus.CANCELLED);
+            listingOrderRepo.save(order);
+        }
+        // Refund the affected item or the full payment.
+        paymentRepo.findByListingOrderIdAndStatus(
+                        order.getId(), PaymentStatus.PAID)
+                .ifPresent(payment -> {
+                    payoutProcessingService
+                            .createRefundForUnconfirmedOrderItem(
+                                    payment, item);
+                    sellerProfileService.updateSellerTotalPayoutWithRefund(item);
+                });
+
+
     }
 
     @Transactional
@@ -484,6 +591,7 @@ public class ListingOrderService {
                     .orders(orders.getContent())
                     .totalElements(orders.getTotalElements())
                     .totalPages(orders.getTotalPages())
+                    .accumulatedItems(getAccumulatedItemsFromPage(orders.getNumber(),orders.getSize(),orders.getTotalElements()))
                     .page(orders.getNumber())
                     .pageSize(orders.getSize())
                     .build();

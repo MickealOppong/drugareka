@@ -73,62 +73,121 @@ public class SellerProfileService {
      * Aggregates total order lines, resolves multiple seller balances simultaneously without loop thrashing,
      * updates lifetime metrics, and dynamically computes calendar-year DAC7 tax compliance thresholds.
      */
+
     @Transactional
     public void updateSellerTotalSales(List<ListingOrderItem> orderItems) {
         if (orderItems == null || orderItems.isEmpty()) {
-            return ;
+            return;
         }
 
         try {
-            // STEP 1: Aggregate order financial splits by Seller ID to prevent multiple database hits
+            // Aggregate item sales by seller and track distinct orders.
             Map<Long, BigDecimal> sellerOrderTotals = new HashMap<>();
+            Map<Long, Set<Long>> sellerOrderIds = new HashMap<>();
 
             for (ListingOrderItem item : orderItems) {
-                if (item.getSeller() == null || item.getSeller().getId() == null) {
+                if (item == null
+                        || item.getSeller() == null
+                        || item.getSeller().getId() == null
+                        || item.getSellerPrice() == null
+                        || item.getListingOrder() == null
+                        || item.getListingOrder().getId() == null) {
                     continue;
                 }
 
                 Long sellerId = item.getSeller().getId();
+                Long orderId = item.getListingOrder().getId();
+                BigDecimal itemPrice = item.getSellerPrice();
 
-                // Protect arithmetic against uninstantiated null fee fields safely
-                BigDecimal itemPrice = item.getSellerPrice() != null ? item.getSellerPrice() : BigDecimal.ZERO;
+                // Correctly add every item's price to the seller's total.
+                sellerOrderTotals.merge(
+                        sellerId,
+                        itemPrice,
+                        BigDecimal::add
+                );
 
-                sellerOrderTotals.put(sellerId, sellerOrderTotals.getOrDefault(sellerId, itemPrice));
+                // Count each order only once per seller within this call.
+                sellerOrderIds
+                        .computeIfAbsent(sellerId, id -> new HashSet<>())
+                        .add(orderId);
+            }
+
+            if (sellerOrderTotals.isEmpty()) {
+                return;
             }
 
             List<SellerProfile> profilesToUpdate = new ArrayList<>();
 
-            // STEP 2: Process each distinct vendor exactly once
-            for (Map.Entry<Long, BigDecimal> entry : sellerOrderTotals.entrySet()) {
+            for (Map.Entry<Long, BigDecimal> entry
+                    : sellerOrderTotals.entrySet()) {
+
                 Long sellerId = entry.getKey();
                 BigDecimal aggregatedOrderTotal = entry.getValue();
 
-                SellerProfile seller = sellerProfileRepo.findByIdForUpdate(sellerId)
-                        .orElseThrow(() -> new InvalidOperationException("Seller profile not found for user ID: " + sellerId));
+                SellerProfile seller = sellerProfileRepo
+                        .findByIdForUpdate(sellerId)
+                        .orElseThrow(() ->
+                                new InvalidOperationException(
+                                        "Seller profile not found for ID: "
+                                                + sellerId
+                                )
+                        );
 
-                log.info("Financial System: Aggregating order funds for seller profile: {} [Amount: +{} zł]",
-                        seller.getUser().getUsername(), aggregatedOrderTotal);
+                int distinctOrderCount = sellerOrderIds
+                        .getOrDefault(sellerId, Collections.emptySet())
+                        .size();
 
-                // --- Update Lifetime Accounting Metrics ---
-                BigDecimal currentLifetimeSales = seller.getTotalSales() != null ? seller.getTotalSales() : BigDecimal.ZERO;
-                seller.setTotalSales(currentLifetimeSales.add(aggregatedOrderTotal));
+                log.info(
+                        "Updating sales for seller {}: amount={} PLN, distinct orders={}",
+                        sellerId,
+                        aggregatedOrderTotal,
+                        distinctOrderCount
+                );
 
-                // --- Update Calendar-Year Regulatory Counters ---
-                int currentYearCount = seller.getCurrentYearSalesCount() != null ? seller.getCurrentYearSalesCount() : 0;
-                BigDecimal currentYearVolume = seller.getCurrentYearGrossVolumePln() != null ? seller.getCurrentYearGrossVolumePln() : BigDecimal.ZERO;
+                // Lifetime sales volume.
+                BigDecimal lifetimeSales = seller.getTotalSales() != null
+                        ? seller.getTotalSales()
+                        : BigDecimal.ZERO;
 
-                seller.setCurrentYearSalesCount(currentYearCount + 1);
-                seller.setCurrentYearGrossVolumePln(currentYearVolume.add(aggregatedOrderTotal));
+                seller.setTotalSales(
+                        lifetimeSales.add(aggregatedOrderTotal)
+                );
 
-                // STEP 3: DYNAMIC LEGAL RISK GUARD
-                // Automatically flags private citizen merchants if they cross EU/Polish tracking limits
+                // Current calendar-year sales metrics.
+                int currentYearCount =
+                        seller.getCurrentYearSalesCount() != null
+                                ? seller.getCurrentYearSalesCount()
+                                : 0;
+
+                BigDecimal currentYearVolume =
+                        seller.getCurrentYearGrossVolumePln() != null
+                                ? seller.getCurrentYearGrossVolumePln()
+                                : BigDecimal.ZERO;
+
+                seller.setCurrentYearSalesCount(
+                        currentYearCount + distinctOrderCount
+                );
+
+                seller.setCurrentYearGrossVolumePln(
+                        currentYearVolume.add(aggregatedOrderTotal)
+                );
+
+                // DAC7 tracking threshold checks.
                 if (!seller.isDac7Reportable()) {
-                    boolean crossedSalesCount = seller.getCurrentYearSalesCount() >= DAC7_MAX_SALES_COUNT;
-                    boolean crossedVolumeLimit = seller.getCurrentYearGrossVolumePln().compareTo(DAC7_MAX_GROSS_VOLUME_PLN) >= 0;
+                    boolean crossedSalesCount =
+                            seller.getCurrentYearSalesCount()
+                                    >= DAC7_MAX_SALES_COUNT;
+
+                    boolean crossedVolumeLimit =
+                            seller.getCurrentYearGrossVolumePln()
+                                    .compareTo(DAC7_MAX_GROSS_VOLUME_PLN) >= 0;
 
                     if (crossedSalesCount || crossedVolumeLimit) {
-                        log.warn("Regulatory Guard Shield: Private individual merchant [{}] has crossed legal tracking limits! Flagging profile for DAC7 reporting audits.",
-                                seller.getFullLegalName());
+                        log.warn(
+                                "DAC7 review threshold reached for seller {}",
+                                sellerId
+                        );
+
                         seller.setDac7Reportable(true);
                         seller.setDac7FlaggedAt(Instant.now());
                     }
@@ -137,17 +196,26 @@ public class SellerProfileService {
                 profilesToUpdate.add(seller);
             }
 
-            // STEP 4: Flush everything to your Railway instance in a single batch query!
-             sellerProfileRepo.saveAll(profilesToUpdate);
+            sellerProfileRepo.saveAll(profilesToUpdate);
 
         } catch (InvalidOperationException e) {
-            log.error("Validation Violation: Failed to match seller entities during accounting updates", e);
+            log.error(
+                    "Failed to update seller sales accounting",
+                    e
+            );
             throw e;
+
         } catch (Exception e) {
-            log.error("Financial System Exception: Critical failure updating transaction rows", e);
-            throw new InvalidOperationException("Could not update seller profiles due to an internal server error.");
+            log.error(
+                    "Unexpected failure updating seller sales accounting",
+                    e
+            );
+            throw new InvalidOperationException(
+                    "Could not update seller profiles due to an internal server error."
+            );
         }
     }
+
 
     @Transactional
     public void updateSellerTotalSales(ListingOrderItem item) {
@@ -246,6 +314,15 @@ public class SellerProfileService {
         });
     }
 
+    public void updateSellerTotalPayoutWithOrderRefund(ListingOrder order){
+        if(order.getItems().isEmpty()){
+            return;
+        }
+        for(ListingOrderItem item : order.getItems()){
+            updateSellerTotalPayoutWithRefund(item);
+        }
+    }
+
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public BigDecimal outStandingPayout(Jwt jwt){
@@ -258,7 +335,7 @@ public class SellerProfileService {
                 BigDecimal settlements = sellerProfile.getTotalSettlement()!=null?sellerProfile.getTotalSettlement():BigDecimal.ZERO;
               BigDecimal sales = sellerProfile.getTotalSales()!=null?sellerProfile.getTotalSales():BigDecimal.ZERO;
 
-               return sales.subtract(settlements);
+               return sales.add(settlements);
             }
             return BigDecimal.ZERO;
         }

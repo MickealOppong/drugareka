@@ -2,6 +2,7 @@ package com.pages.model;
 
 
 import com.pages.enums.CartStatus;
+import com.pages.enums.ShippingMethod;
 import com.pages.util.GlobalAddress;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -26,6 +27,9 @@ public class Cart  extends LogEntity {
 
     @Enumerated(EnumType.STRING)
     private CartStatus status;
+
+    @Enumerated(EnumType.STRING)
+    private ShippingMethod shippingMethod;
 
 
 }

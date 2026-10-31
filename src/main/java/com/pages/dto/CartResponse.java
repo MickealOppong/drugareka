@@ -24,6 +24,7 @@ public class CartResponse {
     private CartStatus status;
     private AddressResponse address;
     private Long buyerId;
+    private String shippingMethod;
     List<CartItemDto> cartItemList;
 
 }

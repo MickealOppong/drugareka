@@ -267,11 +267,8 @@ public class ListingTransactionService {
                         messageSource.getMessage("api.listing.product.price.empty", null, "Price is required.", locale)
                 );
             }
-            BigDecimal newStorePrice = pricingService.calculateServiceCharge(newPrice);
             currentPrice.setSellerOldPrice(oldPrice);
             currentPrice.setSellerNewPrice(newPrice);
-            currentPrice.setOldServiceCharge(currentPrice.getNewServiceCharge());
-            currentPrice.setNewServiceCharge(newStorePrice);
             currentPrice.setInventoryItem(inventoryItem);
             currentPrice.setSellerMinPrice(minPrice);
             currentPrice.setReason("Listing price updated");
@@ -352,12 +349,11 @@ public class ListingTransactionService {
                     .build();
             InventoryItem savedInventoryItem = inventoryItemService.addNewInventory(inventoryItemRequest);
 
+
             //price
             InventoryItemPriceDto inventoryItemPriceDto = InventoryItemPriceDto.builder()
                     .sellerOldPrice(productData.getPrice())
                     .sellerNewPrice(productData.getPrice())
-                    .oldServiceCharge(pricingService.calculateServiceCharge(productData.getPrice()))
-                    .newServiceCharge(pricingService.calculateServiceCharge(productData.getPrice()))
                     .inventoryItem(savedInventoryItem)
                     .sellerMinPrice(productData.getMinPrice())
                     .reason("Initial listing price")
@@ -514,9 +510,10 @@ public class ListingTransactionService {
                 String msg = messageSource.getMessage("api.listing.offer.status.accepted", null,
                         "Offer accepted, you have 30 minutes to checkout.", locale);
 
+
                 OfferResponse offerDto = OfferResponse.builder()
                         .price(offer)
-                        .serviceCharge(pricingService.calculateServiceCharge(offer))
+                        .serviceCharge(pricingService.getServiceCharge(offer))
                         .shipping(shippingOptionService.getShippingOption(inventory.getItemSize()).getPrice())
                         .build();
                 return ResponseDto.builder()
@@ -604,7 +601,7 @@ public class ListingTransactionService {
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
-            BigDecimal serviceCharge = pricingService.calculateServiceCharge(price.getSellerNewPrice());
+            BigDecimal serviceCharge = pricingService.getServiceCharge(price.getSellerNewPrice());
             BigDecimal shipmentCost  = shippingOptionService.getShippingOption(listingTransaction.getInventory().getItemSize()).getPrice();
             return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
         }
@@ -619,8 +616,6 @@ public class ListingTransactionService {
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
-            BigDecimal serviceCharge = pricingService.calculateServiceCharge(price.getSellerNewPrice());
-            BigDecimal shipmentCost  = shippingOptionService.getShippingOption(listingTransaction.getInventory().getItemSize()).getPrice();
             return ListingTransaction.toListTransResponse(listingTransaction, mediaList, price);
         }
         return ListTransResponse.builder().build();

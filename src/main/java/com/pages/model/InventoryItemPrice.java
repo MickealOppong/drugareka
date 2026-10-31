@@ -32,12 +32,6 @@ public class InventoryItemPrice extends LogEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal sellerMinPrice= BigDecimal.ZERO;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal oldServiceCharge = BigDecimal.ZERO;
-
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal newServiceCharge = BigDecimal.ZERO;
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "inventory_item_id", nullable = false)
     private InventoryItem inventoryItem;
@@ -49,8 +43,6 @@ public class InventoryItemPrice extends LogEntity {
         this.sellerOldPrice =dto.getSellerOldPrice();
         this.sellerNewPrice = dto.getSellerNewPrice();
         this.inventoryItem = dto.getInventoryItem();
-        this.oldServiceCharge = dto.getOldServiceCharge();
-        this.newServiceCharge = dto.getNewServiceCharge();
         this.sellerMinPrice = dto.getSellerMinPrice();
         this.reason = dto.getReason();
     }

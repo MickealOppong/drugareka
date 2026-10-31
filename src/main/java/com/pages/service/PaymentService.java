@@ -1,6 +1,8 @@
 package com.pages.service;
 
 
+import com.nimbusds.jose.shaded.gson.JsonElement;
+import com.nimbusds.jose.shaded.gson.JsonParser;
 import com.pages.dto.*;
 import com.pages.enums.*;
 import com.pages.exception.EntityNotFoundException;
@@ -11,14 +13,14 @@ import com.pages.repository.*;
 import com.pages.service.*;
 import com.pages.util.UtilService;
 import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.*;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.checkout.SessionCollection;
+import com.stripe.net.ApiResource;
 import com.stripe.net.RequestOptions;
-import com.stripe.param.PaymentIntentCancelParams;
-import com.stripe.param.RefundCreateParams;
-import com.stripe.param.TransferCreateParams;
+import com.stripe.param.*;
 import com.stripe.param.checkout.SessionListParams;
 import com.stripe.param.checkout.SessionRetrieveParams;
 import jakarta.transaction.Transactional;
@@ -28,6 +30,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.RollbackOn;
@@ -35,12 +38,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Ref;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -439,6 +440,7 @@ public class PaymentService{
 
             payment.setStatus(PaymentStatus.PAID);
             payment.setStripeChargeId(chargeId);
+            payment.setStripePaymentIntentId(intent.getId());
             paymentRepo.save(payment);
 
                       //update dispute to approved by seller for return
@@ -455,7 +457,7 @@ public class PaymentService{
             log.info("Payment finalized successfully for order {}", payment.getOrderNumber());
 
         } catch (InventoryConflictException e) {
-            log.error("CRITICAL CONFLICT DETECTED: Order #{} was paid, but items are already SOLD. Launching auto-refund.", disputeId);
+            log.error("CRITICAL CONFLICT DETECTED: Order #{} was paid, Launching auto-refund.", disputeId);
 
             RefundCreateParams refundParams = RefundCreateParams.builder()
                     .setCharge(chargeId)
@@ -669,67 +671,184 @@ public class PaymentService{
     }
 
 
-    public void capturePayment(String paymentIntentId) throws StripeException {
-        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId);
-        intent.capture(); // Transaction finishes. Fees are now permanently locked.
+    @Transactional
+    public void handleRefundCreated(Event event) {
+        handleIndividualRefundEvent(event, "refund.created");
     }
 
-
-    public void voidUncapturedPayment(String paymentIntentId) throws StripeException {
-        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId);
-
-        // Completely voids the hold. Stripe charges 0.00 zł for this operation.
-        intent.cancel(PaymentIntentCancelParams.builder().build());
+    @Transactional
+    public void handleRefundUpdated(Event event) {
+        handleIndividualRefundEvent(event, "refund.updated");
     }
 
-    public void handleRefundSuccess(Event event) {
+    @Transactional
+    private void handleIndividualRefundEvent(Event event, String eventType) {
+
+        log.info("Processing Stripe event: id={}, type={}",
+                event.getId(), eventType);
         try {
-            // 1. Deserialize the Event object payload safely
-            Object data = event.getDataObjectDeserializer().getObject()
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid webhook payload structure."));
+            var deserializer = event.getDataObjectDeserializer();
+            Refund refund;
 
-            Charge charge = (Charge) data;
+            if (deserializer.getObject().isPresent()
+                    && deserializer.getObject().get() instanceof Refund parsedRefund) {
 
-            // 2. Add defensive null checks for your custom metadata id tag
-            if (charge.getMetadata() == null || !charge.getMetadata().containsKey("payment_ledger_id")) {
-                log.warn("Webhook Warning: Received refund event for Charge {} but it is missing database 'id' metadata.", charge.getId());
-                return; // Exit early to prevent NumberFormatException drops
-            }
-
-            Long refundId = Long.valueOf(charge.getMetadata().get("payment_ledger_id"));
-
-            // 3. Verify that the charge object confirms the actual refund was executed
-            if (Boolean.TRUE.equals(charge.getRefunded())) {
-
-                paymentRepo.findById(refundId).ifPresentOrElse(
-                        retrieveRefund -> {
-                            // Check state to avoid duplicate processing loops
-                            if (retrieveRefund.getStatus() != PaymentStatus.REFUNDED) {
-                                retrieveRefund.setStatus(PaymentStatus.REFUNDED);
-                                paymentRepo.save(retrieveRefund);
-                                log.info("Ledger Synced: Payment ID {} updated to REFUNDED via Stripe Webhook.", refundId);
-                            }
-                        },
-                        () -> log.error("Database Mismatch: Stripe says Payment ID {} was refunded, but no local record exists.", refundId)
-                );
+                refund = parsedRefund;
 
             } else {
-                log.info("Webhook: Charge {} received update but is not fully refunded yet.", charge.getId());
-               
+                refund = (Refund) event.getDataObjectDeserializer().deserializeUnsafe();
             }
 
+            if (refund == null || refund.getId() == null) {
+                throw new IllegalArgumentException(
+                        "Stripe Refund payload is missing its ID."
+                );
+            }
+
+            log.info("Stripe Refund: id={}, status={}, amount={}, paymentIntent={}",
+                    refund.getId(),
+                    refund.getStatus(),
+                    refund.getAmount(),
+                    refund.getPaymentIntent());
+
+            // A refund can be pending when refund.created is received.
+            if (!"succeeded".equalsIgnoreCase(refund.getStatus())) {
+                log.info("Refund {} is not successful yet. Current status={}",
+                        refund.getId(), refund.getStatus());
+                return;
+            }
+
+            Map<String, String> metadata = refund.getMetadata();
+            String ledgerId = metadata == null
+                    ? null
+                    : metadata.get("payment_ledger_id");
+
+
+            Payment ledgerOptional=null;
+
+            if (ledgerId != null && !ledgerId.isBlank()) {
+                ledgerOptional = paymentRepo.findById(Long.valueOf(ledgerId)).orElse(null);
+            }
+
+            if (ledgerOptional==null) {
+                log.error(
+                        "No refund ledger found for Stripe Refund ID {}. Metadata ledger ID={}",
+                        refund.getId(), ledgerId
+                );
+
+                throw new IllegalStateException(
+                        "Refund ledger not found for Stripe Refund ID " + refund.getId()
+                );
+            }
+
+            Payment ledger = ledgerOptional;
+
+            // Protect against duplicate webhook delivery.
+            if (ledger.getStatus() == PaymentStatus.REFUNDED) {
+                log.info("Refund ledger {} is already REFUNDED.", ledger.getId());
+                return;
+            }
+
+            // Persist the Stripe Refund ID for future reconciliation.
+            ledger.setStripeRefundId(refund.getId());
+            ledger.setStatus(PaymentStatus.REFUNDED);
+
+            paymentRepo.save(ledger);
+
+            log.info(
+                    "Refund ledger {} marked REFUNDED. Stripe Refund ID={}, amount={} minor units.",
+                    ledger.getId(), refund.getId(), refund.getAmount()
+            );
+
         } catch (NumberFormatException e) {
-            log.error("Webhook processing dropped: Metadata 'id' string field could not be converted to Long.", e);
-            // Do not rethrow here; parsing anomalies shouldn't cause Stripe retry loops
+            log.error("Invalid payment_ledger_id in Stripe Refund metadata. Event ID={}",
+                    event.getId(), e);
+
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Invalid refund ledger metadata",
+                    e
+            );
 
         } catch (Exception e) {
-            log.error("Unexpected pipeline crash during background refund confirmation handler loop.", e);
-            // Throw a runtime exception so your Controller sends an HTTP error back to Stripe to trigger a retry
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Internal processing drop", e);
+            log.error("Failed to process Stripe {} event. Event ID={}",
+                    eventType, event.getId(), e);
+
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Stripe refund event processing failed",
+                    e
+            );
         }
+
+
     }
 
+    @Transactional
+    public void handleChargeRefunded(Event event) {
 
+        log.info("Processing Stripe charge.refunded: eventId={}", event.getId());
+
+        try {
+            var deserializer = event.getDataObjectDeserializer();
+            Charge charge;
+
+            if (deserializer.getObject().isPresent()
+                    && deserializer.getObject().get() instanceof Charge parsedCharge) {
+
+                charge = parsedCharge;
+
+            } else {
+                charge = (Charge) event.getDataObjectDeserializer().deserializeUnsafe();
+            }
+
+            if (charge == null || charge.getId() == null) {
+                throw new IllegalArgumentException(
+                        "Stripe Charge payload is missing its ID."
+                );
+            }
+
+            long originalAmount = charge.getAmount() == null
+                    ? 0L : charge.getAmount();
+
+            long totalRefunded = charge.getAmountRefunded() == null
+                    ? 0L : charge.getAmountRefunded();
+
+            boolean fullyRefunded =
+                    Boolean.TRUE.equals(charge.getRefunded())
+                            || (originalAmount > 0 && totalRefunded >= originalAmount);
+
+            long remainingAmount = Math.max(0L, originalAmount - totalRefunded);
+
+            log.info(
+                    "Stripe refund reconciliation: chargeId={}, paymentIntent={}, " +
+                            "originalAmount={}, totalRefunded={}, remainingAmount={}, fullyRefunded={}",
+                    charge.getId(),
+                    charge.getPaymentIntent(),
+                    originalAmount,
+                    totalRefunded,
+                    remainingAmount,
+                    fullyRefunded
+            );
+
+            // Reconciliation only.
+            // Do not modify the original Payment status.
+            // Individual refund ledger records are updated by refund.created/refund.updated.
+
+        } catch (Exception e) {
+            log.error(
+                    "Stripe charge.refunded reconciliation failed. Event ID={}",
+                    event.getId(),
+                    e
+            );
+
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Stripe refund reconciliation failed",
+                    e
+            );
+        }
+    }
 
     @Transactional
     public void createTotalRefund(ListingOrder order) {
@@ -776,45 +895,101 @@ public class PaymentService{
         }
     }
 
-    @Transactional
-    public void createPartialRefund(ListingOrderItem orderItem) {
+    private long getRemainingRefundableAmount(String chargeId)
+            throws StripeException {
 
-        if (orderItem == null) {
-            return;
-        }
+        Charge charge = Charge.retrieve(chargeId);
 
-        Payment originalPayment = paymentRepo.findByListingOrderIdAndStatus(orderItem.getListingId(), PaymentStatus.PAID)
-                .orElseThrow(() -> new EntityNotFoundException("Payment record does not exist for refund"));
+        long chargeAmount = charge.getAmount();
+        long amountRefunded = charge.getAmountRefunded();
 
-        // Calculate current net balance in your database
-        BigDecimal netTotal = orderItem.getSellerPrice();
-
-        try {
-            // 1. Create a local accounting record matching the exact remaining net balance
-            Payment refundRecord = Payment.builder()
-                    .listingOrder(orderItem.getListingOrder())
-                    .status(PaymentStatus.AWAITING_REFUND)
-                    .amount(netTotal.negate()) // Refund minus service charge and shipping charge
-                    .provider(originalPayment.getProvider())
-                    .currency(originalPayment.getCurrency())
-                    .orderNumber(originalPayment.getOrderNumber())
-                    .providerSessionId(originalPayment.getProviderSessionId())
-                    .stripePaymentIntentId(originalPayment.getStripePaymentIntentId())
-                    .build();
-
-            paymentRepo.save(refundRecord);
-
-        } catch (Exception e) {
-            log.error("Failed to create refund for order {}", orderItem.getId(), e);
-            throw new InvalidOperationException("Failed to complete refund processing.");
-        }
+        return chargeAmount - amountRefunded;
     }
 
+    @Transactional
+    public void reconcileRefundToStripeLedge(){
+        // Fetch rows using FOR UPDATE to prevent multiple nodes from selecting the same queue items
+        List<Payment> payments = paymentRepo.findByStatusAndProviderAndCreatedAtBeforeForUpdate(
+                PaymentStatus.AWAITING_REFUND,
+                PaymentProvider.STRIPE,
+                Instant.now()
+        );
+
+        for (Payment refund : payments) {
+            try {
+                Payment originalPayment = paymentRepo.findByListingOrderIdAndStatus(refund.getListingOrder().getId(),PaymentStatus.PAID).orElse(null);
+
+                // Execute each individual refund inside its own isolated database transaction
+
+                if(originalPayment!=null){
+                    reconcileRefundsForLedger(originalPayment.getStripeChargeId());
+                }
+            } catch (Exception e) {
+                // Capture the error safely. The loop will advance to the next payment row cleanly.
+                log.error("Queue Processor: Skipping payment id {} due to processing failure.", refund.getId(), e);
+            }
+        }
+
+    }
+
+    @Transactional
+    private void reconcileRefundsForLedger(String chargeId)
+            throws StripeException {
+
+        RefundListParams params = RefundListParams.builder()
+                .setCharge(chargeId)
+                .setLimit(100L)
+                .build();
+
+        RefundCollection result = Refund.list(params);
+
+        while (true) {
+            for (Refund stripeRefund : result.getData()) {
+
+                String ledgerId = stripeRefund.getMetadata() == null
+                        ? null
+                        : stripeRefund.getMetadata()
+                        .get("payment_ledger_id");
+
+                if (ledgerId == null) {
+                    continue;
+                }
+
+               paymentRepo.findByIdForUpdate(Long.valueOf(ledgerId))
+                        .ifPresent(ledger -> {
+                            if ("succeeded".equals(stripeRefund.getStatus()) && !ledger.getStatus().equals(PaymentStatus.REFUNDED)) {
+                                // Update the associated refund record,
+                                ledger.setStatus(PaymentStatus.REFUNDED);
+                                ledger.setStripeRefundId(stripeRefund.getId());
+                                paymentRepo.save(ledger);
+                            }
+                        });
+            }
+
+            if (!Boolean.TRUE.equals(result.getHasMore())
+                    || result.getData().isEmpty()) {
+                break;
+            }
+
+            String lastRefundId = result.getData()
+                    .get(result.getData().size() - 1)
+                    .getId();
+
+            params = RefundListParams.builder()
+                    .setCharge(chargeId)
+                    .setLimit(100L)
+                    .setStartingAfter(lastRefundId)
+                    .build();
+
+            result = Refund.list(params);
+        }
+    }
 
     public void processSingleIsolatedRefund(Payment refund)
             throws StripeException {
 
         try {
+
             long amountInGrosze = refund.getAmount()
                     .abs()
                     .setScale(2, RoundingMode.HALF_UP)
@@ -824,18 +999,16 @@ public class PaymentService{
             Map<String, String> metadata = new HashMap<>();
             metadata.put("payment_ledger_id", String.valueOf(refund.getId()));
 
+
             RefundCreateParams refundParams = RefundCreateParams.builder()
                     .setPaymentIntent(refund.getStripePaymentIntentId())
-                    .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER)
+                    .setReason(RefundCreateParams.Reason.FRAUDULENT)
                     .setAmount(amountInGrosze)
                     .setMetadata(metadata)
+                    .putMetadata("payment_ledger_id", String.valueOf(refund.getId()))
                     .build();
 
             Refund stripeRefund = Refund.create(refundParams);
-
-            // Update only after Stripe confirms refund creation.
-            refund.setStatus(PaymentStatus.REFUNDED);
-            paymentRepo.save(refund);
 
             log.info(
                     "Stripe refund created: {} grosze, Payment ID: {}, Stripe Refund ID: {}",
@@ -844,6 +1017,8 @@ public class PaymentService{
                     stripeRefund.getId()
             );
 
+
+
         } catch (StripeException e) {
             log.error(
                     "Stripe refund failed for Payment ID: {}",
@@ -851,7 +1026,6 @@ public class PaymentService{
                     e
             );
 
-            throw e;
         }
     }
 
@@ -866,7 +1040,26 @@ public class PaymentService{
         );
 
         for (Payment refund : payments) {
+
+
             try {
+
+                Payment originalPayment = paymentRepo.findByListingOrderIdAndStatus(refund.getListingOrder().getId(),PaymentStatus.PAID).orElse(null);
+                long remaining =0L;
+                if(originalPayment!=null){
+                   remaining = getRemainingRefundableAmount(originalPayment.getStripeChargeId());
+                   log.info("Balance {}",remaining);
+                }
+
+                long requested = refund.getAmount().negate()
+                        .movePointRight(2)
+                        .longValueExact();
+
+                if (requested <= 0 || requested > remaining) {
+                   log.info("Refund amount :{} exceeds the remaining refundable amount. performing reconciliation to Stripe balance for :{}",requested,refund.getId());
+                    reconcileRefundToStripeLedge();
+                    continue;
+                }
                 // Execute each individual refund inside its own isolated database transaction
                 processSingleIsolatedRefund(refund);
             } catch (Exception e) {
@@ -1213,8 +1406,12 @@ public class PaymentService{
           Long disputeId= Long.valueOf(paymentIntent.getMetadata().get("dispute_id"));
          Payment payment=   paymentRepo.findByDisputeIdForUpdate(disputeId)
                  .orElseThrow(()->new IllegalStateException("No payment initiated: "));
+
+         Charge charge =(Charge) paymentIntent.getLatestChargeObject();
          if(payment!=null && !payment.getStatus().equals(PaymentStatus.PAID)){
              payment.setStatus(PaymentStatus.PAID);
+             payment.setStripePaymentIntentId(paymentIntent.getId());
+            payment.setStripeChargeId(charge.getId());
              paymentRepo.save(payment);
              //create shipment
          }

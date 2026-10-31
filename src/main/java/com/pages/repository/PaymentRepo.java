@@ -20,6 +20,14 @@ public interface PaymentRepo extends JpaRepository<Payment, Long> {
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<Payment> findByStripePaymentIntentId(String paymentIntent);
+
+  Optional<Payment> findByStripeChargeId(String paymentIntent);
+
+  Optional<Payment> findFirstByStripePaymentIntentIdAndStatus(
+          String paymentIntent,
+          PaymentStatus status
+  );
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
 Optional<Payment> findByOrderNumber(String orderNumber);
 @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -37,6 +45,16 @@ Optional<Payment> findByListingOrderIdAndStatus(Long orderId, PaymentStatus paym
        """)
   Optional<Payment> findByProviderSessionIdForUpdate(
           @Param("sessionId") String sessionId
+  );
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @org.springframework.data.jpa.repository.Query("""
+       SELECT p
+       FROM Payment p
+       WHERE p.id = :id
+       """)
+  Optional<Payment> findByIdForUpdate(
+          @Param("id") Long id
   );
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -58,7 +58,14 @@ public class StripeWebhookController {
                         paymentService.handleCheckoutCompleted(event);
                         break;
                     case "charge.refunded":
-                        paymentService.handleRefundSuccess(event);
+                        paymentService.handleChargeRefunded(event);
+                        break;
+                    case "refund.created":
+                        paymentService.handleRefundCreated(event);
+                        break;
+
+                    case "refund.updated":
+                        paymentService.handleRefundUpdated(event);
                         break;
                     case "checkout.session.expired":
                         paymentService.handleCheckoutSessionExpired(event);

@@ -2,8 +2,10 @@ package com.pages.service;
 
 import com.pages.dto.*;
 import com.pages.enums.ItemSize;
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.ShipmentConfirmationStatus;
 import com.pages.enums.ShipmentStatus;
+import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.ReturnShipmentRepo;
 import com.pages.repository.SellerShipmentRepo;
@@ -84,26 +86,79 @@ public class ShipmentService {
 
     @Transactional
     public void createReturnShipment(OrderDispute orderDispute) {
-       ReturnShipment shipment = returnShipmentRepo.findByOrderDispute(orderDispute)
-               .orElse(null);
-       if(shipment!=null){
-           log.info("Creating shipping for return item: dispute id:{}",orderDispute.getId());
 
-           SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(orderDispute.getListingOrderItem().getId()).orElse(null);
-           String sellerAddress =    sellerShipment!=null? sellerShipment.getCollectionAddress():null;
+        if (orderDispute == null || orderDispute.getId() == null) {
+            throw new InvalidOperationException("Invalid return dispute.");
+        }
 
-           ReturnShipment itemShipment= ReturnShipment.builder()
-                   .orderDispute(orderDispute)
-                   .itemSize(orderDispute.getListingOrderItem().getItemSize())
-                   .sellerReturnAddress(sellerAddress)
-                   .buyerAddress(orderDispute.getListingOrderItem().getListingOrder().getShippingAddress())
-                   .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
-                   .shippedAt(null)
-                   .build();
-          returnShipmentRepo.save(itemShipment);
-       }
+        ReturnShipment existingShipment = returnShipmentRepo
+                .findByOrderDispute(orderDispute)
+                .orElse(null);
 
+        if (existingShipment != null) {
+            log.info(
+                    "Return shipment already exists for dispute ID: {}. Skipping creation.",
+                    orderDispute.getId()
+            );
+            return;
+        }
 
+        log.info(
+                "Creating return shipment for dispute ID: {}",
+                orderDispute.getId()
+        );
+
+        if (orderDispute.getListingOrderItem() == null) {
+            throw new InvalidOperationException(
+                    "Cannot create return shipment without an order item."
+            );
+        }
+
+        ListingOrderItem originalOrderItem = orderDispute.getListingOrderItem();
+        ListingOrder originalOrder = originalOrderItem.getListingOrder();
+
+        if (originalOrder == null) {
+            throw new InvalidOperationException(
+                    "Order item has no associated order."
+            );
+        }
+
+        Long orderItemId = originalOrderItem.getId();
+
+        SellerShipment sellerShipment = sellerShipmentRepo
+                .findByListingOrderItemId(orderItemId)
+                .orElse(null);
+
+        if (sellerShipment == null) {
+            log.warn(
+                    "Return shipment could not be created: no seller shipment found for order item {}",
+                    orderItemId
+            );
+            return;
+        }
+
+        String sellerAddress = sellerShipment.getCollectionAddress();
+
+        if (sellerAddress == null || sellerAddress.isBlank()) {
+            throw new InvalidOperationException(
+                    "Seller collection address is unavailable."
+            );
+        }
+
+        ReturnShipment itemShipment = ReturnShipment.builder()
+                .orderDispute(orderDispute)
+                .itemSize(originalOrderItem.getItemSize())
+                .sellerReturnAddress(sellerAddress)
+                .buyerAddress(originalOrder.getShippingAddress())
+                .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
+                .build();
+
+        returnShipmentRepo.save(itemShipment);
+
+        log.info(
+                "Return shipment created successfully for dispute ID: {}",
+                orderDispute.getId()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -163,6 +218,7 @@ public class ShipmentService {
 
                         //String fallbackSellerName = sellerProfile.getUser().getFirstName() + " " + sellerProfile.getUser().getLastName();
 
+                       ShipmentConfirmationStatus confirmationStatus = shipment.getShipmentConfirmationStatus()!=null?shipment.getShipmentConfirmationStatus():null;
                         return ShipmentResponse.builder()
                                 .id(shipment.getId())
                                 .orderNumber(shipment.getOrderDispute().getListingOrderItem().getListingOrder().getOrderNumber())
@@ -171,6 +227,7 @@ public class ShipmentService {
                                 .listingOrderId(shipment.getOrderDispute().getListingOrderItem().getId())
                                 .seller("Private person")
                                 .itemSize(shipment.getItemSize())
+                                .confirmationStatus(confirmationStatus!=null?confirmationStatus.name():null)
                                 .shippedAt(shipment.getShippedAt())
                                 .trackingNumber(shipment.getTrackingNumber())
                                 .status(shipment.getShipmentStatus())
@@ -237,7 +294,7 @@ public class ShipmentService {
                 shipment.getSeller().getUser().getId()
         );
 
-        boolean isAdmin = appUser.getUserRoles().contains("ROLE_ADMIN");
+        boolean isAdmin = appUser.getUserRoles().stream().anyMatch(role->role.getRole().equals("ROLE_ADMIN"));
 
         if (!isSeller && !isAdmin) {
             throw new ResponseStatusException(
@@ -265,6 +322,13 @@ public class ShipmentService {
 
         String status = request.getStatus();
 
+        if (shipment.getDeliveredAt() != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    getMessage("api_errors.shipment.already_delivered")
+            );
+        }
+
         if (("SHIPPED".equalsIgnoreCase(status)
                 || "DELIVERED".equalsIgnoreCase(status))
                 && requestedActionDate == null) {
@@ -274,16 +338,29 @@ public class ShipmentService {
             );
         }
 
-        if ("SHIPPED".equalsIgnoreCase(status) && (requestedActionDate!=null && requestedActionDate.isBefore(shipment.getCreatedAt().minus(1,ChronoUnit.DAYS)))) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    getMessage("api_responses.shipment.shipment.date.error")
-            );
-        }else{
-            shipment.setShippedAt(requestedActionDate);
-        }
+        if ("SHIPPED".equalsIgnoreCase(status)) {
 
-        if ("DELIVERED".equalsIgnoreCase(status)) {
+            if (requestedActionDate == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_responses.shipment.shipment.date.error")
+                );
+            }
+
+            Instant earliestAllowedDate = shipment.getCreatedAt()
+                    .minus(1, ChronoUnit.DAYS);
+
+            if (requestedActionDate.isBefore(earliestAllowedDate)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_responses.shipment.shipment.date.error")
+                );
+            }
+
+            shipment.setShippedAt(requestedActionDate);
+
+        } else if ("DELIVERED".equalsIgnoreCase(status)) {
+
             Instant existingShippedAt = shipment.getShippedAt();
 
             if (existingShippedAt == null) {
@@ -293,12 +370,11 @@ public class ShipmentService {
                 );
             }
 
-            if (requestedActionDate != null && requestedActionDate.isBefore(existingShippedAt.minus(1,ChronoUnit.DAYS))) {
+            if (requestedActionDate == null
+                    || requestedActionDate.isBefore(existingShippedAt)) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        getMessage(
-                                "api_errors.shipment.validation.invalid_delivery_sequence"
-                        )
+                        getMessage("api_errors.shipment.validation.invalid_delivery_sequence")
                 );
             }
 
@@ -367,21 +443,20 @@ public class ShipmentService {
     @Transactional
     public ResponseDto<Boolean> updateReturnShippingStatus(Jwt jwt, ShipmentRequest request) {
         if (jwt == null) {
-            return ResponseDto.<Boolean>builder()
-                    .data(false)
-                    .message(getMessage("api_errors.shipment.unauthorized"))
-                    .httpStatus(HttpStatus.UNAUTHORIZED.value())
-                    .build();
+
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    getMessage("api_errors.shipment.unauthorized")
+            );
         }
 
         ReturnShipment shipment = returnShipmentRepo.findById(request.getShipmentId()).orElse(null);
 
         if (shipment == null) {
-            return ResponseDto.<Boolean>builder()
-                    .data(false)
-                    .message(getMessage("api_errors.shipment.not_found"))
-                    .httpStatus(HttpStatus.NOT_FOUND.value())
-                    .build();
+               throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    getMessage("api_errors.shipment.not_found")
+            );
         }
 
         Instant requestedActionDate = request.getCreatedAt() != null
@@ -390,22 +465,24 @@ public class ShipmentService {
 
         String status = request.getStatus();
 
-        // Strict date validation guardrails
-        if (("SHIPPED".equalsIgnoreCase(status) || "DELIVERED".equalsIgnoreCase(status) || "RETURNED".equalsIgnoreCase(status))
+        if (("SHIPPED".equalsIgnoreCase(status)
+                || "DELIVERED".equalsIgnoreCase(status)
+                || "RETURNED".equalsIgnoreCase(status))
                 && requestedActionDate == null) {
+
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     getMessage("api_errors.shipment.validation.missing_date")
             );
         }
 
-
         if ("SHIPPED".equalsIgnoreCase(status)) {
             shipment.setShippedAt(requestedActionDate);
-        }
+            shipment.setTrackingNumber(request.getTrackingNumber());
 
-        //  Natively evaluates both "DELIVERED" and "RETURNED" webhooks cleanly
-        if ("DELIVERED".equalsIgnoreCase(status) || "RETURNED".equalsIgnoreCase(status)) {
+        } else if ("DELIVERED".equalsIgnoreCase(status)
+                || "RETURNED".equalsIgnoreCase(status)) {
+
             Instant existingShippedAt = shipment.getShippedAt();
 
             if (existingShippedAt == null) {
@@ -422,22 +499,22 @@ public class ShipmentService {
                 );
             }
 
-            //  Map to your correct, explicit ReturnShipment property column!
-            shipment.setDeliveredAt(requestedActionDate != null ? requestedActionDate : Instant.now());
-            String token = UtilService.generateShipmentToken().getToken();
-            shipment.setReceiptConfirmationToken(token);
-            shipment.setReceiptConfirmationTokenExpiresAt(Instant.now().plus(3,ChronoUnit.DAYS));
-            returnShipmentRepo.save(shipment);
-            sendNotification(shipment,token);
+            shipment.setDeliveredAt(requestedActionDate);
+
         }
 
         // Map and save core metadata properties safely
         shipment.setShipmentStatus(getShippingStatus(status));
-        shipment.setTrackingNumber(request.getTrackingNumber());
-        // Note: Assure your ReturnShipment entity supports custom comment variables if requested!
 
-         returnShipmentRepo.save(shipment);
+
+
+        String token = UtilService.generateShipmentToken().getToken();
+        shipment.setReceiptConfirmationToken(token);
+        shipment.setReceiptConfirmationTokenExpiresAt(Instant.now().plus(2,ChronoUnit.DAYS));
+
+        ReturnShipment updatedShipment = returnShipmentRepo.save(shipment);
         returnShipmentRepo.flush();
+        sendNotification(updatedShipment,token);
 
         return ResponseDto.<Boolean>builder()
                 .data(true)
@@ -511,39 +588,59 @@ public class ShipmentService {
      */
     @Transactional
     public Boolean validateAndProcessDelivery(String token) {
+
         if (token == null || token.isBlank()) {
-            return null;
+            return false;
         }
 
-        // 1. Fetch with a Pessimistic Lock to prevent concurrent double-processing
-        ReturnShipment orderItem = returnShipmentRepo.findByReceiptConfirmationToken(token)
+        // 1. Fetch shipment with a pessimistic write lock.
+        ReturnShipment shipment = returnShipmentRepo
+                .findByReceiptConfirmationTokenForUpdate(token)
                 .orElse(null);
 
-        if (orderItem == null) {
-            return null;
+        if (shipment == null) {
+            return false;
         }
 
         Instant now = Instant.now();
 
-        // 2. Token expiration verification
-        if (orderItem.getReceiptConfirmationTokenExpiresAt() == null
-                || orderItem.getReceiptConfirmationTokenExpiresAt().isBefore(now)) {
-            return null;
+        // 2. Verify token expiration.
+        Instant expiresAt = shipment.getReceiptConfirmationTokenExpiresAt();
+
+        if (expiresAt == null || !expiresAt.isAfter(now)) {
+            return false;
         }
 
-        // 3. Idempotency validation (Already confirmed check)
-        if (orderItem.getReceiptConfirmedAt() != null) {
-            return null;
+        // 3. Prevent duplicate confirmation.
+        if (shipment.getReceiptConfirmedAt() != null
+                || shipment.getShipmentConfirmationStatus()
+                == ShipmentConfirmationStatus.CONFIRMED) {
+            return false;
         }
 
-        // 4. Update the shipment status states immediately
-        orderItem.setReceiptConfirmedAt(now);
-        orderItem.setReceiptConfirmationTokenExpiresAt(now); // Invalidates instantly
-        // Optional safety: orderItem.setReceiptConfirmationToken(null);
-        // 5. Persist the state transition to the database
-        returnShipmentRepo.save(orderItem);
+        // 4. Confirm delivery.
+        shipment.setReceiptConfirmedAt(now);
+        shipment.setShipmentConfirmationStatus(
+                ShipmentConfirmationStatus.CONFIRMED
+        );
+
+        // 5. Invalidate token immediately.
+        shipment.setReceiptConfirmationTokenExpiresAt(now);
+        shipment.setReceiptConfirmationToken(null);
+
+        // 6. Persist confirmation.
+       ReturnShipment returnShipment = returnShipmentRepo.save(shipment);
+
+        log.info(
+                "Return shipment receipt confirmed successfully. Shipment ID: {}",
+                shipment.getId()
+        );
+
+        //cancel order for refund
+        ListingOrderItem orderItem = returnShipment.getOrderDispute().getListingOrderItem();
+        listingOrderService.executeBuyerReturnItemRefund(orderItem);
+
         return true;
-
     }
 
     /**
@@ -551,15 +648,17 @@ public class ShipmentService {
      * @param token
      * @return
      */
+    @Transactional
     public boolean isItemReturnConfirmed(String token) {
 
      ReturnShipment orderItem=  returnShipmentRepo.findByReceiptConfirmationToken(token).orElse(null);
+     log.info("{}",orderItem);
 
         if (orderItem == null) {
             return false;
         }
         // Already confirmed
-        return orderItem.getReceiptConfirmedAt() != null;
+        return orderItem.getShipmentConfirmationStatus()==ShipmentConfirmationStatus.CONFIRMED || orderItem.getReceiptConfirmedAt()!=null;
     }
 
     @Transactional(readOnly = true)
@@ -659,6 +758,7 @@ public class ShipmentService {
                                 .shippedAt(shipment.getShippedAt())
                                 .trackingNumber(shipment.getTrackingNumber())
                                 .status(shipment.getShipmentStatus())
+                                .confirmationStatus(shipment.getShipmentConfirmationStatus().name())
                                 .itemSize(shipment.getItemSize())
                                 .orderNumber(
                                         shipment.getOrderDispute()
@@ -793,6 +893,7 @@ public class ShipmentService {
                    .build();
        }
      List<ShipmentItemResponse>  items = sellerShipmentRepo.findBySellerShipmentTokenToken(token).stream()
+             .filter(shipment ->shipment.getListingOrderItem().getOrderItemStatus()!= OrderItemStatus.CANCELLED )
              .map(shipment -> {
 
                return ShipmentItemResponse.builder()
@@ -877,12 +978,16 @@ public class ShipmentService {
             }
 
             //cancel unfulfilled orders
-            /*
-            itemsToCancel.stream().map(SellerShipment::getListingOrderItem).forEach(item->{
-                orderReturnService.executeOrderPartialCancellation(item.getId());
-            });
+            // 4. Update the entities in memory
+            for (SellerShipment unConfirmedItem : itemsToCancel) {
+                unConfirmedItem.setShipmentStatus(ShipmentStatus.CANCELLED);
+                sellerShipmentRepo.save(unConfirmedItem);
+            }
 
-             */
+            itemsToCancel.stream().map(SellerShipment::getListingOrderItem)
+                    .forEach(listingOrderService::cancelUnconfirmedShipment);
+
+
         }catch (Exception e){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
         }
