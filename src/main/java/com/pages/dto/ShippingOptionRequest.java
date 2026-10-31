@@ -29,6 +29,9 @@ public class ShippingOptionRequest {
     @Digits(integer=3, fraction=2)
     private BigDecimal price;
 
+    @Digits(integer=3, fraction=2)
+    private BigDecimal discount;
+
 
     private Boolean active;
 }

@@ -94,7 +94,7 @@ public class CartService {
                     log.info("Initializing fresh primary shopping cart ledger for Buyer Username: {}", buyer.getUsername());
                     Cart newCart = Cart.builder()
                             .buyer(buyer)
-                            .shippingMethod(ShippingMethod.COURIER)
+                            .shippingMethod(ShippingMethod.OTHER)
                             .status(CartStatus.ACTIVE)
                             .build();
                     return cartRepository.save(newCart);

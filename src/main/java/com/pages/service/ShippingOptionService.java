@@ -22,10 +22,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -56,14 +53,25 @@ public class ShippingOptionService {
     }
 
     public ShippingMethod getShippingMethod(String method) {
-        String cleanStatus = method.trim().toUpperCase();
-        return switch (cleanStatus) {
-            case "INPOST" ->ShippingMethod.INPOST_COURIER;
-            case "DPD" -> ShippingMethod.DPD;
-            case "COURIER" -> ShippingMethod.COURIER;
-            default -> ShippingMethod.LOCKER;
-        };
+        if (method == null || method.isBlank()) {
+            throw new IllegalArgumentException("Shipping method cannot be empty");
+        }
 
+        String cleanMethod = method.trim().toUpperCase(Locale.ROOT);
+
+        return switch (cleanMethod) {
+            case "DPD_PICKUP" -> ShippingMethod.DPD_PICKUP;
+            case "DPD_COURIER_PICKUP" -> ShippingMethod.DPD_COURIER_PICKUP;
+            case "DPD_PICKUP_TO_ADDRESS" -> ShippingMethod.DPD_PICKUP_TO_ADDRESS;
+            case "DPD_CLASSIC_COURIER" -> ShippingMethod.DPD_CLASSIC_COURIER;
+            case "INPOST_LOCKER" -> ShippingMethod.INPOST_LOCKER;
+            case "INPOST_COURIER" -> ShippingMethod.INPOST_COURIER;
+            case "OTHER" -> ShippingMethod.OTHER;
+
+            default -> throw new IllegalArgumentException(
+                    "Unsupported shipping method: " + cleanMethod
+            );
+        };
     }
 
 
@@ -77,6 +85,7 @@ public class ShippingOptionService {
                     .id(item.getId())
                     .active(item.isActive())
                     .price(item.getPrice())
+                    .discount(item.getDiscount())
                     .shippingMethod(item.getShippingMethod())
                     .itemSize(item.getItemSize())
                     .active(item.isActive())
@@ -94,6 +103,7 @@ public class ShippingOptionService {
                     .id(item.getId())
                     .active(item.isActive())
                     .price(item.getPrice())
+                    .discount(item.getDiscount())
                     .shippingMethod(item.getShippingMethod())
                     .itemSize(item.getItemSize())
                     .active(item.isActive())
@@ -150,6 +160,10 @@ public class ShippingOptionService {
             shippingOption.setPrice(request.getPrice());
         }
 
+        if (request.getDiscount() != null) {
+            shippingOption.setDiscount(request.getDiscount());
+        }
+
         shippingOption.setActive(request.getActive());
 
         shippingOptionRepo.save(shippingOption);
@@ -190,6 +204,7 @@ public class ShippingOptionService {
                 .itemSize(itemSize)
                 .price(request.getPrice())
                 .active(request.getActive())
+                .discount(request.getDiscount())
                 .build();
 
         shippingOptionRepo.save(shippingOption);
@@ -203,13 +218,14 @@ public class ShippingOptionService {
 
         ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
 
-        return shippingOptionRepo
+        ShippingOption shippingCost= shippingOptionRepo
                 .findByItemSizeAndShippingMethodAndActiveTrue(
-                        inventoryItem.getItemSize(),shippingMethod).map(ShippingOption::getPrice)
+                        inventoryItem.getItemSize(),shippingMethod)
                 .orElseThrow(() -> new IllegalStateException(
                         "Shipping price not configured for combination size " + inventoryItem.getItemSize()+" and method "
                                +shippingMethod
                 ));
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
 
     }
 
@@ -218,14 +234,15 @@ public class ShippingOptionService {
 
         ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
 
-        return shippingOptionRepo
+        ShippingOption shippingCost= shippingOptionRepo
                 .findByItemSizeAndShippingMethodAndActiveTrue(
-                        item.getItemSize(),shippingMethod).map(ShippingOption::getPrice)
+                        item.getItemSize(),shippingMethod)
                 .orElseThrow(() -> new IllegalStateException(
                         "Shipping price not configured for combination size " + item.getItemSize()+" and method "
                                 +shippingMethod
                 ));
 
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
     }
 
     private boolean isHeavyOrBulky(ItemSize size) {
@@ -291,7 +308,7 @@ public class ShippingOptionService {
 
     public BigDecimal calculateSingleShippingPrice(InventoryItem item,String method) {
 
-    return getItemShippingPrice(item,method);
+             return getItemShippingPrice(item,method);
 
     }
 

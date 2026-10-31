@@ -514,7 +514,7 @@ public class ListingTransactionService {
                 OfferResponse offerDto = OfferResponse.builder()
                         .price(offer)
                         .serviceCharge(pricingService.getServiceCharge(offer))
-                        .shipping(shippingOptionService.calculateSingleShippingPrice(inventory,ShippingMethod.COURIER.name()))
+                        .shipping(shippingOptionService.calculateSingleShippingPrice(inventory,ShippingMethod.OTHER.name()))
                         .build();
                 return ResponseDto.builder()
                         .data(offerDto)
@@ -604,7 +604,7 @@ public class ListingTransactionService {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
             BigDecimal serviceCharge = pricingService.getServiceCharge(price.getSellerNewPrice());
-            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),ShippingMethod.COURIER.name());
+            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),ShippingMethod.DPD_COURIER_PICKUP.name());
             return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
         }
         return ProductListResponse.builder().build();

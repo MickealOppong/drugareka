@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -39,16 +40,25 @@ private final AppUserDetailsService appUserDetailsService;
         inventoryItemRepo.delete(item);
     }
 
-    public ShippingMethod getShippingMethod(String method){
-        if(method.equals(ShippingMethod.INPOST_COURIER.name())){
-            return ShippingMethod.INPOST_COURIER;
-        }else if(method.equals(ShippingMethod.DPD.name())) {
-            return ShippingMethod.DPD;
-        }
-        else{
-            return ShippingMethod.OTHER;
+    public ShippingMethod getShippingMethod(String method) {
+        if (method == null || method.isBlank()) {
+            throw new IllegalArgumentException("Shipping method cannot be empty");
         }
 
+        String cleanMethod = method.trim().toUpperCase(Locale.ROOT);
+
+        return switch (cleanMethod) {
+            case "DPD_PICKUP" -> ShippingMethod.DPD_PICKUP;
+            case "DPD_COURIER_PICKUP" -> ShippingMethod.DPD_COURIER_PICKUP;
+            case "DPD_PICKUP_TO_ADDRESS" -> ShippingMethod.DPD_PICKUP_TO_ADDRESS;
+            case "DPD_CLASSIC_COURIER" -> ShippingMethod.DPD_CLASSIC_COURIER;
+            case "INPOST_LOCKER" -> ShippingMethod.INPOST_LOCKER;
+            case "INPOST_COURIER" -> ShippingMethod.INPOST_COURIER;
+
+            default -> throw new IllegalArgumentException(
+                    "Unsupported shipping method: " + cleanMethod
+            );
+        };
     }
 
     public ItemSize getItemDimension(String size){

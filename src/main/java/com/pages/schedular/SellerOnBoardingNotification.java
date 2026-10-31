@@ -6,6 +6,7 @@ import com.pages.service.EmailNotificationService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,9 +19,12 @@ import java.util.List;
 public class SellerOnBoardingNotification {
 
 
-    private String url ="https://localhost:5173/account/me";
+    @Value("${user.account.profile-url}")
+    private String URL;
+
     private final SellerProfileRepo sellerProfileRepo;
     private final EmailNotificationService emailNotificationService;
+
     /**
      * Process eligible seller payouts.
      * Runs again 2 minutes after the previous execution finishes.
@@ -38,7 +42,7 @@ public class SellerOnBoardingNotification {
                String email = profile.getUser().getUsername();
                String name = profile.getFullLegalName();
                counter++;
-               emailNotificationService.notifySellerToStartVerification(email,name,url);
+               emailNotificationService.notifySellerToStartVerification(email,name,URL);
            }
             log.info("Scheduler sent: {} sellers notification ot start stripe  onboarding",counter);
         } catch (Exception e) {
