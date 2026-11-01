@@ -33,10 +33,10 @@ public class ShippingOptionService {
 
     private final ShippingOptionRepo shippingOptionRepo;
 
-    public ShippingOption getShippingOption(ItemSize itemSize) {
+    public ShippingOption getShippingOption(ItemSize itemSize,DeliveryOption option) {
 
         return shippingOptionRepo
-                .findByItemSizeAndActiveTrue(itemSize)
+                .findByItemSizeAndDeliveryOptionAndActiveTrue(itemSize,option)
                 .orElseThrow(() ->
                         new IllegalStateException(
                                 "No active shipping option configured for "

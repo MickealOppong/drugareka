@@ -340,8 +340,10 @@ public class CartService {
 
 
 
-                if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId()) && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
-                    String msg = messageSource.getMessage("cart.item.reserved", null, "This item is currently reserved by another buyer.", currentLocale);
+                if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId())
+                        && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
+                    String msg = messageSource.getMessage("cart.item.reserved", null,
+                            "This item is currently reserved by another buyer.", currentLocale);
                     return ResponseDto.builder()
                             .data(false)
                             .message(msg)
@@ -469,7 +471,7 @@ public class CartService {
                 InventoryItem inventoryItem = listing.getInventory();
 
                 //update shipping method to reflect item size
-                cart.setDeliveryOption(shippingOptionService.getShippingOption(inventoryItem.getItemSize()).getDeliveryOption());
+                cart.setDeliveryOption(shippingOptionService.getShippingOption(inventoryItem.getItemSize(),DeliveryOption.HOME_COURIER).getDeliveryOption());
                 cartRepository.save(cart);
 
                 if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId()) && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
