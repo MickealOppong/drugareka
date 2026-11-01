@@ -52,6 +52,7 @@ public class InventoryItem extends LogEntity {
     private Instant reservedUntil;
 
     private String deliveryInfo;
+    private Long quantity;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "size_tier", nullable = false,length = 200)
@@ -64,6 +65,10 @@ public class InventoryItem extends LogEntity {
     private String height;
     private String depth;
     private String itemNumber;
+
+    private boolean personalCollectionAvailable;
+
+    private String collectionCity;
 
 
 }

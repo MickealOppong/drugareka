@@ -44,6 +44,7 @@ public class ListTransResponse {
 
     private BigDecimal newPrice;
     private BigDecimal oldPrice;
+    private String quantity;
 
     @Enumerated(EnumType.STRING)
     private InventoryStatus inventoryStatus;
@@ -61,4 +62,8 @@ public class ListTransResponse {
     private String height;
     private String depth;
     private String itemNumber;
+
+    private boolean personalCollectionAvailable;
+
+    private String collectionCity;
 }

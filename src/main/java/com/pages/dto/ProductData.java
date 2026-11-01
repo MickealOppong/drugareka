@@ -62,6 +62,9 @@ public class ProductData {
 
     private String sku;
 
+    @NotNull(message = "{api.product.quantity.min}")
+    private String quantity;
+
     @NotNull(message = "{api.product.brand.empty}")
     @NotBlank(message = "{api.product.brand.empty}")
     private String brand;
@@ -80,5 +83,9 @@ public class ProductData {
     private String height;
     private String depth;
     private String itemNumber;
+
+    private boolean personalCollectionAvailable;
+
+    private String collectionCity;
 
 }

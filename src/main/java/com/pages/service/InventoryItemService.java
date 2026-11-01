@@ -64,10 +64,14 @@ private final AppUserDetailsService appUserDetailsService;
     public ItemSize getItemDimension(String size){
 
        return switch (size.toLowerCase()) {
-           case "medium" -> ItemSize.MEDIUM_UP_20KG;
-           case "large" -> ItemSize.LARGE_UP_50KG;
-           case "heavy" -> ItemSize.HEAVY_OVER_50KG;
-           default -> ItemSize.SMALL_UP_10KG;
+           case "medium_up_20kg" -> ItemSize.MEDIUM_UP_20KG;
+           case "large_up_30kg" -> ItemSize.LARGE_UP_30KG;
+           case "xlarge_up_50kg" -> ItemSize.XLARGE_UP_50KG;
+           case "heavy_above_50kg" -> ItemSize.HEAVY_OVER_50KG;
+           case "small_up_10kg" -> ItemSize.SMALL_UP_10KG;
+           default -> throw new IllegalArgumentException(
+                   "Unsupported shipping method: " + size
+           );
        };
 
     }
@@ -91,8 +95,11 @@ private final AppUserDetailsService appUserDetailsService;
                     .depth(dto.getDepth())
                     .width(dto.getWidth())
                     .height(dto.getHeight())
+                    .quantity(dto.getQuantity())
                     .productionYear(dto.getProductionYear())
                     .model(dto.getModel())
+                    .personalCollectionAvailable(dto.isPersonalCollectionAvailable())
+                    .collectionCity(dto.getCollectionCity())
                     .itemNumber(dto.getItemNumber())
                     .itemSize(getItemDimension(dto.getItemSize()))
                     .productCondition(savedCondition)

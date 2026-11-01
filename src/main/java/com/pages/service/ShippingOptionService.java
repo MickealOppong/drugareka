@@ -3,6 +3,7 @@ package com.pages.service;
 
 import com.pages.dto.CourierResponse;
 import com.pages.dto.ShippingOptionRequest;
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.ItemSize;
 import com.pages.enums.ListingStatus;
 import com.pages.enums.ShippingMethod;
@@ -42,13 +43,20 @@ public class ShippingOptionService {
                                         + itemSize));
     }
 
+
+
     public ItemSize getItemSize(String item){
         String cleanStatus = item.trim().toUpperCase();
         return switch (cleanStatus) {
             case "MEDIUM_UP_20KG" -> ItemSize.MEDIUM_UP_20KG;
-            case "LARGE_UP_50KG" -> ItemSize.LARGE_UP_50KG;
-            case "HEAVY_ABOVE_50KG" ->ItemSize.HEAVY_OVER_50KG;
-            default -> ItemSize.SMALL_UP_10KG;
+            case "LARGE_UP_30KG" -> ItemSize.LARGE_UP_30KG;
+            case "XLARGE_UP_50KG" -> ItemSize.XLARGE_UP_50KG;
+            case "HEAVY_OVER_50KG" ->ItemSize.HEAVY_OVER_50KG;
+            case"SMALL_UP_10KG"  -> ItemSize.SMALL_UP_10KG;
+
+            default -> throw new IllegalArgumentException(
+                    "Unsupported shipping method: " + cleanStatus
+            );
         };
     }
 
@@ -74,6 +82,24 @@ public class ShippingOptionService {
         };
     }
 
+    public DeliveryOption getDeliveryOption(String method) {
+        if (method == null || method.isBlank()) {
+            throw new IllegalArgumentException("Shipping method cannot be empty");
+        }
+
+        String cleanMethod = method.trim().toUpperCase(Locale.ROOT);
+
+        return switch (cleanMethod) {
+            case "PICKUP" -> DeliveryOption.PICKUP;
+            case "HOME_COURIER" -> DeliveryOption.HOME_COURIER;
+            case "PARCEL_LOCKER" -> DeliveryOption.PARCEL_LOCKER;
+            case "PERSONAL_PICKUP" -> DeliveryOption.PERSONAL_PICKUP;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported shipping method: " + cleanMethod
+            );
+        };
+    }
+
 
     @Transactional(readOnly = true)
     public CourierResponse getCourier(Jwt jwt,Long id){
@@ -86,6 +112,7 @@ public class ShippingOptionService {
                     .active(item.isActive())
                     .price(item.getPrice())
                     .discount(item.getDiscount())
+                    .buyerOption(item.getDeliveryOption().name())
                     .shippingMethod(item.getShippingMethod())
                     .itemSize(item.getItemSize())
                     .active(item.isActive())
@@ -104,6 +131,7 @@ public class ShippingOptionService {
                     .active(item.isActive())
                     .price(item.getPrice())
                     .discount(item.getDiscount())
+                    .buyerOption(item.getDeliveryOption().name())
                     .shippingMethod(item.getShippingMethod())
                     .itemSize(item.getItemSize())
                     .active(item.isActive())
@@ -139,9 +167,12 @@ public class ShippingOptionService {
         ItemSize itemSize =
                 getItemSize(request.getItemSize());
 
+        DeliveryOption deliveryOption = getDeliveryOption(request.getBuyerOption());
+
         boolean duplicate = shippingOptionRepo
-                .existsByItemSizeAndShippingMethodAndIdNot(
+                .existsByItemSizeAndDeliveryOptionAndShippingMethodAndIdNot(
                         itemSize,
+                        deliveryOption,
                         shippingMethod,
                         request.getId()
                 );
@@ -149,12 +180,15 @@ public class ShippingOptionService {
         if (duplicate) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "A shipping option already exists for this item size and shipping method."
+                    "A shipping option already exists for this item size, delivery option and shipping method."
             );
         }
 
+
         shippingOption.setShippingMethod(shippingMethod);
         shippingOption.setItemSize(itemSize);
+
+        shippingOption.setDeliveryOption(deliveryOption);
 
         if (request.getPrice() != null) {
             shippingOption.setPrice(request.getPrice());
@@ -187,8 +221,15 @@ public class ShippingOptionService {
         ItemSize itemSize =
                 getItemSize(request.getItemSize());
 
+        DeliveryOption deliveryOption = getDeliveryOption(request.getBuyerOption());
+
         boolean duplicate = shippingOptionRepo
-                .existsByItemSizeAndShippingMethod(itemSize, shippingMethod);
+                .existsByItemSizeAndDeliveryOptionAndShippingMethodAndIdNot(
+                        itemSize,
+                        deliveryOption,
+                        shippingMethod,
+                        request.getId()
+                );
 
         if (duplicate) {
             throw new ResponseStatusException(
@@ -197,13 +238,12 @@ public class ShippingOptionService {
             );
         }
 
-        log.info("Shipping option request: {}", request);
-
         ShippingOption shippingOption = ShippingOption.builder()
                 .shippingMethod(shippingMethod)
                 .itemSize(itemSize)
                 .price(request.getPrice())
                 .active(request.getActive())
+                .deliveryOption(getDeliveryOption(request.getBuyerOption()))
                 .discount(request.getDiscount())
                 .build();
 
@@ -212,42 +252,43 @@ public class ShippingOptionService {
 
 
 
-    public BigDecimal getShippingPrice(CartItem cartItem,String selectedMethod) {
+
+    public BigDecimal getShippingPrice(CartItem cartItem,String deliveryOption) {
 
         InventoryItem inventoryItem = cartItem.getInventoryItem();
 
-        ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
+        DeliveryOption option = getDeliveryOption(deliveryOption);
 
         ShippingOption shippingCost= shippingOptionRepo
-                .findByItemSizeAndShippingMethodAndActiveTrue(
-                        inventoryItem.getItemSize(),shippingMethod)
+                .findByItemSizeAndDeliveryOptionAndActiveTrue(
+                        inventoryItem.getItemSize(),option)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Shipping price not configured for combination size " + inventoryItem.getItemSize()+" and method "
-                               +shippingMethod
+                        "Shipping price not configured for combination size " + inventoryItem.getItemSize()+" and option"
+                               +option
                 ));
-        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount()).multiply(BigDecimal.valueOf(cartItem.getInventoryItem().getQuantity()));
 
     }
 
-    public BigDecimal getItemShippingPrice(InventoryItem item,String selectedMethod) {
+    public BigDecimal getItemShippingPrice(InventoryItem item,String deliveryOption) {
 
 
-        ShippingMethod shippingMethod = getShippingMethod(selectedMethod);
+        DeliveryOption option = getDeliveryOption(deliveryOption);
 
         ShippingOption shippingCost= shippingOptionRepo
-                .findByItemSizeAndShippingMethodAndActiveTrue(
-                        item.getItemSize(),shippingMethod)
+                .findByItemSizeAndDeliveryOptionAndActiveTrue(
+                        item.getItemSize(),option)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Shipping price not configured for combination size " + item.getItemSize()+" and method "
-                                +shippingMethod
+                        "Shipping price not configured for combination size " + item.getItemSize()+" and option "
+                        +deliveryOption
                 ));
 
-        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount()).multiply(BigDecimal.valueOf(item.getQuantity()));
     }
 
     private boolean isHeavyOrBulky(ItemSize size) {
         return size == ItemSize.HEAVY_OVER_50KG
-                || size == ItemSize.LARGE_UP_50KG;
+                || size == ItemSize.XLARGE_UP_50KG;
     }
 
     private boolean isSpecialCart(List<CartItem> sellerItems) {
@@ -262,12 +303,12 @@ public class ShippingOptionService {
 
         long largeCount = sellerItems.stream()
                 .filter(item -> item.getInventoryItem().getItemSize()
-                        == ItemSize.LARGE_UP_50KG)
+                        == ItemSize.XLARGE_UP_50KG)
                 .count();
 
         boolean hasMedium = sellerItems.stream()
                 .anyMatch(item -> item.getInventoryItem().getItemSize()
-                        == ItemSize.MEDIUM_UP_20KG);
+                        == ItemSize.LARGE_UP_30KG);
 
         // Two or more LARGE items
         if (largeCount >= 2) {
@@ -279,11 +320,12 @@ public class ShippingOptionService {
     }
 
 
-    public BigDecimal calculateStandardShippingPrice(List<CartItem> items,String method) {
+    public BigDecimal calculateStandardShippingPrice(List<CartItem> items,String option) {
 
-        BigDecimal basePrice = items.stream().map(item->getShippingPrice(item,method))
+        BigDecimal basePrice = items.stream().map(item->getShippingPrice(item,option))
                 .max(BigDecimal::compareTo)
                         .orElse(BigDecimal.ZERO);
+
 
         int itemCount = items.size();
 
@@ -306,14 +348,14 @@ public class ShippingOptionService {
 
     }
 
-    public BigDecimal calculateSingleShippingPrice(InventoryItem item,String method) {
+    public BigDecimal calculateSingleShippingPrice(InventoryItem item, String option) {
 
-             return getItemShippingPrice(item,method);
+             return getItemShippingPrice(item,option);
 
     }
 
     private boolean isSpecial(ItemSize size) {
-        return size == ItemSize.LARGE_UP_50KG
+        return size == ItemSize.XLARGE_UP_50KG
                 || size == ItemSize.HEAVY_OVER_50KG;
     }
 

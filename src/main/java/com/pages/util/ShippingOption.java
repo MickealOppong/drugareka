@@ -1,5 +1,6 @@
 package com.pages.util;
 
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.ItemSize;
 import com.pages.enums.ShippingMethod;
 import com.pages.model.Category;
@@ -29,7 +30,10 @@ public class ShippingOption {
     @Enumerated(EnumType.STRING)
     @Column(name = "shipping_method", nullable = false)
     private ShippingMethod shippingMethod;
-    
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_option", nullable = false)
+    private DeliveryOption deliveryOption;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;

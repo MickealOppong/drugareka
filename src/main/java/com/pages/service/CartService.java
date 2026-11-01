@@ -7,6 +7,7 @@ import com.pages.repository.CartItemRepo;
 import com.pages.repository.CartRepo;
 import com.pages.repository.ListingTransactionRepo;
 import com.pages.repository.SellerProfileRepo;
+import com.pages.util.ShippingOption;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -43,6 +44,7 @@ public class CartService {
     private static final Duration RESERVATION_WINDOW = Duration.ofMinutes(15);
 
 
+    @Transactional
     public void updateCartShippingMethod(Jwt jwt,String shippingSelected){
         if(jwt==null){
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
@@ -68,19 +70,140 @@ public class CartService {
         }
         List<CartItem> cartItems = cartItemRepository.findAllByCartBuyerId(userId);
 
+
         if(cartItems.isEmpty()){
            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     messageSource.getMessage("cart.items.none_added",null,LocaleContextHolder.getLocale()));
         }
 
-        boolean isAllMinimumItemSize = cartItems.stream().allMatch(item->item.getInventoryItem().getItemSize()== ItemSize.SMALL_UP_10KG);
-        if(!isAllMinimumItemSize && shippingSelected.equalsIgnoreCase("locker")){
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    messageSource.getMessage("cart.items.shipping.locker-forbidden",null,LocaleContextHolder.getLocale()));
+      final Set<String> PICKUP_DELIVERY_OPTIONS = Set.of(
+                "PARCEL_LOCKER",
+                "PICKUP"
+        );
+
+        final Set<String> LOCKER_RESTRICTED_CATEGORIES = Set.of(
+                // Home & Garden
+                "furniture",
+                "garden_terrace",
+                "home_appliances",
+                "home_office",
+                "chairs",
+
+                // Sports & Recreation
+                "bicycles",
+                "fitness_gym",
+                "winter_sports",
+                "water_sports",
+
+                // Automotive
+                "car_parts",
+                "motorcycle_parts",
+                "tires_wheels",
+                "garage_equipment",
+
+                // Office & Business
+                "desks_chairs",
+                "conference_equipment",
+                "retail_equipment"
+        );
+
+
+
+
+        boolean containsRestrictedCategory = cartItems.stream()
+                .anyMatch(item -> {
+                    var inventoryItem = item.getInventoryItem();
+
+                    if (inventoryItem.getProductCatalog() == null
+                            || inventoryItem.getProductCatalog().getCategory() == null) {
+                        return false;
+                    }
+
+                    String slug = inventoryItem.getProductCatalog()
+                            .getCategory()
+                            .getSlug();
+
+                    return slug != null && LOCKER_RESTRICTED_CATEGORIES.contains(
+                            slug.trim().toLowerCase(Locale.ROOT)
+                    );
+                });
+
+        if (containsRestrictedCategory
+                && "PARCEL_LOCKER".equalsIgnoreCase(shippingSelected)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    messageSource.getMessage(
+                            "cart.items.shipping.locker-forbidden",
+                            null,
+                            LocaleContextHolder.getLocale()
+                    )
+            );
         }
 
-       ShippingMethod shippingMethod= shippingOptionService.getShippingMethod(shippingSelected);
-       cart.setShippingMethod(shippingMethod);
+
+        boolean containsLargeOrHeavyItem = cartItems.stream()
+                .anyMatch(item -> {
+                    ItemSize size = item.getInventoryItem().getItemSize();
+
+                    return size == ItemSize.XLARGE_UP_50KG
+                            || size == ItemSize.HEAVY_OVER_50KG||size==ItemSize.LARGE_UP_30KG;
+                });
+
+        if (containsLargeOrHeavyItem && PICKUP_DELIVERY_OPTIONS.contains(shippingSelected)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    messageSource.getMessage(
+                            "cart.items.shipping.locker-forbidden",
+                            null,
+                            LocaleContextHolder.getLocale()
+                    )
+            );
+        }
+
+        boolean isPersonalCollection =
+                "PERSONAL_PICKUP".equals(shippingSelected);
+
+        if (isPersonalCollection) {
+
+            boolean allItemsAllowPersonalCollection = cartItems.stream()
+                    .allMatch(item ->
+                            item.getInventoryItem().isPersonalCollectionAvailable()
+                    );
+
+            if (!allItemsAllowPersonalCollection) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "cart.items.personal-collection.unavailable",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            Set<String> collectionCities = cartItems.stream()
+                    .map(item -> item.getInventoryItem().getCollectionCity())
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(city -> !city.isEmpty())
+                    .map(city -> city.toLowerCase(Locale.ROOT))
+                    .collect(Collectors.toSet());
+
+            if (collectionCities.size() != 1) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "cart.items.personal-collection.different-cities",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+        }
+
+
+       DeliveryOption option= shippingOptionService.getDeliveryOption(shippingSelected);
+       cart.setDeliveryOption(option);
        cartRepository.save(cart);
 
     }
@@ -94,7 +217,7 @@ public class CartService {
                     log.info("Initializing fresh primary shopping cart ledger for Buyer Username: {}", buyer.getUsername());
                     Cart newCart = Cart.builder()
                             .buyer(buyer)
-                            .shippingMethod(ShippingMethod.OTHER)
+                            .deliveryOption(DeliveryOption.HOME_COURIER)
                             .status(CartStatus.ACTIVE)
                             .build();
                     return cartRepository.save(newCart);
@@ -196,6 +319,7 @@ public class CartService {
             AppUser buyer = appUserDetailsService.getAppUserByUsername(username);
 
             Cart cart = getOrCreateActiveCart(buyer);
+
             Instant reservedUntil = Instant.now().plus(RESERVATION_WINDOW);
 
             int addedCount = 0;
@@ -213,6 +337,8 @@ public class CartService {
                 }
 
                 InventoryItem inventoryItem = listing.getInventory();
+
+
 
                 if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId()) && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
                     String msg = messageSource.getMessage("cart.item.reserved", null, "This item is currently reserved by another buyer.", currentLocale);
@@ -285,6 +411,14 @@ public class CartService {
         }
     }
 
+    /**
+     * return shipping method for item size
+     * @param itemSize
+     */
+   private ShippingMethod getShippingMethodByItemSize(ItemSize itemSize){
+        return ShippingMethod.OTHER;
+   }
+
 
     /**
      * ADD ELEMENT ROW TO CART AT BUYER OFFER PRICE
@@ -333,6 +467,10 @@ public class CartService {
                 }
 
                 InventoryItem inventoryItem = listing.getInventory();
+
+                //update shipping method to reflect item size
+                cart.setDeliveryOption(shippingOptionService.getShippingOption(inventoryItem.getItemSize()).getDeliveryOption());
+                cartRepository.save(cart);
 
                 if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId()) && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
                     String msg = messageSource.getMessage("cart.item.reserved", null, "This item is currently reserved by another buyer.", currentLocale);
@@ -469,7 +607,7 @@ public class CartService {
                         .cartId(cart.getId())
                         .status(cart.getStatus())
                         .address(address)
-                        .shippingMethod(cart.getShippingMethod().name())
+                        .shippingMethod(cart.getDeliveryOption().name())
                         .cartItemList(flatCartItemDtoList)
                         .build();
             }
@@ -496,7 +634,7 @@ public class CartService {
                 BigDecimal bundleServiceCharge =
                         pricingService.getServiceCharge(bundleValue);
 
-                BigDecimal bundleShipping =shippingOptionService.calculateStandardShippingPrice(bundledItems,cart.getShippingMethod().name());
+                BigDecimal bundleShipping =shippingOptionService.calculateStandardShippingPrice(bundledItems,cart.getDeliveryOption().name());
 
                 for (int i = 0; i < bundledItems.size(); i++) {
 
@@ -544,7 +682,7 @@ public class CartService {
                     .status(cart.getStatus())
                     .address(address)
                     .buyerId(cart.getBuyer().getId())
-                    .shippingMethod(cart.getShippingMethod().name())
+                    .shippingMethod(cart.getDeliveryOption().name())
                     .cartItemList(flatCartItemDtoList)
                     .build();
         }

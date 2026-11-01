@@ -231,6 +231,9 @@ public class ListingTransactionService {
 // =====================================================
             inventoryItem.setDeliveryInfo(productData.getShippingInfo());
             inventoryItem.setItemSize(inventoryItemService.getItemDimension(productData.getItemSize()));
+            inventoryItem.setPersonalCollectionAvailable(productData.isPersonalCollectionAvailable());
+            inventoryItem.setCollectionCity(productData.getCollectionCity());
+
             if (StringUtils.hasText(productData.getProductionYear())) {
                 inventoryItem.setProductionYear(productData.getProductionYear());
             }
@@ -253,6 +256,7 @@ public class ListingTransactionService {
             if (!inventoryItem.getProductCondition().getName().equalsIgnoreCase(newCondition.getName())) {
                 inventoryItem.setProductCondition(newCondition);
             }
+            inventoryItem.setQuantity(Long.parseLong(productData.getQuantity()));
             inventoryItem.setSku(productData.getSku());
             inventoryItemService.save(inventoryItem);
 // =====================================================
@@ -340,8 +344,11 @@ public class ListingTransactionService {
                     .shippingInfo(productData.getShippingInfo())
                     .itemSize(productData.getItemSize())
                     .depth(productData.getDepth())
+                    .quantity(Long.parseLong(productData.getQuantity()))
                     .width(productData.getWidth())
                     .height(productData.getHeight())
+                    .personalCollectionAvailable(productData.isPersonalCollectionAvailable())
+                    .collectionCity(productData.getCollectionCity())
                     .productionYear(productData.getProductionYear())
                     .model(productData.getModel())
                     .itemNumber(productData.getItemNumber())
@@ -514,7 +521,7 @@ public class ListingTransactionService {
                 OfferResponse offerDto = OfferResponse.builder()
                         .price(offer)
                         .serviceCharge(pricingService.getServiceCharge(offer))
-                        .shipping(shippingOptionService.calculateSingleShippingPrice(inventory,ShippingMethod.OTHER.name()))
+                        .shipping(shippingOptionService.calculateSingleShippingPrice(inventory,DeliveryOption.HOME_COURIER.name()))
                         .build();
                 return ResponseDto.builder()
                         .data(offerDto)
@@ -604,7 +611,7 @@ public class ListingTransactionService {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
             BigDecimal serviceCharge = pricingService.getServiceCharge(price.getSellerNewPrice());
-            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),ShippingMethod.DPD_COURIER_PICKUP.name());
+            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),DeliveryOption.HOME_COURIER.name());
             return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
         }
         return ProductListResponse.builder().build();

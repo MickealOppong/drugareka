@@ -1,5 +1,6 @@
 package com.pages.repository;
 
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.ItemSize;
 import com.pages.enums.ShippingMethod;
 import com.pages.util.ShippingOption;
@@ -12,8 +13,9 @@ import java.util.Optional;
 @Repository
 public interface ShippingOptionRepo extends JpaRepository<ShippingOption, Long> {
 
-    boolean existsByItemSizeAndShippingMethodAndIdNot(
+    boolean existsByItemSizeAndDeliveryOptionAndShippingMethodAndIdNot(
            ItemSize itemSize,
+            DeliveryOption deliveryOption,
             ShippingMethod shippingMethod,
             Long id
     );
@@ -22,6 +24,6 @@ public interface ShippingOptionRepo extends JpaRepository<ShippingOption, Long> 
             ShippingMethod shippingMethod
     );
     Optional<ShippingOption> findByItemSizeAndActiveTrue(ItemSize itemSize);
-    Optional<ShippingOption> findByItemSizeAndShippingMethodAndActiveTrue(ItemSize itemSize, ShippingMethod shippingMethod);
-    Optional<ShippingOption> findByItemSizeAndShippingMethod(ItemSize itemSize, ShippingMethod shippingMethod);
+    Optional<ShippingOption> findByItemSizeAndDeliveryOptionAndShippingMethodAndActiveTrue(ItemSize itemSize, DeliveryOption deliveryOption, ShippingMethod shippingMethod);
+    Optional<ShippingOption> findByItemSizeAndDeliveryOptionAndActiveTrue(ItemSize itemSize, DeliveryOption deliveryOption);
 }

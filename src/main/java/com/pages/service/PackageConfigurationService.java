@@ -37,7 +37,7 @@ public class PackageConfigurationService {
                             new BigDecimal("30")
                     );
 
-            case LARGE_UP_50KG ->
+            case LARGE_UP_30KG ->
                     new DpdPackage(
                             new BigDecimal("15.0"),
                             new BigDecimal("80"),
@@ -45,13 +45,19 @@ public class PackageConfigurationService {
                             new BigDecimal("50")
                     );
 
-            case HEAVY_OVER_50KG ->
+            case XLARGE_UP_50KG->
                     new DpdPackage(
                             new BigDecimal("30.0"),
                             new BigDecimal("100"),
                             new BigDecimal("80"),
                             new BigDecimal("60")
                     );
+            case HEAVY_OVER_50KG ->    new DpdPackage(
+                    new BigDecimal("50.0"),
+                    new BigDecimal("150"),
+                    new BigDecimal("100"),
+                    new BigDecimal("80")
+            );
         };
     }
 

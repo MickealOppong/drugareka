@@ -25,7 +25,7 @@ public class ProductListResponse {
     private BigDecimal serviceCharge;
     private BigDecimal shippingCost;
     private Long productId;
-
+private String quantity;
     private String brand;
     private Long sellerId;
     private boolean isNegotiable;
@@ -61,5 +61,10 @@ public class ProductListResponse {
     private String height;
     private String depth;
     private String itemNumber;
+
+    private boolean personalCollectionAvailable;
+
+    private String collectionCity;
+
 }
 

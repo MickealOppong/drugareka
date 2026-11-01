@@ -25,12 +25,16 @@ public class ShippingOptionRequest {
     @NotBlank(message = "Please select shipping method")
     private String shippingMethod;
 
+    @NotBlank(message = "Please select shipping option")
+    private String buyerOption;
+
     @DecimalMin(value = "0.0", inclusive = false)
     @Digits(integer=3, fraction=2)
     private BigDecimal price;
 
     @Digits(integer=3, fraction=2)
     private BigDecimal discount;
+
 
 
     private Boolean active;

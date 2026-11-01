@@ -18,6 +18,7 @@ public class InventoryItemRequest {
     private String condition;
     private String shippingInfo;
     private String sku;
+    private Long quantity;
 
     private InventoryStatus status;
     private String shippingMethod;
@@ -28,4 +29,7 @@ public class InventoryItemRequest {
     private String height;
     private String depth;
     private String itemNumber;
+    private boolean personalCollectionAvailable;
+
+    private String collectionCity;
 }

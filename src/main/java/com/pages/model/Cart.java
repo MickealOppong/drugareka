@@ -2,6 +2,7 @@ package com.pages.model;
 
 
 import com.pages.enums.CartStatus;
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.ShippingMethod;
 import com.pages.util.GlobalAddress;
 import com.pages.util.LogEntity;
@@ -29,7 +30,8 @@ public class Cart  extends LogEntity {
     private CartStatus status;
 
     @Enumerated(EnumType.STRING)
-    private ShippingMethod shippingMethod;
+    @Column(name = "delivery_option", nullable = false)
+    private DeliveryOption deliveryOption;
 
 
 }
