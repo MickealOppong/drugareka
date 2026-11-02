@@ -7,6 +7,9 @@ import com.pages.model.*;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.math.BigDecimal;
+import java.util.Locale;
+
 public class ListingSpecs {
 
     public static Specification<ListingTransaction> hasListingStatus(
@@ -55,42 +58,6 @@ public class ListingSpecs {
         };
     }
 
-    /*
-
-    public static Specification<ListingTransaction> hasCategoryId(
-            Long categoryId) {
-
-        return (root, query, cb) -> {
-
-            if (categoryId == 0 ) {
-                return cb.conjunction();
-            }
-
-            Join<ListingTransaction, InventoryItem> inventory =
-                    root.join("inventory");
-
-            Join<InventoryItem, ProductCatalog> product =
-                    inventory.join("productCatalog");
-
-            Join<ProductCatalog, Category> categoryJoin =
-                    product.join("category");
-
-            Path<Category> category= categoryJoin.get("id");
-
-
-            // Condition A: Direct match where the category's id matches the query parameter
-            Predicate directCategoryMatch = cb.equal(
-                    category,
-                    categoryId
-            );
-
-
-            return cb.or(directCategoryMatch);
-        };
-    }
-
-
-     */
 
     /**
      * Filters listings hierarchically.
@@ -141,6 +108,119 @@ public class ListingSpecs {
                     cb.lower(inventoryJoin.get("status")), InventoryStatus.SOLD.name());
         };
     }
+
+    public static Specification<ListingTransaction> isPersonalCollectionAvailable(
+            Boolean isCollectionAvailable) {
+
+        return (root, query, cb) -> {
+
+            if (!Boolean.TRUE.equals(isCollectionAvailable)) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+
+            return cb.isTrue(
+                    inventoryJoin.get("personalCollectionAvailable")
+            );
+        };
+    }
+
+    public static Specification<ListingTransaction> hasCollectionCity(String collectionCity) {
+
+        return (root, query, cb) -> {
+
+            if (collectionCity == null || collectionCity.isBlank()) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+
+            return cb.equal(
+                    cb.lower(inventoryJoin.get("collectionCity")),
+                    collectionCity.trim().toLowerCase(Locale.ROOT)
+            );
+        };
+    }
+
+    public static Specification<ListingTransaction> hasCondition(String condition) {
+
+        return (root, query, cb) -> {
+
+            if (condition == null || condition.isBlank()) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+
+            Join<InventoryItem, ProductCondition> conditionJoin =
+                    inventoryJoin.join("productCondition");
+
+            return cb.equal(
+                    cb.lower(conditionJoin.get("name")),
+                    condition.trim().toLowerCase(Locale.ROOT)
+            );
+        };
+    }
+
+    public static Specification<ListingTransaction> hasName(String name) {
+
+        return (root, query, cb) -> {
+
+            if (name == null || name.isBlank()) {
+                return cb.conjunction();
+            }
+
+            String normalizedSearch = name.trim().toLowerCase(Locale.ROOT);
+            String pattern = "%" + normalizedSearch + "%";
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+
+
+            Join<InventoryItem,ProductCatalog> catalogJoin =
+                    inventoryJoin.join("productCatalog");
+
+            return cb.like(
+                    cb.lower(catalogJoin.get("name")),
+                    pattern.trim().toLowerCase(Locale.ROOT)
+            );
+        };
+    }
+
+    public static Specification<ListingTransaction> matchesSearch(String search) {
+        return (root, query, cb) -> {
+            if (search == null || search.isBlank()) {
+                return cb.conjunction();
+            }
+
+            String normalizedSearch = search.trim().toLowerCase(Locale.ROOT);
+            String pattern = "%" + normalizedSearch + "%";
+
+            Join<ListingTransaction, InventoryItem> inventory =
+                    root.join("inventory", JoinType.INNER);
+
+            Join<InventoryItem, ProductCatalog> product =
+                    inventory.join("productCatalog", JoinType.LEFT);
+
+            Join<ProductCatalog, Brand> brand =
+                    product.join("brand", JoinType.LEFT);
+
+
+           return cb.or(
+                    cb.like(cb.lower(product.get("name")), pattern),
+                    cb.like(cb.lower(brand.get("name")), pattern),
+                    cb.like(cb.lower(product.get("description")), pattern),
+                    cb.like(cb.lower(inventory.get("model")), pattern),
+                    cb.like(cb.lower(inventory.get("itemNumber")), pattern)
+            );
+        };
+    }
+
+
     public static Specification<ListingTransaction> deliveryInfo(String info) {
 
         return (root, query, cb) -> {

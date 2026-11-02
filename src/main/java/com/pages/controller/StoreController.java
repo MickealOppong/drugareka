@@ -78,9 +78,10 @@ public class StoreController {
 
 
     @GetMapping("/store-listing")
-    public ListPageDto getStoreProductListing( String queryCategory,
-                                               @RequestParam(defaultValue = "0") Integer page, Integer size){
-        return listingTransactionService.getMarketplaceCatalogFeed(queryCategory,page,size);
+    public ListPageDto getStoreProductListing(@ModelAttribute QueryDto queryDto){
+       // QueryDto queryDto = new QueryDto(queryCategory,condition,name,isCollectionAvailable,collectionCity,);
+        log.info("Query:{}",queryDto);
+        return listingTransactionService.getMarketplaceCatalogFeed(queryDto);
     }
 
     @GetMapping("listing/{listingId}")

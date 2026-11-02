@@ -33,6 +33,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
+
 @Slf4j
 @Service
 public class ListingTransactionService {
@@ -420,17 +421,21 @@ public class ListingTransactionService {
                 }).toList();
     }
     @Transactional(readOnly = true)
-    public ListPageDto getMarketplaceCatalogFeed(String categoryQuery, int page, int size) {
-        String targetCategory = categoryQuery == null || categoryQuery.isBlank() || "all".equalsIgnoreCase(categoryQuery.trim()) ? null : categoryQuery.trim();
+    public ListPageDto getMarketplaceCatalogFeed(QueryDto dto) {
+        String targetCategory = dto.category() == null || dto.category().isBlank() || "all".equalsIgnoreCase(dto.category().trim()) ? null : dto.category().trim();
         Long categoryId = targetCategory != null ? Long.parseLong(targetCategory.substring(targetCategory.lastIndexOf("_") + 1)) : 0;
         Pageable pageable = PageRequest.of(
-                page == 0 ? page : page - 1,
-                size,
+                dto.page() == 0 ? 0 : dto.page() - 1,
+                dto.size(),
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
         Specification<ListingTransaction> specification = Specification
                 .where(ListingSpecs.hasListingStatus(ListingStatus.PUBLISHED))
                 .and(ListingSpecs.hasCategoryId(categoryId))
+                .and(ListingSpecs.matchesSearch(dto.search()))
+                .and(ListingSpecs.hasCondition(dto.condition()))
+                .and(ListingSpecs.isPersonalCollectionAvailable(dto.isCollectionAvailable()))
+                .and(ListingSpecs.hasCollectionCity(dto.collectionCity()))
                 .and(ListingSpecs.isNotSold());
         Page<ListTransResponse> listings = listingTransactionRepo.findAll(specification, pageable)
                 .map(listing -> {
