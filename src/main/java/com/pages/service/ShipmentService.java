@@ -277,26 +277,32 @@ public class ShipmentService {
     @Transactional
     public void updateShippingStatus(Jwt jwt, ShipmentRequest request) {
         if (jwt == null) {
-
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.unauthorized"));
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.shipment.unauthorized")
+            );
         }
+
         AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
 
         SellerShipment shipment = sellerShipmentRepo
                 .findById(request.getShipmentId())
                 .orElse(null);
 
-
         if (shipment == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.not_found"));
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.shipment.not_found")
+            );
         }
-        // Only the seller who owns this shipment or an admin may update it.
 
+        // Only the seller who owns this shipment or an admin may update it.
         boolean isSeller = appUser.getId().equals(
                 shipment.getSeller().getUser().getId()
         );
 
-        boolean isAdmin = appUser.getUserRoles().stream().anyMatch(role->role.getRole().equals("ROLE_ADMIN"));
+        boolean isAdmin = appUser.getUserRoles().stream()
+                .anyMatch(role -> role.getRole().equals("ROLE_ADMIN"));
 
         if (!isSeller && !isAdmin) {
             throw new ResponseStatusException(
@@ -305,14 +311,26 @@ public class ShipmentService {
             );
         }
 
-        if( shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!= ShipmentConfirmationStatus.CONFIRMED){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.seller.not_confirmed"));
+        if (shipment.getSellerShipmentToken().getShipmentConfirmationStatus()
+                != ShipmentConfirmationStatus.CONFIRMED) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.shipment.seller.not_confirmed")
+            );
         }
 
         if (shipment.getShipmentStatus() == ShipmentStatus.CANCELLED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     getMessage("api_errors.shipment.status.cancelled")
+            );
+        }
+
+        if (shipment.getShipmentStatus() == ShipmentStatus.DELIVERED
+                || shipment.getShipmentStatus() == ShipmentStatus.RETURNED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    getMessage("api_errors.shipment.already_delivered")
             );
         }
 
@@ -324,31 +342,28 @@ public class ShipmentService {
 
         String status = request.getStatus();
 
-        if (shipment.getDeliveredAt() != null) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    getMessage("api_errors.shipment.already_delivered")
-            );
-        }
+        boolean isPersonalPickup = "personal_pickup"
+                .equalsIgnoreCase(shipment.getShippingMethod());
 
-        if (("SHIPPED".equalsIgnoreCase(status)
-                || "DELIVERED".equalsIgnoreCase(status))
-                && requestedActionDate == null) {
+        boolean isShipped = "SHIPPED".equalsIgnoreCase(status);
+        boolean isDelivered = "DELIVERED".equalsIgnoreCase(status);
+        boolean isReturned = "RETURNED".equalsIgnoreCase(status);
+
+        if ((isShipped || isDelivered) && requestedActionDate == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     getMessage("api_errors.shipment.validation.missing_date")
             );
         }
 
-        if ("SHIPPED".equalsIgnoreCase(status)) {
+        if (!isPersonalPickup && request.getTrackingNumber() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.shipment.validation.missing_tracking")
+            );
+        }
 
-            if (requestedActionDate == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        getMessage("api_responses.shipment.shipment.date.error")
-                );
-            }
-
+        if (isShipped) {
             Instant earliestAllowedDate = shipment.getCreatedAt()
                     .minus(1, ChronoUnit.DAYS);
 
@@ -361,29 +376,30 @@ public class ShipmentService {
 
             shipment.setShippedAt(requestedActionDate);
 
-        } else if ("DELIVERED".equalsIgnoreCase(status)) {
+        } else if (isDelivered) {
 
-            Instant existingShippedAt = shipment.getShippedAt();
+            if (!isPersonalPickup) {
+                Instant existingShippedAt = shipment.getShippedAt();
 
-            if (existingShippedAt == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        getMessage("api_errors.shipment.validation.not_shipped_yet")
-                );
+                if (existingShippedAt == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            getMessage("api_errors.shipment.validation.not_shipped_yet")
+                    );
+                }
+
+                if (requestedActionDate.isBefore(existingShippedAt)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            getMessage("api_errors.shipment.validation.invalid_delivery_sequence")
+                    );
+                }
             }
 
-            if (requestedActionDate == null
-                    || requestedActionDate.isBefore(existingShippedAt)) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        getMessage("api_errors.shipment.validation.invalid_delivery_sequence")
-                );
-            }
-
+            // Personal pickup does not have a shippedAt stage.
             shipment.setDeliveredAt(requestedActionDate);
-        }
 
-        if ("RETURNED".equalsIgnoreCase(status)) {
+        } else if (isReturned) {
             shipment.setDeliveredAt(
                     requestedActionDate != null
                             ? requestedActionDate
@@ -396,12 +412,12 @@ public class ShipmentService {
         shipment.setTrackingNumber(request.getTrackingNumber());
 
         SellerShipment sellerShipment = sellerShipmentRepo.save(shipment);
+
         ListingOrderItem listingOrderItem = sellerShipment.getListingOrderItem();
 
         String token = "";
 
-        if ( "DELIVERED".equalsIgnoreCase(status)) {
-
+        if (isDelivered) {
             token = UtilService.generateReceiptConfirmationToken();
 
             listingOrderItem.setReceiptConfirmationToken(token);
@@ -414,15 +430,16 @@ public class ShipmentService {
         }
 
         ListingOrder listingOrder = listingOrderItem.getListingOrder();
+
         AppUser buyer = appUserDetailsService.getAppUserId(
                 listingOrder.getBuyer().getId()
         );
 
         String buyerName = buyer.getFirstName() + " " + buyer.getLastName();
+
         String product = listingOrderItem.getInventoryItem()
                 .getProductCatalog()
                 .getName();
-
 
         emailNotificationService.sendShipmentStatusToBuyer(
                 buyer.getUsername(),
@@ -431,10 +448,9 @@ public class ShipmentService {
                 product,
                 sellerShipment.getShipmentStatus().name(),
                 sellerShipment.getTrackingNumber(),
-                "DPD",
+                sellerShipment.getShippingMethod(),
                 token
         );
-
     }
 
     /**
@@ -978,12 +994,22 @@ public class ShipmentService {
                 itemToShip.setSellerComment(request.getComment());
                 SellerShipment updateData =sellerShipmentRepo.save(itemToShip);
 
-                String product = itemToShip.getListingOrderItem().getProductNameSnapshot();
-                String email = itemToShip.getListingOrderItem().getListingOrder().getBuyer().getUsername();
-                String name = itemToShip.getListingOrderItem().getListingOrder().getBuyerNameSnapshot();
-                String orderNumber = itemToShip.getListingOrderItem().getListingOrder().getOrderNumber();
-                emailNotificationService.sendCollectionNotificationToBuyer(email,name,orderNumber,product
-                        ,updateData.getCollectionAddress(),pickup.getContact(),updateData.getSellerComment());
+                if(itemToShip.getShippingMethod().equalsIgnoreCase("personal_pickup")){
+                    String product = itemToShip.getListingOrderItem().getProductNameSnapshot();
+                    String email = itemToShip.getListingOrderItem().getListingOrder().getBuyer().getUsername();
+                    String name = itemToShip.getListingOrderItem().getListingOrder().getBuyerNameSnapshot();
+                    String orderNumber = itemToShip.getListingOrderItem().getListingOrder().getOrderNumber();
+
+                    //notify buyer of where and when to collect item
+                    emailNotificationService.sendCollectionNotificationToBuyer(email,name,orderNumber,product
+                            ,updateData.getCollectionAddress(),pickup.getContact(),updateData.getSellerComment());
+
+
+                    //update seller on final steps after handing item to buyer
+                    String sellerEmail = itemToShip.getListingOrderItem().getSeller().getUser().getUsername();
+                    String sellerName= itemToShip.getListingOrderItem().getSellerNameSnapshot();
+                    emailNotificationService.sendPersonalCollectionDeliveryInstructionToSeller(sellerEmail,sellerName,orderNumber,product);
+                }
             }
 
             //cancel unfulfilled orders

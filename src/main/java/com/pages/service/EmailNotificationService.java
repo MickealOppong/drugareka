@@ -1471,6 +1471,349 @@ public class EmailNotificationService {
     }
 
 
+    /**
+     *  notification to seller to update shipping status once item handed to buyer for personal delivery
+     * @param sellerEmail
+     * @param sellerName
+     * @param orderNumber
+     * @param product
+     */
+    @Async
+    public void sendPersonalCollectionDeliveryInstructionToSeller(
+            String sellerEmail,
+            String sellerName,
+            String orderNumber,
+            String product
+    ) {
+        String subject = "Potwierdź przekazanie produktu – zamówienie #" + orderNumber;
+
+        String safeSellerName = escapeHtml(
+                sellerName != null && !sellerName.isBlank()
+                        ? sellerName
+                        : "Sprzedawco"
+        );
+
+        String safeOrderNumber = escapeHtml(orderNumber);
+        String safeProduct = escapeHtml(product);
+
+        String htmlContent = """
+    <div style="
+        margin: 0;
+        padding: 30px 15px;
+        background-color: #F5F6F1;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #182016;
+    ">
+        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+               style="max-width: 600px; margin: 0 auto;">
+
+            <!-- HEADER -->
+            <tr>
+                <td style="
+                    background-color: #68764B;
+                    padding: 28px 30px;
+                    border-radius: 16px 16px 0 0;
+                ">
+                    <div style="
+                        font-size: 26px;
+                        font-weight: 800;
+                        letter-spacing: -1px;
+                        color: #FFFFFF;
+                    ">
+                        kasoa<span style="font-weight: 400; opacity: 0.75;">.pl</span>
+                    </div>
+
+                    <div style="
+                        margin-top: 10px;
+                        font-size: 12px;
+                        color: #E9EDDF;
+                        letter-spacing: 0.5px;
+                    ">
+                        DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                    </div>
+                </td>
+            </tr>
+
+            <!-- BODY -->
+            <tr>
+                <td style="
+                    background-color: #FFFFFF;
+                    padding: 32px 30px;
+                ">
+
+                    <div style="
+                        display: inline-block;
+                        padding: 8px 13px;
+                        background-color: #EEF1E8;
+                        color: #52643B;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 0.6px;
+                    ">
+                        ODBIÓR OSOBISTY
+                    </div>
+
+                    <h1 style="
+                        margin: 18px 0 10px;
+                        font-size: 25px;
+                        line-height: 1.3;
+                        color: #182016;
+                        font-weight: 800;
+                    ">
+                        Produkt został przekazany kupującemu, %s?
+                    </h1>
+
+                    <p style="
+                        margin: 0 0 24px;
+                        font-size: 15px;
+                        line-height: 1.7;
+                        color: #667066;
+                    ">
+                        Po osobistym przekazaniu produktu kupującemu
+                        pamiętaj o zaktualizowaniu statusu zamówienia
+                        na Kasoa.pl. Dzięki temu kupujący otrzyma
+                        wiadomość e-mail z prośbą o potwierdzenie odbioru.
+                    </p>
+
+                    <!-- ORDER DETAILS -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-bottom: 24px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 12px;
+                                ">
+                                    Szczegóły zamówienia
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    color: #667066;
+                                    margin-bottom: 5px;
+                                ">
+                                    Numer zamówienia
+                                </div>
+
+                                <div style="
+                                    font-family: monospace;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    color: #182016;
+                                    margin-bottom: 16px;
+                                ">
+                                    #%s
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    color: #667066;
+                                    margin-bottom: 5px;
+                                ">
+                                    Produkt
+                                </div>
+
+                                <div style="
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                    color: #182016;
+                                ">
+                                    %s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- ACTION REQUIRED -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        background-color: #FFF8E8;
+                        border: 1px solid #F0DCA9;
+                        border-radius: 12px;
+                        margin-bottom: 24px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 13px;
+                                    font-weight: 800;
+                                    color: #8A5A12;
+                                    margin-bottom: 8px;
+                                ">
+                                    Wymagane działanie
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    line-height: 1.7;
+                                    color: #765B2C;
+                                ">
+                                    Zaloguj się na swoje konto Kasoa.pl
+                                    i przejdź do szczegółów zamówienia.
+                                    W sekcji wysyłki zaktualizuj status
+                                    zamówienia na
+                                    <strong>„Dostarczono” (DELIVERED)</strong>.
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- NEXT STEPS -->
+                    <div style="
+                        padding-top: 22px;
+                        border-top: 1px solid #E8EBE5;
+                    ">
+                        <div style="
+                            font-size: 14px;
+                            font-weight: 800;
+                            color: #182016;
+                            margin-bottom: 14px;
+                        ">
+                            Co stanie się dalej?
+                        </div>
+
+                        <p style="
+                            margin: 0 0 12px;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">1.</strong>
+                            Po zmianie statusu na „Dostarczono” kupujący
+                            otrzyma od Kasoa.pl osobną wiadomość e-mail
+                            z bezpiecznym linkiem do potwierdzenia odbioru.
+                        </p>
+
+                        <p style="
+                            margin: 0 0 12px;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">2.</strong>
+                            Kupujący musi skorzystać z otrzymanego linku
+                            i potwierdzić, że odebrał produkt.
+                        </p>
+
+                        <p style="
+                            margin: 0;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">3.</strong>
+                            Po potwierdzeniu odbioru przez kupującego
+                            Kasoa.pl rozpocznie proces realizacji wypłaty
+                            należnych Ci środków.
+                        </p>
+                    </div>
+
+                    <!-- IMPORTANT -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        background-color: #F7F8F5;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-top: 24px;
+                    ">
+                        <tr>
+                            <td style="padding: 18px;">
+                                <div style="
+                                    font-size: 12px;
+                                    line-height: 1.7;
+                                    color: #667066;
+                                ">
+                                    <strong style="color: #182016;">
+                                        Ważne:
+                                    </strong>
+                                    Status „Dostarczono” aktualizuj
+                                    wyłącznie po faktycznym przekazaniu
+                                    produktu kupującemu. Sama zmiana
+                                    statusu nie oznacza jeszcze
+                                    potwierdzenia odbioru przez kupującego.
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- CTA -->
+                    <div style="margin-top: 28px; text-align: center;">
+                        <a href="https://www.kasoa.pl/account/orders"
+                           style="
+                               display: inline-block;
+                               padding: 14px 28px;
+                               background-color: #68764B;
+                               color: #FFFFFF;
+                               text-decoration: none;
+                               border-radius: 9px;
+                               font-size: 13px;
+                               font-weight: 700;
+                           ">
+                            Przejdź do moich zamówień →
+                        </a>
+                    </div>
+
+                </td>
+            </tr>
+
+            <!-- FOOTER -->
+            <tr>
+                <td style="
+                    background-color: #182016;
+                    padding: 24px 30px;
+                    border-radius: 0 0 16px 16px;
+                    text-align: center;
+                ">
+                    <div style="
+                        font-size: 17px;
+                        font-weight: 800;
+                        color: #FFFFFF;
+                    ">
+                        kasoa<span style="font-weight: 400; color: #AEB69D;">.pl</span>
+                    </div>
+
+                    <div style="
+                        margin-top: 7px;
+                        font-size: 11px;
+                        color: #AEB69D;
+                    ">
+                        Good things. A second chance.
+                    </div>
+
+                    <div style="
+                        margin-top: 14px;
+                        font-size: 10px;
+                        line-height: 1.7;
+                        color: #AEB69D;
+                    ">
+                        Ta wiadomość została wygenerowana automatycznie.
+                        <br>
+                        KASAWA Sp. z o.o. · Kasoa.pl
+                    </div>
+                </td>
+            </tr>
+
+        </table>
+    </div>
+    """.formatted(
+                safeSellerName,
+                safeOrderNumber,
+                safeProduct
+        );
+
+        sendHtmlEmail(sellerEmail, subject, htmlContent);
+    }
+
+
 
     /**
      * REFUND CONFIRMATION TO BUYER

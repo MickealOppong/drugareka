@@ -63,7 +63,10 @@ public class StoreController {
            return listingTransactionService.getProductListings();
     }
 
-
+    @GetMapping("/all")
+    public List<ConditionResponse> all(){
+        return productConditionService.AllProductConditions();
+    }
 
 
     @GetMapping("/store-products")
