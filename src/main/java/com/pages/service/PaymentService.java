@@ -1816,7 +1816,7 @@ public class PaymentService{
                     .orElseThrow(() -> new IllegalStateException("Inventory item missing from system database catalog: " + inventory.getId()));
 
             // Return items back to available shopping circulation pools safely
-            if (lockedInventory.getStatus() != InventoryStatus.SOLD ) {
+            if (lockedInventory.getStatus() == InventoryStatus.RESERVED) {
                 lockedInventory.setStatus(InventoryStatus.AVAILABLE);
                 lockedInventory.setReservedUntil(null); // Wipe reservation timestamps completely
                 lockedInventory.setReservedBy(null);
