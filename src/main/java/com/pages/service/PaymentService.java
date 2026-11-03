@@ -618,13 +618,24 @@ public class PaymentService{
                     listingOrder
             );
 
-            emailNotificationService.sendBulkOrderActionToSeller(
-                    sellerEmail,
-                    sellerName,
-                    listingOrder.getOrderNumber(),
-                    sellerEmailItems,
-                    token.getToken()
-            );
+            if(listingOrder.getShippingMethod().equalsIgnoreCase("personal_pickup")){
+                emailNotificationService.sendBulkOrderActionToSellerForPersonalCollection(
+                        sellerEmail,
+                        sellerName,
+                        listingOrder.getOrderNumber(),
+                        sellerEmailItems,
+                        token.getToken()
+                );
+            }else {
+                emailNotificationService.sendBulkOrderActionToSeller(
+                        sellerEmail,
+                        sellerName,
+                        listingOrder.getOrderNumber(),
+                        sellerEmailItems,
+                        token.getToken()
+                );
+            }
+
         });
 
     }
@@ -1805,7 +1816,7 @@ public class PaymentService{
                     .orElseThrow(() -> new IllegalStateException("Inventory item missing from system database catalog: " + inventory.getId()));
 
             // Return items back to available shopping circulation pools safely
-            if (lockedInventory.getStatus() == InventoryStatus.RESERVED) {
+            if (lockedInventory.getStatus() != InventoryStatus.SOLD ) {
                 lockedInventory.setStatus(InventoryStatus.AVAILABLE);
                 lockedInventory.setReservedUntil(null); // Wipe reservation timestamps completely
                 lockedInventory.setReservedBy(null);

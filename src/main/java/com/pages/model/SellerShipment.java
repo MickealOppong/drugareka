@@ -1,5 +1,6 @@
 package com.pages.model;
 
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.ItemSize;
 import com.pages.enums.ShipmentStatus;
 import com.pages.util.LogEntity;
@@ -55,6 +56,8 @@ public class SellerShipment extends LogEntity {
     @Column(length = 1024)
     private String sellerComment;
 
+    @Column(name = "shipping_method", nullable = false)
+    private String shippingMethod;
 
     private String trackingNumber;
     private String carrierShipmentId;

@@ -1,6 +1,7 @@
 package com.pages.model;
 
 
+import com.pages.enums.DeliveryOption;
 import com.pages.enums.OrderStatus;
 import com.pages.util.LogEntity;
 import jakarta.persistence.*;
@@ -35,6 +36,7 @@ public class ListingOrder extends LogEntity {
     @Column(name = "buyer_name_snapshot", nullable = false)
     private String buyerNameSnapshot;
 
+    private String shippingMethod;
     private String orderNumber;
 
     @Column(nullable = false, precision = 12, scale = 2)

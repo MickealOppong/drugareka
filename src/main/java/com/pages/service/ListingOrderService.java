@@ -109,6 +109,7 @@ public class ListingOrderService {
                 .buyerNameSnapshot(buyer.getFirstName()+" "+buyer.getLastName())
                 .shippingAddress(permanentShippingAddress)
                 .orderTotal(orderTotal)
+                .shippingMethod(cart.getShippingMethod())
                 .currency("PLN")
                 .orderStatus(OrderStatus.PROCESSING)
                 .build();

@@ -57,6 +57,7 @@ public class ShipmentService {
                             .listingOrderItem(listingOrderItem)
                             .seller(listingOrderItem.getSeller())
                             .deliveredAt(null)
+                            .shippingMethod(listingOrderItem.getListingOrder().getShippingMethod())
                             .itemSize(listingOrderItem.getInventoryItem().getItemSize())
                             .shippingAddress(listingOrderItem.getListingOrder().getShippingAddress())
                             .shipmentStatus(ShipmentStatus.CREATED)
@@ -75,6 +76,7 @@ public class ShipmentService {
                     .listingOrderItem(item)
                     .seller(item.getSeller())
                     .deliveredAt(null)
+                    .shippingMethod(item.getShippingMethod())
                     .itemSize(item.getInventoryItem().getItemSize())
                     .shippingAddress(item.getListingOrder().getShippingAddress())
                     .shipmentStatus(ShipmentStatus.AWAITING_SHIPMENT)
@@ -974,7 +976,14 @@ public class ShipmentService {
             for (SellerShipment itemToShip : confirmedShipments) {
                 itemToShip.setCollectionAddress(sellerAddress);
                 itemToShip.setSellerComment(request.getComment());
-                sellerShipmentRepo.save(itemToShip);
+                SellerShipment updateData =sellerShipmentRepo.save(itemToShip);
+
+                String product = itemToShip.getListingOrderItem().getProductNameSnapshot();
+                String email = itemToShip.getListingOrderItem().getListingOrder().getBuyer().getUsername();
+                String name = itemToShip.getListingOrderItem().getListingOrder().getBuyerNameSnapshot();
+                String orderNumber = itemToShip.getListingOrderItem().getListingOrder().getOrderNumber();
+                emailNotificationService.sendCollectionNotificationToBuyer(email,name,orderNumber,product
+                        ,updateData.getCollectionAddress(),pickup.getContact(),updateData.getSellerComment());
             }
 
             //cancel unfulfilled orders

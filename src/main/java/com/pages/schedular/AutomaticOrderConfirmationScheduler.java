@@ -1,4 +1,4 @@
-package com.pages.scheduler;
+package com.pages.schedular;
 
 import com.pages.enums.OrderItemStatus;
 import com.pages.enums.ShipmentStatus;

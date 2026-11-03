@@ -1047,6 +1047,431 @@ public class EmailNotificationService {
         sendHtmlEmail(buyerEmail, subject, htmlContent);
     }
 
+
+
+
+    @Async
+    public void sendCollectionNotificationToBuyer(
+            String buyerEmail,
+            String buyerName,
+            String orderNumber,
+            String product,
+            String collectionAddress,
+            String sellerContact,
+            String sellerComment
+    ) {
+        String subject = "Odbiór osobisty potwierdzony – zamówienie #" + orderNumber;
+
+        String safeBuyerName = escapeHtml(
+                buyerName != null && !buyerName.isBlank() ? buyerName : "Kliencie"
+        );
+
+        String safeOrderNumber = escapeHtml(orderNumber);
+        String safeProduct = escapeHtml(product);
+
+        String safeAddress = escapeHtml(collectionAddress)
+                .replace("\r\n", "<br>")
+                .replace("\n", "<br>");
+
+        String safeSellerContact = escapeHtml(
+                sellerContact != null && !sellerContact.isBlank()
+                        ? sellerContact
+                        : "Brak podanych danych kontaktowych"
+        );
+
+        String safeSellerComment = sellerComment != null && !sellerComment.isBlank()
+                ? escapeHtml(sellerComment)
+                .replace("\r\n", "<br>")
+                .replace("\n", "<br>")
+                : "Sprzedawca nie dodał dodatkowych instrukcji.";
+
+        String htmlContent = """
+    <div style="
+        margin: 0;
+        padding: 30px 15px;
+        background-color: #F5F6F1;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #182016;
+    ">
+        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+               style="max-width: 600px; margin: 0 auto;">
+
+            <!-- HEADER -->
+            <tr>
+                <td style="
+                    background-color: #68764B;
+                    padding: 28px 30px;
+                    border-radius: 16px 16px 0 0;
+                ">
+                    <div style="
+                        font-size: 26px;
+                        font-weight: 800;
+                        letter-spacing: -1px;
+                        color: #FFFFFF;
+                    ">
+                        kasoa<span style="font-weight: 400; opacity: 0.75;">.pl</span>
+                    </div>
+
+                    <div style="
+                        margin-top: 10px;
+                        font-size: 12px;
+                        color: #E9EDDF;
+                        letter-spacing: 0.5px;
+                    ">
+                        DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                    </div>
+                </td>
+            </tr>
+
+            <!-- BODY -->
+            <tr>
+                <td style="
+                    background-color: #FFFFFF;
+                    padding: 32px 30px;
+                ">
+
+                    <div style="
+                        display: inline-block;
+                        padding: 8px 13px;
+                        background-color: #EEF1E8;
+                        color: #52643B;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 0.6px;
+                    ">
+                        ✓ ODBIÓR OSOBISTY POTWIERDZONY
+                    </div>
+
+                    <h1 style="
+                        margin: 18px 0 10px;
+                        font-size: 25px;
+                        line-height: 1.3;
+                        color: #182016;
+                        font-weight: 800;
+                    ">
+                        Odbiór osobisty został potwierdzony, %s!
+                    </h1>
+
+                    <p style="
+                        margin: 0 0 24px;
+                        font-size: 15px;
+                        line-height: 1.7;
+                        color: #667066;
+                    ">
+                        Sprzedawca potwierdził Twoje zamówienie i przekazał
+                        szczegóły dotyczące odbioru. Możesz teraz skontaktować
+                        się ze sprzedawcą, aby ustalić dogodny termin.
+                    </p>
+
+                    <!-- TIME LIMIT -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        margin-bottom: 22px;
+                        background-color: #FFF8E8;
+                        border: 1px solid #F0DCA9;
+                        border-radius: 12px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 13px;
+                                    font-weight: 800;
+                                    color: #8A5A12;
+                                    margin-bottom: 8px;
+                                ">
+                                    ⏰ Masz 48 godzin na odbiór
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    line-height: 1.7;
+                                    color: #765B2C;
+                                ">
+                                    Od momentu otrzymania tej wiadomości
+                                    masz 48 godzin, aby skontaktować się
+                                    ze sprzedawcą, ustalić dogodny termin
+                                    i odebrać zamówiony produkt.
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- ORDER DETAILS -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-bottom: 20px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 12px;
+                                ">
+                                    Szczegóły zamówienia
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    color: #667066;
+                                    margin-bottom: 5px;
+                                ">
+                                    Numer zamówienia
+                                </div>
+
+                                <div style="
+                                    font-family: monospace;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    color: #182016;
+                                    margin-bottom: 16px;
+                                ">
+                                    #%s
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    color: #667066;
+                                    margin-bottom: 5px;
+                                ">
+                                    Produkt
+                                </div>
+
+                                <div style="
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                    color: #182016;
+                                ">
+                                    %s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- COLLECTION ADDRESS -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        border: 1px solid #DCE6D8;
+                        border-radius: 12px;
+                        margin-bottom: 20px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #68764B;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 12px;
+                                ">
+                                    📍 Adres odbioru
+                                </div>
+
+                                <div style="
+                                    font-size: 16px;
+                                    line-height: 1.7;
+                                    font-weight: 700;
+                                    color: #182016;
+                                ">
+                                    %s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- SELLER CONTACT -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        background-color: #F7F8F5;
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-bottom: 20px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 10px;
+                                ">
+                                    Kontakt ze sprzedawcą
+                                </div>
+
+                                <div style="
+                                    font-size: 14px;
+                                    line-height: 1.7;
+                                    color: #182016;
+                                ">
+                                    %s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- SELLER COMMENT -->
+                    <table width="100%%" cellpadding="0" cellspacing="0"
+                           border="0" style="
+                        border: 1px solid #E4E8DE;
+                        border-radius: 12px;
+                        margin-bottom: 24px;
+                    ">
+                        <tr>
+                            <td style="padding: 20px;">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    color: #8A9288;
+                                    text-transform: uppercase;
+                                    letter-spacing: 1px;
+                                    margin-bottom: 10px;
+                                ">
+                                    Informacje od sprzedawcy
+                                </div>
+
+                                <div style="
+                                    font-size: 13px;
+                                    line-height: 1.8;
+                                    color: #667066;
+                                ">
+                                    %s
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- NEXT STEPS -->
+                    <div style="
+                        padding-top: 22px;
+                        border-top: 1px solid #E8EBE5;
+                    ">
+                        <div style="
+                            font-size: 14px;
+                            font-weight: 800;
+                            color: #182016;
+                            margin-bottom: 12px;
+                        ">
+                            Co teraz zrobić?
+                        </div>
+
+                        <p style="
+                            margin: 0 0 10px;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">1.</strong>
+                            Skontaktuj się ze sprzedawcą, aby ustalić
+                            dogodny termin odbioru.
+                        </p>
+
+                        <p style="
+                            margin: 0 0 10px;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">2.</strong>
+                            Odbierz produkt pod wskazanym adresem
+                            w ciągu 48 godzin od otrzymania tej wiadomości.
+                        </p>
+
+                        <p style="
+                            margin: 0;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #667066;
+                        ">
+                            <strong style="color: #182016;">3.</strong>
+                            Po odbiorze produktu sprzedawca zaktualizuje
+                            status zamówienia. Następnie otrzymasz od
+                            Kasoa.pl osobną wiadomość e-mail z instrukcją
+                            potwierdzenia odbioru.
+                        </p>
+                    </div>
+
+                    <!-- CTA -->
+                    <div style="margin-top: 28px; text-align: center;">
+                        <a href="https://www.kasoa.pl/account/orders"
+                           style="
+                               display: inline-block;
+                               padding: 14px 28px;
+                               background-color: #68764B;
+                               color: #FFFFFF;
+                               text-decoration: none;
+                               border-radius: 9px;
+                               font-size: 13px;
+                               font-weight: 700;
+                           ">
+                            Zobacz moje zamówienia →
+                        </a>
+                    </div>
+
+                </td>
+            </tr>
+
+            <!-- FOOTER -->
+            <tr>
+                <td style="
+                    background-color: #182016;
+                    padding: 24px 30px;
+                    border-radius: 0 0 16px 16px;
+                    text-align: center;
+                ">
+                    <div style="
+                        font-size: 17px;
+                        font-weight: 800;
+                        color: #FFFFFF;
+                    ">
+                        kasoa<span style="font-weight: 400; color: #AEB69D;">.pl</span>
+                    </div>
+
+                    <div style="
+                        margin-top: 7px;
+                        font-size: 11px;
+                        color: #AEB69D;
+                    ">
+                        Good things. A second chance.
+                    </div>
+
+                    <div style="
+                        margin-top: 14px;
+                        font-size: 10px;
+                        line-height: 1.7;
+                        color: #AEB69D;
+                    ">
+                        Ta wiadomość została wygenerowana automatycznie.
+                        <br>
+                        KASAWA Sp. z o.o. · Kasoa.pl
+                    </div>
+                </td>
+            </tr>
+
+        </table>
+    </div>
+    """.formatted(
+                safeBuyerName,
+                safeOrderNumber,
+                safeProduct,
+                safeAddress,
+                safeSellerContact,
+                safeSellerComment
+        );
+
+        sendHtmlEmail(buyerEmail, subject, htmlContent);
+    }
+
+
+
     /**
      * REFUND CONFIRMATION TO BUYER
      */
@@ -2923,6 +3348,615 @@ public class EmailNotificationService {
                 html
         );
     }
+
+
+
+    @Async
+    public void sendBulkOrderActionToSellerForPersonalCollection(
+            String sellerEmail,
+            String sellerName,
+            String orderNumber,
+            List<EmailProductItemDto> products,
+            String shipmentToken
+    ) {
+
+        String safeSellerName = escapeHtml(
+                sellerName != null && !sellerName.isBlank()
+                        ? sellerName
+                        : "Sprzedawco"
+        );
+
+        String safeOrderNumber = escapeHtml(
+                orderNumber != null ? orderNumber : ""
+        );
+
+        if (shipmentToken == null || shipmentToken.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Shipment token is required for personal collection confirmation."
+            );
+        }
+
+        BigDecimal productsTotal = BigDecimal.ZERO;
+
+        StringBuilder productsHtml = new StringBuilder();
+
+        if (products != null && !products.isEmpty()) {
+
+            for (EmailProductItemDto item : products) {
+
+                if (item == null) {
+                    continue;
+                }
+
+                String productName = escapeHtml(
+                        item.getProductName() != null
+                                ? item.getProductName()
+                                : "Produkt"
+                );
+
+                BigDecimal price = item.getAmount() != null
+                        ? item.getAmount()
+                        : BigDecimal.ZERO;
+
+                long quantity = item.getQuantity() != null
+                        ? item.getQuantity()
+                        : 1L;
+
+                BigDecimal productTotal = price.multiply(
+                        BigDecimal.valueOf(quantity)
+                );
+
+                productsTotal = productsTotal.add(productTotal);
+
+                productsHtml.append("""
+                <tr>
+                    <td style="
+                        padding:16px 0;
+                        border-bottom:1px solid #E4E7DE;
+                        vertical-align:top;
+                    ">
+                        <div style="
+                            font-size:15px;
+                            line-height:22px;
+                            font-weight:700;
+                            color:#182016;
+                        ">
+                            %s
+                        </div>
+
+                        <div style="
+                            margin-top:4px;
+                            font-size:13px;
+                            line-height:20px;
+                            color:#687064;
+                        ">
+                            Ilość: %s
+                        </div>
+                    </td>
+
+                    <td style="
+                        padding:16px 0;
+                        border-bottom:1px solid #E4E7DE;
+                        text-align:right;
+                        vertical-align:top;
+                        white-space:nowrap;
+                    ">
+                        <div style="
+                            font-size:15px;
+                            line-height:22px;
+                            font-weight:700;
+                            color:#182016;
+                        ">
+                            %s PLN
+                        </div>
+                    </td>
+                </tr>
+                """.formatted(
+                        productName,
+                        quantity,
+                        productTotal.toPlainString()
+                ));
+            }
+
+        } else {
+
+            productsHtml.append("""
+            <tr>
+                <td colspan="2" style="
+                    padding:16px 0;
+                    color:#687064;
+                    font-size:14px;
+                ">
+                    Brak dostępnych produktów.
+                </td>
+            </tr>
+            """);
+        }
+
+        // Personal collection has no courier shipping charge.
+        BigDecimal orderTotal = productsTotal;
+
+        String shipmentUrl = shipmentConfirmationUrl
+                + "/create?token="
+                + URLEncoder.encode(
+                shipmentToken,
+                StandardCharsets.UTF_8
+        );
+
+        String safeShipmentUrl = escapeHtml(shipmentUrl);
+
+        String subject =
+                "Kasoa.pl — Nowe zamówienie #" + safeOrderNumber;
+
+        String html = """
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport"
+                  content="width=device-width, initial-scale=1.0">
+            <title>Nowe zamówienie</title>
+        </head>
+
+        <body style="
+            margin:0;
+            padding:0;
+            background:#F5F6F1;
+            font-family:Arial,Helvetica,sans-serif;
+            color:#182016;
+        ">
+
+            <table role="presentation" width="100%%"
+                   cellpadding="0" cellspacing="0" border="0"
+                   style="background:#F5F6F1;">
+
+                <tr>
+                    <td align="center" style="padding:32px 16px;">
+
+                        <table role="presentation" width="100%%"
+                               cellpadding="0" cellspacing="0" border="0"
+                               style="
+                                   max-width:620px;
+                                   background:#FFFFFF;
+                                   border-radius:18px;
+                                   overflow:hidden;
+                               ">
+
+                            <!-- HEADER -->
+
+                            <tr>
+                                <td style="
+                                    padding:28px 32px;
+                                    background:#68764B;
+                                ">
+                                    <div style="
+                                        font-size:26px;
+                                        line-height:32px;
+                                        font-weight:800;
+                                        color:#FFFFFF;
+                                    ">
+                                        kasoa<span style="
+                                            font-weight:400;
+                                            color:#DCE3CF;
+                                        ">.pl</span>
+                                    </div>
+
+                                    <div style="
+                                        margin-top:5px;
+                                        font-size:13px;
+                                        line-height:20px;
+                                        color:#EEF1E8;
+                                    ">
+                                        Druga ręka. Dobre rzeczy. Mniej odpadów.
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- CONTENT -->
+
+                            <tr>
+                                <td style="padding:32px;">
+
+                                    <div style="
+                                        font-size:14px;
+                                        font-weight:700;
+                                        color:#68764B;
+                                        margin-bottom:8px;
+                                    ">
+                                        NOWE ZAMÓWIENIE
+                                    </div>
+
+                                    <div style="
+                                        font-size:25px;
+                                        line-height:32px;
+                                        font-weight:800;
+                                        color:#182016;
+                                    ">
+                                        Cześć %s! 👋
+                                    </div>
+
+                                    <div style="
+                                        margin-top:12px;
+                                        font-size:15px;
+                                        line-height:24px;
+                                        color:#5E6658;
+                                    ">
+                                        Otrzymałeś nowe zamówienie.
+                                        Kupujący wybrał
+                                        <strong>odbiór osobisty</strong>
+                                        zamiast dostawy kurierskiej.
+                                    </div>
+
+                                    <!-- ORDER NUMBER -->
+
+                                    <table role="presentation" width="100%%"
+                                           cellpadding="0" cellspacing="0" border="0"
+                                           style="
+                                               margin-top:24px;
+                                               background:#EEF1E8;
+                                               border-radius:12px;
+                                           ">
+                                        <tr>
+                                            <td style="padding:16px 18px;">
+
+                                                <div style="
+                                                    font-size:12px;
+                                                    font-weight:700;
+                                                    color:#68764B;
+                                                    text-transform:uppercase;
+                                                ">
+                                                    Numer zamówienia
+                                                </div>
+
+                                                <div style="
+                                                    margin-top:4px;
+                                                    font-size:18px;
+                                                    font-weight:800;
+                                                    color:#182016;
+                                                ">
+                                                    #%s
+                                                </div>
+
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- PRODUCTS -->
+
+                                    <div style="
+                                        margin-top:30px;
+                                        font-size:18px;
+                                        line-height:24px;
+                                        font-weight:800;
+                                        color:#182016;
+                                    ">
+                                        Produkty
+                                    </div>
+
+                                    <table role="presentation" width="100%%"
+                                           cellpadding="0" cellspacing="0" border="0"
+                                           style="
+                                               margin-top:8px;
+                                               border-collapse:collapse;
+                                           ">
+                                        %s
+                                    </table>
+
+                                    <!-- TOTALS -->
+
+                                    <table role="presentation" width="100%%"
+                                           cellpadding="0" cellspacing="0" border="0"
+                                           style="
+                                               margin-top:16px;
+                                               border-collapse:collapse;
+                                           ">
+
+                                        <tr>
+                                            <td style="
+                                                padding:6px 0;
+                                                font-size:14px;
+                                                color:#687064;
+                                            ">
+                                                Produkty
+                                            </td>
+
+                                            <td style="
+                                                padding:6px 0;
+                                                text-align:right;
+                                                font-size:14px;
+                                                color:#182016;
+                                                font-weight:600;
+                                            ">
+                                                %s PLN
+                                            </td>
+                                        </tr>
+
+                                        <tr>
+                                            <td colspan="2" style="
+                                                padding-top:12px;
+                                                border-top:1px solid #DDE1D7;
+                                            "></td>
+                                        </tr>
+
+                                        <tr>
+                                            <td style="
+                                                padding:8px 0;
+                                                font-size:17px;
+                                                font-weight:800;
+                                                color:#182016;
+                                            ">
+                                                Razem
+                                            </td>
+
+                                            <td style="
+                                                padding:8px 0;
+                                                text-align:right;
+                                                font-size:18px;
+                                                font-weight:800;
+                                                color:#68764B;
+                                            ">
+                                                %s PLN
+                                            </td>
+                                        </tr>
+
+                                    </table>
+
+                                    <!-- PERSONAL COLLECTION -->
+
+                                    <table role="presentation" width="100%%"
+                                           cellpadding="0" cellspacing="0" border="0"
+                                           style="
+                                               margin-top:32px;
+                                               background:#EEF1E8;
+                                               border-radius:12px;
+                                           ">
+                                        <tr>
+                                            <td style="padding:20px;">
+
+                                                <div style="
+                                                    font-size:18px;
+                                                    line-height:24px;
+                                                    font-weight:800;
+                                                    color:#182016;
+                                                ">
+                                                    📍 Potwierdź odbiór osobisty
+                                                </div>
+
+                                                <div style="
+                                                    margin-top:10px;
+                                                    font-size:14px;
+                                                    line-height:22px;
+                                                    color:#5E6658;
+                                                ">
+                                                    Masz <strong>24 godziny</strong>
+                                                    na potwierdzenie zamówienia
+                                                    i podanie szczegółów odbioru.
+                                                    <br><br>
+
+                                                    1. Otwórz szczegóły zamówienia
+                                                    za pomocą przycisku poniżej.
+                                                    <br><br>
+
+                                                    2. Potwierdź zamówienie,
+                                                    podaj dokładny adres odbioru
+                                                    oraz określ dostępne dni
+                                                    i godziny, w których kupujący
+                                                    może odebrać produkty.
+                                                    <br><br>
+
+                                                    3. Po Twoim potwierdzeniu
+                                                    Kasoa wyśle kupującemu
+                                                    wiadomość e-mail ze szczegółami
+                                                    odbioru.
+                                                    <br><br>
+
+                                                    4. Kupujący będzie miał
+                                                    <strong>48 godzin od momentu
+                                                    Twojego potwierdzenia</strong>,
+                                                    aby odebrać zamówienie.
+                                                    <br><br>
+
+                                                    5. Po fizycznym odebraniu
+                                                    produktów kupujący potwierdzi
+                                                    ich otrzymanie, klikając
+                                                    bezpieczny link w wiadomości
+                                                    e-mail od Kasoa.pl.
+                                                </div>
+
+                                                <!-- CTA -->
+
+                                                <table role="presentation"
+                                                       width="100%%"
+                                                       cellpadding="0"
+                                                       cellspacing="0"
+                                                       border="0"
+                                                       style="margin-top:20px;">
+                                                    <tr>
+                                                        <td align="center">
+
+                                                            <a href="%s"
+                                                               style="
+                                                                   display:inline-block;
+                                                                   background:#68764B;
+                                                                   color:#FFFFFF;
+                                                                   text-decoration:none;
+                                                                   font-size:15px;
+                                                                   font-weight:700;
+                                                                   padding:14px 26px;
+                                                                   border-radius:10px;
+                                                               ">
+                                                                Potwierdź zamówienie
+                                                                i podaj szczegóły odbioru
+                                                            </a>
+
+                                                        </td>
+                                                    </tr>
+                                                </table>
+
+                                                <div style="
+                                                    margin-top:16px;
+                                                    font-size:12px;
+                                                    line-height:18px;
+                                                    color:#8A9184;
+                                                    text-align:center;
+                                                ">
+                                                    Adres odbioru i dostępne terminy
+                                                    podasz po otwarciu szczegółów
+                                                    zamówienia.
+                                                </div>
+
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- PAYMENT AND STRIPE ONBOARDING -->
+
+                                    <table role="presentation" width="100%%"
+                                           cellpadding="0" cellspacing="0" border="0"
+                                           style="
+                                               margin-top:20px;
+                                               background:#F7F8F4;
+                                               border:1px solid #E0E4DB;
+                                               border-radius:12px;
+                                           ">
+                                        <tr>
+                                            <td style="padding:20px;">
+
+                                                <div style="
+                                                    font-size:16px;
+                                                    font-weight:800;
+                                                    color:#182016;
+                                                ">
+                                                    💰 Płatność
+                                                </div>
+
+                                                <div style="
+                                                    margin-top:8px;
+                                                    font-size:14px;
+                                                    line-height:22px;
+                                                    color:#5E6658;
+                                                ">
+                                                    Środki zostaną rozliczone
+                                                    zgodnie z zasadami Kasoa
+                                                    po potwierdzeniu odbioru
+                                                    produktów przez kupującego.
+                                                </div>
+
+                                                <div style="
+                                                    margin-top:20px;
+                                                    padding-top:18px;
+                                                    border-top:1px solid #E0E4DB;
+                                                ">
+                                                    <div style="
+                                                        font-size:15px;
+                                                        line-height:22px;
+                                                        font-weight:800;
+                                                        color:#182016;
+                                                    ">
+                                                        Dokończ konfigurację płatności
+                                                    </div>
+
+                                                    <div style="
+                                                        margin-top:8px;
+                                                        font-size:14px;
+                                                        line-height:22px;
+                                                        color:#5E6658;
+                                                    ">
+                                                        Aby otrzymywać wypłaty
+                                                        za sprzedane produkty,
+                                                        skonfiguruj konto Stripe
+                                                        i zweryfikuj swoją tożsamość,
+                                                        jeśli jeszcze tego nie zrobiłeś.
+                                                    </div>
+
+                                                    <div style="
+                                                        margin-top:10px;
+                                                        font-size:14px;
+                                                        line-height:22px;
+                                                        color:#5E6658;
+                                                    ">
+                                                        Zaloguj się na Kasoa.pl,
+                                                        przejdź do
+                                                        <strong>Konto &gt; Profil</strong>
+                                                        i rozpocznij konfigurację Stripe.
+                                                        Następnie wykonaj wymagane kroki
+                                                        weryfikacji tożsamości.
+                                                    </div>
+                                                </div>
+
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                </td>
+                            </tr>
+
+                            <!-- DARK FOOTER -->
+
+                            <tr>
+                                <td style="
+                                    background-color:#182016;
+                                    padding:24px 30px;
+                                    border-radius:0 0 18px 18px;
+                                    text-align:center;
+                                ">
+                                    <div style="
+                                        font-size:17px;
+                                        font-weight:800;
+                                        color:#FFFFFF;
+                                    ">
+                                        kasoa<span style="
+                                            font-weight:400;
+                                            color:#AEB69D;
+                                        ">.pl</span>
+                                    </div>
+
+                                    <div style="
+                                        margin-top:7px;
+                                        font-size:11px;
+                                        color:#AEB69D;
+                                    ">
+                                        Good things. A second chance.
+                                    </div>
+
+                                    <div style="
+                                        margin-top:14px;
+                                        font-size:10px;
+                                        line-height:1.5;
+                                        color:#7F8878;
+                                    ">
+                                        Ta wiadomość została wygenerowana automatycznie.
+                                        <br>
+                                        Zarządzaj swoimi zamówieniami na Kasoa.pl.
+                                    </div>
+                                </td>
+                            </tr>
+
+                        </table>
+
+                    </td>
+                </tr>
+            </table>
+
+        </body>
+        </html>
+        """.formatted(
+                safeSellerName,
+                safeOrderNumber,
+                productsHtml.toString(),
+                productsTotal.toPlainString(),
+                orderTotal.toPlainString(),
+                safeShipmentUrl
+        );
+
+        sendHtmlEmail(
+                sellerEmail,
+                subject,
+                html
+        );
+    }
+
+
 
 
 
