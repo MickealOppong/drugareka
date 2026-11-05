@@ -302,6 +302,9 @@ public class SellerProfileService {
                 seller.setCurrentYearGrossVolumePln(BigDecimal.ZERO);
             }
 
+            //update cancelled orders count;
+            long currentCancelledOrders = seller.getNumberOfCancelledOrders()!=null?seller.getNumberOfCancelledOrders():0L;
+            seller.setNumberOfCancelledOrders(currentCancelledOrders+1);
             // Save our clean database updates back to your Railway instance rows
             sellerProfileRepo.save(seller);
 

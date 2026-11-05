@@ -2,12 +2,18 @@ package com.pages.service;
 import com.pages.dto.*;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.model.Brand;
+import com.pages.model.ListingTransaction;
+import com.pages.specs.CategorySpecs;
 import com.pages.util.Media;
 import com.pages.util.UtilService;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.Category;
 import com.pages.repository.CategoryRepo;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -136,10 +142,36 @@ public class CategoryService {
         }).toList();
     }
 
-    public List<CategoryResponse> getAllCategories(){
-        return categoryRepo.findAll().stream().map(category -> {
+    public List<CategoryResponse> getAllCategoriesByPage(String query,int page,int size){
+
+        Pageable pageable = PageRequest.of(
+                page== 0 ? 0 : page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+        Specification<Category> specification = Specification
+                .where(CategorySpecs.hasCategoryName(query));
+
+        return categoryRepo.findAll(specification,pageable).stream().map(category -> {
             MediaResponse media = mediaService.getCategoryImage(category);
          return    CategoryResponse.builder()
+                    .id(category.getId())
+                    .active(category.getIsActive())
+                    .name(category.getName())
+                    .image(media!=null? media.getImage():null)
+                    .parent(category.getParent()!=null?category.getParent().getName():null)
+                    .sortOrder(category.getSortOrder())
+                    .slug(category.getSlug())
+                    .build();
+        }).toList();
+
+    }
+
+    public List<CategoryResponse> getAllCategories(){
+
+        return categoryRepo.findAll().stream().map(category -> {
+            MediaResponse media = mediaService.getCategoryImage(category);
+            return    CategoryResponse.builder()
                     .id(category.getId())
                     .active(category.getIsActive())
                     .name(category.getName())

@@ -26,9 +26,9 @@ public class ShipmentController {
 
     @GetMapping("/shipments")
     public ListPageShipment myShipment(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "1")Integer page,
-                                       @RequestParam(defaultValue = "10") Integer size,String type){
+                                       @RequestParam(defaultValue = "10") Integer size,String type,String query){
        if(type.equals("ACTUAL")){
-           return shipmentService.actualShipments(jwt,page,size);
+           return shipmentService.actualShipments(jwt,page,size,query);
        }else{
            return shipmentService.returnShipments(jwt,page,size);
        }

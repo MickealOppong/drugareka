@@ -370,10 +370,12 @@ public class PayoutProcessingService {
     public void createRefundForUnconfirmedOrderItem(Payment payment,ListingOrderItem item){
 
 
+        BigDecimal amountToRefund = item.getSellerPrice().add(item.getShippingCost()).add(item.getServiceCharge());
+
         Payment refund = Payment.builder()
                 .listingOrder(item.getListingOrder())
                 .status(PaymentStatus.AWAITING_REFUND)
-                .amount((item.getSellerPrice()).negate())
+                .amount(amountToRefund.negate())
                 .currency("PLN")
                 .providerSessionId(payment.getProviderSessionId())
                 .stripePaymentIntentId(payment.getStripePaymentIntentId())
@@ -386,14 +388,16 @@ public class PayoutProcessingService {
         //adjust seller payout for refund
         createPayoutRefund(item);
 
+        serviceChargeService.reverseCharge(item);
+
 
         //send email confirmation
         String email = item.getListingOrder().getBuyer().getUsername();
         String name = item.getListingOrder().getBuyer().getFirstName();
         String orderNumber = item.getListingOrder().getOrderNumber();
         String itemName = item.getProductNameSnapshot();
-        BigDecimal amount = item.getSellerPrice();
-        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,amount);
+
+        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,amountToRefund);
     }
 
     public Refund processStripeOrderRefund(Payment refund)

@@ -1,14 +1,16 @@
 package com.pages.repository;
 
 import com.pages.model.Category;
+import com.pages.model.ListingOrderItem;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface CategoryRepo extends JpaRepository<Category,Long> {
+public interface CategoryRepo extends  JpaRepository<Category,Long>, JpaSpecificationExecutor<Category> {
 
     Optional<Category> findByNameAndParentIsNull(String name);
     Optional<Category> findByName(String name);

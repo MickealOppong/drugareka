@@ -25,8 +25,8 @@ public class PayoutController {
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @GetMapping("seller-payouts")
-    public ListPagePayout payOuts(@AuthenticationPrincipal Jwt jwt, Integer page, Integer size){
-       return sellerPayoutService.allPayouts(jwt,page,size);
+    public ListPagePayout payOuts(@AuthenticationPrincipal Jwt jwt,String query, Integer page, Integer size){
+       return sellerPayoutService.allPayouts(jwt,query,page,size);
     }
 
     @PreAuthorize(("hasAuthority('ROLE_ADMIN')"))

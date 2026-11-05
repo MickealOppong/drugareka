@@ -44,13 +44,8 @@ public class SellerProfile extends LogEntity {
     private BigDecimal totalSettlement = BigDecimal.ZERO;
 
 
-    // MANDATORY PRIVATE ID COMPLIANCE FIELDS ---
-    @Column(length = 11)
-    private String pesel; // Validated via your 11-digit regex function block
-
     private String fullLegalName;
 
-    private String permanentResidentialAddress;
 
     private LocalDate dateOfBirth;
 
@@ -103,6 +98,8 @@ public class SellerProfile extends LogEntity {
 
     private Instant stripeAccountUpdatedAt;
 
+    private Long numberOfCancelledOrders;
+
 
 
 
@@ -119,11 +116,9 @@ public class SellerProfile extends LogEntity {
         this.totalSales = dto.getTotalSales() != null ? dto.getTotalSales() : BigDecimal.ZERO;
         this.totalSettlement = dto.getTotalSettlement() != null ? dto.getTotalSettlement() : BigDecimal.ZERO;
 
-        // --- Mandatory Private Citizen Regulatory Verification Fields ---
-        this.pesel = dto.getPesel(); // Governed by your 11-digit regex security mask
         this.fullLegalName = dto.getFullLegalName();
-        this.permanentResidentialAddress = dto.getPermanentResidentialAddress();
         this.dateOfBirth = dto.getDateOfBirth();
+        this.numberOfCancelledOrders=0L;
 
         // --- Regulatory Calendar-Year DAC7 Tax Counters ---
         this.currentYearSalesCount = dto.getCurrentYearSalesCount() != null ? dto.getCurrentYearSalesCount() : 0;

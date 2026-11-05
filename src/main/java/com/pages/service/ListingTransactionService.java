@@ -274,6 +274,7 @@ public class ListingTransactionService {
             }
             currentPrice.setSellerOldPrice(oldPrice);
             currentPrice.setSellerNewPrice(newPrice);
+            currentPrice.setServiceCharge(pricingService.getServiceCharge(newPrice));
             currentPrice.setInventoryItem(inventoryItem);
             currentPrice.setSellerMinPrice(minPrice);
             currentPrice.setReason("Listing price updated");
@@ -363,6 +364,7 @@ public class ListingTransactionService {
                     .sellerOldPrice(productData.getPrice())
                     .sellerNewPrice(productData.getPrice())
                     .inventoryItem(savedInventoryItem)
+                    .serviceCharge(pricingService.getServiceCharge(productData.getPrice()))
                     .sellerMinPrice(productData.getMinPrice())
                     .reason("Initial listing price")
                     .build();
@@ -549,14 +551,32 @@ public class ListingTransactionService {
                 .build();
     }
     @Transactional(readOnly = true)
-    public ListPageDto myCatalogFeed(Jwt jwt, int page, int size) {
+    public ListPageDto myCatalogFeed(Jwt jwt, String query,int page, int size) {
         if (jwt == null) {
             return ListPageDto.builder().build();
         }
         AppUser currentUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
         Long currentUserId = currentUser.getId();
-        Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<ProductListResponse> listings = listingTransactionRepo.findByInventorySellerUserId(currentUserId, pageable)
+        SellerProfile seller = sellerProfileService.getSellerProfile(currentUserId);
+
+        if(seller==null){
+            return ListPageDto.builder()
+                    .productList(List.of())
+                    .page(0)
+                    .pageSize(0)
+                    .accumulatedItems(0)
+                    .totalPages(0)
+                    .totalElements(0)
+                    .build();
+        }
+        Long sellerId = seller.getId();
+        Pageable pageable = PageRequest.of(page ==0?page:page-1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Specification<ListingTransaction> specification = Specification
+                .where(ListingSpecs.hasSellerId(sellerId))
+                .and(ListingSpecs.matchesSearch(query));
+
+        Page<ProductListResponse> listings = listingTransactionRepo.findAll(specification, pageable)
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();
                     List<MediaResponse> media = mediaService.getImageList(inventoryId);

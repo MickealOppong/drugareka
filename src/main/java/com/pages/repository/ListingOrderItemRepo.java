@@ -11,10 +11,8 @@ import com.pages.model.SellerProfile;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -23,10 +21,10 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Long> {
+public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Long>, JpaSpecificationExecutor<ListingOrderItem> {
 
     List<ListingOrderItem> findByListingOrderId(Long orderId);
-    Page<ListingOrderItem> findBySellerId(Long sellerId,Pageable pageable);
+    Page<ListingOrderItem> findBySellerId(Long sellerId, Specification<ListingOrderItem> specification,Pageable pageable);
     Long countBySellerAndInventoryItemStatus(SellerProfile seller, InventoryStatus inventoryStatus);
     Long countBySellerIdAndListingOrderOrderStatus(Long userId, OrderStatus orderStatus);
     Long countBySellerId(Long userId);

@@ -1,24 +1,11 @@
-package com.pages.service;
+package com.pages.schedular;
 
-import com.pages.enums.InventoryStatus;
-import com.pages.enums.OrderItemStatus;
-import com.pages.enums.OrderStatus;
-import com.pages.enums.PaymentStatus;
-import com.pages.model.InventoryItem;
-import com.pages.model.ListingOrder;
-import com.pages.model.Payment;
-import com.pages.repository.InventoryItemRepo;
-import com.pages.repository.ListingOrderItemRepo;
-import com.pages.repository.ListingOrderRepo;
-import com.pages.repository.PaymentRepo;
+import com.pages.service.ListingOrderService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
-import java.time.Instant;
-import java.util.List;
 
 @Service
 @Slf4j

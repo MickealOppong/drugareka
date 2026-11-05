@@ -5,11 +5,13 @@ import com.pages.enums.InventoryStatus;
 import com.pages.enums.ListingStatus;
 import com.pages.model.*;
 import jakarta.persistence.criteria.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.util.Locale;
 
+@Slf4j
 public class ListingSpecs {
 
     public static Specification<ListingTransaction> hasListingStatus(
@@ -55,6 +57,24 @@ public class ListingSpecs {
             );
 
             return cb.or(directCategoryMatch,parentCategoryMatch);
+        };
+    }
+
+
+    public static Specification<ListingTransaction> hasSellerId(Long sellerId) {
+
+        return (root, query, cb) -> {
+
+            if (sellerId == null) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory", JoinType.INNER);
+            return cb.equal(
+                    inventoryJoin.get("seller").get("id"),
+                    sellerId
+            );
         };
     }
 
@@ -206,6 +226,9 @@ public class ListingSpecs {
             Join<InventoryItem, ProductCatalog> product =
                     inventory.join("productCatalog", JoinType.LEFT);
 
+            Join<ProductCatalog, Category> category =
+                    product.join("category");
+
             Join<ProductCatalog, Brand> brand =
                     product.join("brand", JoinType.LEFT);
 
@@ -215,7 +238,8 @@ public class ListingSpecs {
                     cb.like(cb.lower(brand.get("name")), pattern),
                     cb.like(cb.lower(product.get("description")), pattern),
                     cb.like(cb.lower(inventory.get("model")), pattern),
-                    cb.like(cb.lower(inventory.get("itemNumber")), pattern)
+                    cb.like(cb.lower(inventory.get("itemNumber")), pattern),
+                   cb.like(cb.lower(category.get("name")), pattern)
             );
         };
     }

@@ -10,6 +10,7 @@ import com.pages.model.*;
 import com.pages.repository.SellerPayoutRepo;
 import com.pages.repository.SellerProfileRepo;
 import com.pages.repository.SellerShipmentRepo;
+import com.pages.specs.PayoutSpecs;
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -20,6 +21,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -106,8 +108,8 @@ public class SellerPayoutService {
     }
 
     @Transactional(readOnly = true)
-    private ListPagePayout getMyPayouts(Long userId,int page,int size){
-        if(userId !=null){
+    private ListPagePayout getMyPayouts(Long userId,String query,int page,int size){
+        if(userId!=null){
 
             Pageable pageable = PageRequest.of(
                     page==0?page:page-1,
@@ -115,7 +117,11 @@ public class SellerPayoutService {
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
 
-          Page<SellerPayoutResponse> payouts= sellerPayoutRepo.findBySellerUserId(userId,pageable).
+            Specification<SellerPayout> specification = Specification
+                    .where(PayoutSpecs.hasSellerUserId(userId))
+                    .and(PayoutSpecs.matchQuery(query));
+
+          Page<SellerPayoutResponse> payouts= sellerPayoutRepo.findAll(specification,pageable).
                    map(sellerPayout->{
                return SellerPayoutResponse.builder()
                        .seller(sellerPayout.getSellerNameSnapshot())
@@ -141,7 +147,7 @@ public class SellerPayoutService {
     }
 
     @Transactional(readOnly = true)
-    public ListPagePayout allPayouts(Jwt jwt,int page,int size){
+    public ListPagePayout allPayouts(Jwt jwt,String query,int page,int size){
         if(jwt !=null){
 
             Pageable pageable = PageRequest.of(
@@ -150,8 +156,10 @@ public class SellerPayoutService {
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
 
+            Specification<SellerPayout> specification = Specification
+                    .where(PayoutSpecs.matchQuery(query));
 
-            Page<SellerPayoutResponse> payouts =sellerPayoutRepo.findAll(pageable).
+            Page<SellerPayoutResponse> payouts =sellerPayoutRepo.findAll(specification,pageable).
                     map(sellerPayout->{
                         return SellerPayoutResponse.builder()
                                 .seller(sellerPayout.getSellerNameSnapshot())
@@ -177,10 +185,11 @@ public class SellerPayoutService {
     }
 
     @Transactional(readOnly = true)
-    public ListPagePayout payouts(Jwt jwt,int page,int size){
+    public ListPagePayout payouts(Jwt jwt,String query,int page,int size){
         if(jwt!=null){
             AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
-            return getMyPayouts(appUser.getId(),page,size);
+
+            return getMyPayouts(appUser.getId(),query,page,size);
         }
         return ListPagePayout.builder().build();
     }

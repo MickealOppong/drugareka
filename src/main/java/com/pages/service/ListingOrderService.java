@@ -5,28 +5,24 @@ import com.pages.enums.*;
 import com.pages.model.*;
 import com.pages.model.OrderConfirmationException;
 import com.pages.repository.*;
+import com.pages.specs.ListingOrderSpecs;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.weaver.ast.Or;
 import org.springframework.context.MessageSource;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static java.util.Arrays.stream;
 
@@ -506,7 +502,7 @@ public class ListingOrderService {
                 .build();
     }
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public OrderPageDto myPurchases(Jwt jwt, int page , int size){
+    public OrderPageDto myPurchases(Jwt jwt,String query, int page , int size){
         if(jwt!=null){
             AppUser buyer = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
             Long buyerId = buyer.getId();
@@ -514,7 +510,11 @@ public class ListingOrderService {
                     size,
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
-            Page<OrderDto> orders =listingOrderRepo.findByBuyerId(buyerId, pageable).map(order->{
+            Specification<ListingOrder> specification = Specification
+                    .where(ListingOrderSpecs.hasBuyerId(buyerId))
+                    .and(ListingOrderSpecs.hasSearchItemInListingOrder(query));
+
+            Page<OrderDto> orders =listingOrderRepo.findAll(specification, pageable).map(order->{
                 BigDecimal shippingCost = order.getItems().stream().map(ListingOrderItem::getShippingCost)
                         .reduce(BigDecimal.ZERO,BigDecimal::add);
                 BigDecimal totalValue = order.getItems().stream().map(ListingOrderItem::getSellerPrice)
@@ -566,13 +566,17 @@ public class ListingOrderService {
         return accumulatedTotal;
     }
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public OrderPageDto storeOrders(Jwt jwt, int page , int size){
+    public OrderPageDto storeOrders(Jwt jwt,String query,int page , int size){
         if(jwt!=null){
             Pageable pageable = PageRequest.of(page-1,
                     size,
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
-            Page<OrderDto> orders =listingOrderItemRepo.findAll( pageable).map(orderItem->{
+
+            Specification<ListingOrderItem> specification = Specification
+                    .where(ListingOrderSpecs.hasSearchItemInListingOrderItem(query));
+
+            Page<OrderDto> orders =listingOrderItemRepo.findAll(specification,pageable).map(orderItem->{
                 String buyer = appUserDetailsService.getUsernameById(orderItem.getListingOrder().getBuyer().getId());
                 return OrderDto.builder()
                         .id(orderItem.getListingOrder().getId())
@@ -601,7 +605,7 @@ public class ListingOrderService {
                 .build();
     }
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public OrderPageDto mySales(Jwt jwt, int page , int size){
+    public OrderPageDto mySales(Jwt jwt, String query,int page , int size){
         if(jwt!=null){
             AppUser user = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
             SellerProfile sellerProfile = sellerProfileService.getSellerProfile(user.getId());
@@ -609,11 +613,18 @@ public class ListingOrderService {
                 return OrderPageDto.builder().build();
             }
             Long sellerId =sellerProfile.getId();
+
             Pageable pageable = PageRequest.of(page-1,
                     size,
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
-            Page<OrderDto> orders =listingOrderItemRepo.findBySellerId(sellerId, pageable).map(orderItem->{
+
+            Specification<ListingOrderItem> specification = Specification
+                    .where(ListingOrderSpecs.hasSellerId(sellerId))
+                    .and(ListingOrderSpecs.hasSearchItemInListingOrderItem(query));
+
+
+            Page<OrderDto> orders =listingOrderItemRepo.findAll(specification,pageable).map(orderItem->{
                 return OrderDto.builder()
                         .id(orderItem.getId())
                         .orderNumber(orderItem.getListingOrder().getOrderNumber())

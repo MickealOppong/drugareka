@@ -114,8 +114,8 @@ public class AccountController {
     }
 
     @GetMapping("/payouts")
-    public ListPagePayout myPayouts(@AuthenticationPrincipal Jwt jwt,int page,int size){
-     return sellerPayoutService.payouts(jwt,page,size);
+    public ListPagePayout myPayouts(@AuthenticationPrincipal Jwt jwt,String query,int page,int size){
+     return sellerPayoutService.payouts(jwt,query,page,size);
     }
 
     @PutMapping("/change-password")

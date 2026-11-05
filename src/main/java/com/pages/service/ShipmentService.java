@@ -10,6 +10,7 @@ import com.pages.model.*;
 import com.pages.repository.ReturnShipmentRepo;
 import com.pages.repository.SellerShipmentRepo;
 import com.pages.repository.SellerShipmentTokenRepo;
+import com.pages.specs.SellerShipmentSpecs;
 import com.pages.util.UtilService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -164,10 +166,20 @@ public class ShipmentService {
     }
 
     @Transactional(readOnly = true)
-    private ListPageShipment sellerShipments(Jwt jwt, Integer page, Integer size) {
+    private ListPageShipment sellerShipments(Jwt jwt,String query, Integer page, Integer size) {
         if (jwt != null) {
             AppUser appUser = appUserDetailsService.getAppUserByUsername(jwt.getSubject());
             SellerProfile seller = sellerProfileService.getSellerProfile(appUser.getId());
+
+            if(seller==null){
+                return ListPageShipment.builder()
+                        .shipments(List.of())
+                        .totalPages(0)
+                        .page(0)
+                        .totalElements(0)
+                        .pageSize(0)
+                        .build();
+            }
 
             Pageable pageable = PageRequest.of(
                     page == 0 ? page : page - 1,
@@ -175,7 +187,11 @@ public class ShipmentService {
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
 
-            Page<ShipmentResponse> shipments = sellerShipmentRepo.findBySeller(seller, pageable)
+            Specification<SellerShipment> specification = Specification
+                    .where(SellerShipmentSpecs.hasSellerId(seller.getId()))
+                    .and(SellerShipmentSpecs.matchQuery(query));
+
+            Page<ShipmentResponse> shipments = sellerShipmentRepo.findAll(specification, pageable)
                     .map(shipment ->
 
                             ShipmentResponse.builder()
@@ -683,7 +699,8 @@ public class ShipmentService {
     private ListPageShipment allShipments(
             Jwt jwt,
             Integer page,
-            Integer size
+            Integer size,
+            String query
     ) {
         if (jwt != null) {
             Pageable pageable = PageRequest.of(
@@ -692,8 +709,11 @@ public class ShipmentService {
                     Sort.by(Sort.Direction.DESC, "createdAt")
             );
 
+            Specification<SellerShipment> specification = Specification
+                    .where(SellerShipmentSpecs.matchQuery(query));
+
             Page<ShipmentResponse> shipments = sellerShipmentRepo
-                    .findAll(pageable)
+                    .findAll(specification,pageable)
                     .map(shipment -> {
 
                         String confirmation = shipment.getSellerShipmentToken().getShipmentConfirmationStatus()!=null?
@@ -804,7 +824,8 @@ public class ShipmentService {
     public ListPageShipment actualShipments(
             Jwt jwt,
             Integer page,
-            Integer size
+            Integer size,
+            String query
     ) {
         if (jwt != null) {
             List<String> authorities =
@@ -818,10 +839,10 @@ public class ShipmentService {
                     && authorities.contains("ROLE_ADMIN");
 
             if (isAdmin) {
-                return allShipments(jwt, page, size);
+                return allShipments(jwt, page, size,query);
             }
 
-            return sellerShipments(jwt, page, size);
+            return sellerShipments(jwt, query,page, size);
         }
 
         return ListPageShipment.builder().build();

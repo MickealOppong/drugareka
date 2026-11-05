@@ -99,8 +99,10 @@ public class ProductController {
     }
 
     @GetMapping("/products/me")
-    public ListPageDto myListings(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1") Integer page,@RequestParam Integer size){
-        return listingTransactionService.myCatalogFeed(jwt,page,size);
+    public ListPageDto myListings(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1") Integer page
+            ,@RequestParam Integer size,@RequestParam("query")String query){
+
+        return listingTransactionService.myCatalogFeed(jwt,query,page,size);
     }
 
    // @PreAuthorize("hasAuthority('ROLE_ADMIN')")
@@ -111,9 +113,12 @@ public class ProductController {
 
 
 
+
+
+
     @GetMapping("/categories")
-    public List<CategoryResponse> allCategories(){
-        return categoryService.getAllCategories();
+    public List<CategoryResponse> allCategories(@RequestParam("page") int page,@RequestParam("size") int size,@RequestParam("query") String query){
+        return categoryService.getAllCategoriesByPage(query,page,size);
     }
 
 

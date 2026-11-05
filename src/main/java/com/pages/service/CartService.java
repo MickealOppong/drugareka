@@ -338,8 +338,7 @@ public class CartService {
 
                 InventoryItem inventoryItem = listing.getInventory();
 
-
-
+           
                 if (inventoryItem.getReservedBy() != null && !inventoryItem.getReservedBy().equals(buyer.getId())
                         && inventoryItem.getReservedUntil().isAfter(Instant.now())) {
                     String msg = messageSource.getMessage("cart.item.reserved", null,

@@ -28,8 +28,10 @@ public class OrderController {
     }
 
     @GetMapping("/selling")
-    public OrderPageDto selling(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page , Integer size){
-        return listingOrderService.mySales(jwt,page,size);
+    public OrderPageDto selling(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page
+            , @RequestParam("size") Integer size,@RequestParam("query")String query){
+
+        return listingOrderService.mySales(jwt,query,page,size);
     }
 
     @GetMapping("/buying/details")
@@ -37,15 +39,18 @@ public class OrderController {
         return listingOrderService.myBuyingDetails(jwt, id);
     }
     @GetMapping("/buying")
-    public OrderPageDto buying(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page , Integer size){
-        return listingOrderService.myPurchases(jwt,page,size);
+    public OrderPageDto buying(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page
+            , @RequestParam ("size") Integer size,@RequestParam("query") String query){
+
+        return listingOrderService.myPurchases(jwt,query,page,size);
     }
 
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @GetMapping("/orders")
-    public OrderPageDto getPurchases(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page , Integer size){
-        return listingOrderService.storeOrders(jwt,page,size);
+    public OrderPageDto getPurchases(@AuthenticationPrincipal Jwt jwt,@RequestParam(defaultValue = "1")  Integer page ,
+                                     Integer size,String query){
+        return listingOrderService.storeOrders(jwt,query,page,size);
     }
 
 
