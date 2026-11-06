@@ -24,21 +24,34 @@ public class MediaController {
         this.mediaStorageLocation = mediaStorageLocation;
     }
 
-
     @GetMapping("/{filename:..+}")
     @ResponseBody
-    public ResponseEntity<Resource> serveFile(@PathVariable String filename) throws DataFormatException {
-        Resource media = mediaService.getResource(mediaStorageLocation.getLocation()+"/"+filename);
-        if(media == null){
+    public ResponseEntity<Resource> serveFile(
+            @PathVariable String filename
+    ) throws DataFormatException {
+
+        Resource media = mediaService.getResource(
+                mediaStorageLocation.getLocation() + "/" + filename
+        );
+
+        if (media == null) {
             return ResponseEntity.notFound().build();
         }
 
         MediaType contentType = MediaTypeFactory.getMediaType(media)
                 .orElse(MediaType.APPLICATION_OCTET_STREAM);
 
-        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment;filename=\""+media.getFilename()+"\"")
-                .contentType(contentType).body(media);
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CACHE_CONTROL,
+                        "public, max-age=31536000, immutable"
+                )
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"" + media.getFilename() + "\""
+                )
+                .contentType(contentType)
+                .body(media);
     }
 }
 
