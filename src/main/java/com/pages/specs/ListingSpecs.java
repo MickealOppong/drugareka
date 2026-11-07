@@ -165,6 +165,26 @@ public class ListingSpecs {
         };
     }
 
+    public static Specification<ListingTransaction> hasBrand(String brand) {
+
+        return (root, query, cb) -> {
+
+            if (brand == null || brand.isBlank()) {
+                return cb.conjunction();
+            }
+
+            Join<ListingTransaction, InventoryItem> inventoryJoin =
+                    root.join("inventory");
+            Join<InventoryItem, ProductCatalog> product =
+                    inventoryJoin.join("productCatalog");
+
+            return cb.equal(
+                    cb.lower(product.get("brand").get("name")),
+                    brand.trim().toLowerCase(Locale.ROOT)
+            );
+        };
+    }
+
     public static Specification<ListingTransaction> hasCondition(String condition) {
 
         return (root, query, cb) -> {

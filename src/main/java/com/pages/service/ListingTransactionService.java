@@ -33,6 +33,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
+import static com.pages.specs.ListingSpecs.hasBrand;
+
 
 @Slf4j
 @Service
@@ -431,6 +433,7 @@ public class ListingTransactionService {
                 dto.size(),
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
+
         Specification<ListingTransaction> specification = Specification
                 .where(ListingSpecs.hasListingStatus(ListingStatus.PUBLISHED))
                 .and(ListingSpecs.hasCategoryId(categoryId))
@@ -438,7 +441,8 @@ public class ListingTransactionService {
                 .and(ListingSpecs.hasCondition(dto.condition()))
                 .and(ListingSpecs.isPersonalCollectionAvailable(dto.isCollectionAvailable()))
                 .and(ListingSpecs.hasCollectionCity(dto.collectionCity()))
-                .and(ListingSpecs.isNotSold());
+                .and(ListingSpecs.isNotSold())
+                .and(hasBrand(dto.brand()));
         Page<ListTransResponse> listings = listingTransactionRepo.findAll(specification, pageable)
                 .map(listing -> {
                     Long inventoryId = listing.getInventory().getId();

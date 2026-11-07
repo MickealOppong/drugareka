@@ -68,6 +68,11 @@ public class StoreController {
         return productConditionService.AllProductConditions();
     }
 
+    @GetMapping("/brands")
+    public List<BrandResponse >allBrands(String category){
+        return brandService.allBrands(category);
+    }
+
 
     @GetMapping("/store-products")
     public List<ListTransResponse> activeStoreListings() {

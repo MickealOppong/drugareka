@@ -8,6 +8,7 @@ import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.Brand;
 import com.pages.repository.BrandRepo;
+import com.pages.specs.BrandSpec;
 import com.pages.util.UtilService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -126,6 +128,21 @@ public class BrandService {
 
 
        return  brandRepo.findAll().stream().map(brand->{
+            return BrandResponse.builder()
+                    .id(brand.getId())
+                    .name(brand.getName())
+                    .slug(brand.getSlug())
+                    .sortOrder(brand.getSortOrder())
+                    .build();
+        }).toList();
+    }
+
+    public List<BrandResponse> allBrands(String category){
+
+        Specification<Brand> specification = Specification
+                .where(BrandSpec.hasCategory(category));
+
+          return  brandRepo.findAll(specification).stream().map(brand->{
             return BrandResponse.builder()
                     .id(brand.getId())
                     .name(brand.getName())
