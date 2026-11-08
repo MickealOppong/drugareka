@@ -4,6 +4,7 @@ import com.pages.model.Category;
 import com.pages.model.ListingOrderItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -24,4 +25,12 @@ public interface CategoryRepo extends  JpaRepository<Category,Long>, JpaSpecific
     boolean existsByNameIgnoreCaseAndParentIsNull(String name);
     Optional<Category> findByPath(String path);
    boolean existsByParentId(Long id);
+
+    @Query("""
+        SELECT c
+        FROM Category c
+        WHERE c.isActive = true
+        ORDER BY c.sortOrder ASC, c.name ASC
+        """)
+    List<Category> findActiveCategoriesForSitemap();
 }

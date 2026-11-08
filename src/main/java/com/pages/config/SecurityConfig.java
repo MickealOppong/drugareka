@@ -110,7 +110,9 @@ public class SecurityConfig {
         return httpSecurity.csrf(AbstractHttpConfigurer::disable)
                 .cors(cors->cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(request->request.requestMatchers("/api/auth","/api/auth/**","/Media","/Media/**","/ws","/ws/**",
-                                "/api/store","/api/store/**","/api/webhooks","/api/webhooks/**","/location/detect","/api/seller/shipment","/api/seller/shipment/**","/api/payment/payu","/api/payment/payu/**").permitAll()
+                                "/api/store","/api/store/**","/api/webhooks","/api/webhooks/**","/location/detect","/api/seller/shipment","/api/seller/shipment/**"
+                                ,"/api/payment/payu","/api/payment/payu/**",  "/sitemap.xml",
+                                "/robots.txt").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(rs->rs.jwt(Customizer.withDefaults())
                         .bearerTokenResolver(customBearerTokenResolver()))

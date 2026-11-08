@@ -8,6 +8,7 @@ import jdk.jfr.Registered;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -50,4 +51,32 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
     Optional<ListingTransaction> findFirstByInventorySellerIdAndListingStatusOrderByCreatedAtDesc(Long sellerId,ListingStatus listingStatus);
     Long countByInventorySellerIdAndInventoryStatusAndListingStatus(Long sellerId,InventoryStatus inventoryStatus,ListingStatus listingStatus);
     Optional<ListingTransaction> findByInventoryId(Long inventoryId);
+
+
+    @Query(
+            value = """
+        SELECT lt
+        FROM ListingTransaction lt
+        WHERE lt.listingStatus = :listingStatus
+          AND lt.inventory.status = :inventoryStatus
+          AND lt.inventory.productCatalog.category.isActive = true
+        """,
+            countQuery = """
+        SELECT COUNT(lt)
+        FROM ListingTransaction lt
+        WHERE lt.listingStatus = :listingStatus
+          AND lt.inventory.status = :inventoryStatus
+          AND lt.inventory.productCatalog.category.isActive = true
+        """
+    )
+    @EntityGraph(attributePaths = {
+            "inventory",
+            "inventory.productCatalog",
+            "inventory.productCatalog.category"
+    })
+    Page<ListingTransaction> findSitemapListings(
+            @Param("listingStatus") ListingStatus listingStatus,
+            @Param("inventoryStatus") InventoryStatus inventoryStatus,
+            Pageable pageable
+    );
 }
