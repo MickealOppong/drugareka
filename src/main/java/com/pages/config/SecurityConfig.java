@@ -112,7 +112,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(request->request.requestMatchers("/api/auth","/api/auth/**","/Media","/Media/**","/ws","/ws/**",
                                 "/api/store","/api/store/**","/api/webhooks","/api/webhooks/**","/location/detect","/api/seller/shipment","/api/seller/shipment/**"
                                 ,"/api/payment/payu","/api/payment/payu/**",  "/sitemap.xml",
-                                "/robots.txt").permitAll()
+                                "/robots.txt", "/google*.html").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(rs->rs.jwt(Customizer.withDefaults())
                         .bearerTokenResolver(customBearerTokenResolver()))
