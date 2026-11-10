@@ -237,6 +237,9 @@ public class PayoutProcessingService {
                 BigDecimal outStandingFeeToRecover = sellerPayoutRepo.findAllByStatus(PayoutStatus.CHARGE_BACK).stream().map(SellerPayout::getAmount)
                         .reduce(BigDecimal.ZERO,BigDecimal::add);
 
+
+                List<Long> chargeBackIds = sellerPayoutRepo.findAllByStatus(PayoutStatus.CHARGE_BACK).stream().map(SellerPayout::getId).toList();
+
                 log.info("net payout :{} outstanding fee :{}",sellerNetPayout,outStandingFeeToRecover.negate());
 
                 long amountInGrosz = getAmountInGrosz(sellerNetPayout, outStandingFeeToRecover, payoutId);
@@ -257,6 +260,9 @@ public class PayoutProcessingService {
                     returnToApproved(payoutId);
                     continue; // Safely skip to the next candidate item in the payout list
                 }
+                Map<String,String> metaMap = new HashMap<>();
+                metaMap.put("seller_payout_id", payoutId.toString());
+                metaMap.put("charge-back-ids",chargeBackIds.toString());
 
                 String orderNumber = item.getListingOrder().getOrderNumber();
 
@@ -266,14 +272,14 @@ public class PayoutProcessingService {
                         .setDestination(accountId)
                         .setSourceTransaction(chargeId)
                         .setTransferGroup(orderNumber)
-                        .putMetadata("seller_payout_id", payoutId.toString())
+                        .putAllMetadata(metaMap)
                         .build();
 
                 RequestOptions options = RequestOptions.builder()
                         .setIdempotencyKey("seller-payout-item-" + payoutId)
                         .build();
 
-                Transfer transfer = Transfer.create(params);
+                Transfer transfer = Transfer.create(params,options);
 
                 // Persist the terminal success token in a new, short database transaction.
                 markTransferred(
@@ -281,8 +287,9 @@ public class PayoutProcessingService {
                         transfer.getId()
                 );
 
+                BigDecimal stripeFeeShare = getSellerStripeFeeShare(stripeFee,payment.getAmount(),item.getSellerPrice(),item.getShippingCost());
                 String email = item.getSeller().getUser().getUsername();
-                emailNotificationService.sendTransferNotification(email,item.getSellerPrice(),orderNumber,transfer.getId());
+                emailNotificationService.sendTransferNotification(email,item.getSellerPrice(),orderNumber,transfer.getId(),outStandingFeeToRecover,stripeFeeShare);
 
                 log.info(
                         "Payout engine: payout {} transferred successfully; transferId={}",
@@ -390,6 +397,39 @@ public class PayoutProcessingService {
 
         serviceChargeService.reverseCharge(item);
 
+
+        //send email confirmation
+        String email = item.getListingOrder().getBuyer().getUsername();
+        String name = item.getListingOrder().getBuyer().getFirstName();
+        String orderNumber = item.getListingOrder().getOrderNumber();
+        String itemName = item.getProductNameSnapshot();
+
+        emailNotificationService.sendOrderCancellationRefundEmailToBuyer(email,name,orderNumber,itemName,amountToRefund);
+    }
+
+    @Transactional
+    public void createRefundForReturnedOrderItem(Payment payment,ListingOrderItem item){
+
+
+        BigDecimal amountToRefund = item.getSellerPrice();
+
+        Payment refund = Payment.builder()
+                .listingOrder(item.getListingOrder())
+                .status(PaymentStatus.AWAITING_REFUND)
+                .amount(amountToRefund.negate())
+                .currency("PLN")
+                .providerSessionId(payment.getProviderSessionId())
+                .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                .orderNumber(item.getListingOrder().getOrderNumber())
+                .provider(PaymentProvider.STRIPE)
+                .build();
+
+        paymentRepo.save(refund);
+
+        //adjust seller payout for refund
+        createPayoutRefund(item);
+
+        //serviceChargeService.reverseCharge(item);
 
         //send email confirmation
         String email = item.getListingOrder().getBuyer().getUsername();

@@ -102,6 +102,13 @@ public class CheckoutService {
                         .build();
             }
 
+            if(order.getListingOrderItem().getShippingMethod().equalsIgnoreCase("personal_pickup")){
+                String msg = messageSource.getMessage("checkout.order.persona.creation_failed", null, "Unable to create order.", locale);
+                return ResponseDto.<String>builder()
+                        .message(msg)
+                        .httpStatus(HttpStatus.UNPROCESSABLE_CONTENT.value())
+                        .build();
+            }
             Session session = stripePaymentProviderService.createEmbeddedConnectCheckoutSessionShipmentCost(order,LocaleContextHolder.getLocale().getLanguage());
             return paymentService.createReturnShippingPayment(session, order);
 

@@ -1,5 +1,7 @@
 package com.pages.service;
 
+import aj.org.objectweb.asm.TypeReference;
+import com.nimbusds.jose.shaded.gson.JsonParseException;
 import com.pages.dto.ListPagePayout;
 import com.pages.dto.ListPageShipment;
 import com.pages.dto.ResponseDto;
@@ -26,12 +28,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -352,61 +357,90 @@ public class SellerPayoutService {
 
     }
 
+    @Transactional
     public void handleTransferCreated(Event event) {
-        Transfer transfer = null;
+
+        Transfer transfer;
+
         try {
-            transfer = (Transfer) event
-                    .getDataObjectDeserializer()
+            transfer = (Transfer) event.getDataObjectDeserializer()
                     .deserializeUnsafe();
         } catch (EventDataObjectDeserializationException e) {
-            throw new RuntimeException(e);
+            throw new IllegalStateException(
+                    "Could not deserialize transfer for event " + event.getId(), e
+            );
         }
 
         if (transfer == null) {
             throw new IllegalStateException(
-                    "Could not deserialize transfer for event "
-                            + event.getId()
+                    "Could not deserialize transfer for event " + event.getId()
             );
         }
 
-        String transferId = transfer.getId();
+        // Extract chargeback IDs from Stripe metadata: "[2, 5, 8]"
+        String metadata = transfer.getMetadata() != null
+                ? transfer.getMetadata().get("charge-back-ids")
+                : null;
 
-        SellerPayout sellerPayout = sellerPayoutRepo
-                .findByTransferId(transferId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "No associated SellerPayout for transfer: "
-                                + transferId
-                ));
-
-        // A reversal is a separate lifecycle event and must not be overwritten.
-        if (sellerPayout.getStatus() == PayoutStatus.REVERSED
-                || sellerPayout.getStatus() == PayoutStatus.PAID) {
+        if (metadata == null || metadata.isBlank()) {
+            log.info("Transfer {} created without chargebacks to recoup.",
+                    transfer.getId());
             return;
         }
 
-        if (sellerPayout.getStatus() == PayoutStatus.TRANSFERRED) {
-            return;
-        }
+        List<Long> chargeBackIds = Arrays.stream(
+                        metadata.replace("[", "").replace("]", "").split(",")
+                )
+                .map(String::trim)
+                .filter(id -> !id.isEmpty())
+                .map(Long::valueOf)
+                .toList();
 
-        sellerPayout.setStatus(PayoutStatus.TRANSFERRED);
-        sellerPayoutRepo.save(sellerPayout);
+        log.info("Stripe transfer created: {}, chargeback IDs: {}",
+                transfer.getId(), chargeBackIds);
+
+        // Recoup only the chargebacks included in this transfer.
+        for (Long id : chargeBackIds) {
+
+            SellerPayout chargeBackPayout = sellerPayoutRepo
+                    .findByIdForUpdate(id)
+                    .orElse(null);
+
+            if (chargeBackPayout == null) {
+                log.warn("Chargeback payout {} not found for transfer {}",
+                        id, transfer.getId());
+                continue;
+            }
+
+            if (chargeBackPayout.getStatus() != PayoutStatus.CHARGE_BACK) {
+                continue;
+            }
+
+            chargeBackPayout.setStatus(PayoutStatus.RECOUPED);
+            sellerPayoutRepo.save(chargeBackPayout);
+
+            log.info("Chargeback payout {} recouped by transfer {}",
+                    id, transfer.getId());
+        }
     }
 
+    @Transactional
+    public void handleTransferReversed(Event event) {
 
-    public void handleTransferReversed(Event event){
-        Transfer transfer = null;
+        Transfer transfer;
+
         try {
-            transfer = (Transfer) event
-                    .getDataObjectDeserializer()
+            transfer = (Transfer) event.getDataObjectDeserializer()
                     .deserializeUnsafe();
         } catch (EventDataObjectDeserializationException e) {
-            throw new RuntimeException(e);
+            throw new IllegalStateException(
+                    "Could not deserialize transfer for event " + event.getId(), e
+            );
         }
 
         if (transfer == null) {
             throw new IllegalStateException(
-                    "Could not deserialize transfer for event "
-                            + event.getId()
+                    "Could not deserialize transfer for event " + event.getId()
             );
         }
 
@@ -415,8 +449,7 @@ public class SellerPayoutService {
         SellerPayout sellerPayout = sellerPayoutRepo
                 .findByTransferId(transferId)
                 .orElseThrow(() -> new IllegalStateException(
-                        "No associated SellerPayout for transfer: "
-                                + transferId
+                        "No associated SellerPayout for transfer: " + transferId
                 ));
 
         // Ignore duplicate reversal events.
@@ -426,5 +459,43 @@ public class SellerPayoutService {
 
         sellerPayout.setStatus(PayoutStatus.REVERSED);
         sellerPayoutRepo.save(sellerPayout);
+
+        // Restore chargebacks recouped by this transfer.
+        String metadata = transfer.getMetadata() != null
+                ? transfer.getMetadata().get("charge-back-ids")
+                : null;
+
+        if (metadata == null || metadata.isBlank()) {
+            return;
+        }
+
+        List<Long> chargeBackIds = Arrays.stream(
+                        metadata.replace("[", "").replace("]", "").split(",")
+                )
+                .map(String::trim)
+                .filter(id -> !id.isEmpty())
+                .map(Long::valueOf)
+                .toList();
+
+        for (Long id : chargeBackIds) {
+
+            SellerPayout chargeBackPayout = sellerPayoutRepo
+                    .findByIdForUpdate(id)
+                    .orElse(null);
+
+            if (chargeBackPayout == null) {
+                log.warn("Chargeback payout {} not found for reversed transfer {}",
+                        id, transferId);
+                continue;
+            }
+
+            if (chargeBackPayout.getStatus() == PayoutStatus.RECOUPED) {
+                chargeBackPayout.setStatus(PayoutStatus.CHARGE_BACK);
+                sellerPayoutRepo.save(chargeBackPayout);
+            }
+        }
+
+        log.info("Transfer {} reversed. Associated chargebacks restored: {}",
+                transferId, chargeBackIds);
     }
 }

@@ -7,6 +7,7 @@ import com.pages.exception.EntityNotFoundException;
 import com.pages.model.*;
 import com.pages.repository.*;
 import com.stripe.model.checkout.Session;
+import com.stripe.service.climate.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -26,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -164,6 +166,19 @@ public class OrderDisputeService {
 
             if ("approve".equalsIgnoreCase(decision)) {
                 log.info("Seller approved complaint return for order: {}. Upgrading tracking status rules.", orderNumber);
+
+                //refund money after approval for personal pickups
+                if(orderDispute.getListingOrderItem().getShippingMethod().equalsIgnoreCase("personal_pickup")){
+                    orderDispute.setDisputeStatus(DisputeStatus.RETURN_UPHELD);
+                    OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
+
+                    orderReturnService.executeReturnApprovalBySeller(jwt,orderDispute.getListingOrderItem().getId());
+                   return ResponseDto.builder()
+                            .data(updatedItem.getId())
+                            .httpStatus(HttpStatus.ACCEPTED.value())
+                            .build();
+                }
+
                 orderDispute.setDisputeStatus(DisputeStatus.AWAITING_RETURN_PAYMENT);
                 OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
 
@@ -332,6 +347,7 @@ public class OrderDisputeService {
                                 .user(orderDispute.getUser().getUsername())
                                 .reason(orderDispute.getReturnReason().name())
                                 .sellerComment(orderDispute.getSellerComment())
+                                .shippingMethod(orderDispute.getListingOrderItem().getShippingMethod())
                                 .buyerComment(orderDispute.getBuyerComment())
                                 .createdAt(orderDispute.getCreatedAt())
                                 .status(orderDispute.getDisputeStatus())
@@ -351,98 +367,206 @@ public class OrderDisputeService {
      */
     @Transactional
     public Boolean logDispute(Jwt jwt, OrderReturnRequest request) {
+
+
+        // 1. Authenticate buyer
         if (jwt == null) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.access_denied"));
+            throw new AccessPermissionException(
+                    getMessage("api_errors.order_return.access_denied")
+            );
         }
+
+
 
         AppUser appUser = appUserRepo.findByUsername(jwt.getSubject())
-                .orElseThrow(() -> new UsernameNotFoundException(getMessage("api_errors.order_return.user_not_found")));
+                .orElseThrow(() -> new UsernameNotFoundException(
+                        getMessage("api_errors.order_return.user_not_found")
+                ));
 
-
-
-        if(request.getImages()==null || request.getImages().length==0){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.image_not_found"));
-        }
-        ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(request.getOrderItemId())
-                .orElseThrow(() -> new EntityNotFoundException(getMessage("api_errors.order_return.item_not_found")));
-
-        if(orderItem.getReceiptConfirmationStatus()==ReceiptConfirmationStatus.CONFIRMED){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.transaction_closed"));
+        if (request == null || request.getOrderItemId() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_return.item_not_found")
+            );
         }
 
-        // Strict Ownership Check: Verify that the user executing the request is the actual buyer
+        // 2. Lock order item to prevent concurrent dispute submissions
+        ListingOrderItem orderItem = listingOrderItemRepo
+                .findByIdForUpdate(request.getOrderItemId())
+                .orElseThrow(() -> new EntityNotFoundException(
+                        getMessage("api_errors.order_return.item_not_found")
+                ));
+
+        // 2a. Prevent duplicate disputes
+        boolean existingDispute = orderDisputeRepo
+                .findByListingOrderItem(orderItem)
+                .isPresent();
+
+        if (existingDispute) {
+            throw new DuplicateKeyException(
+                    getMessage("api_errors.order_return.duplicate_record")
+            );
+        }
+
+        // 3. Verify buyer ownership
         ListingOrder parentOrder = orderItem.getListingOrder();
-        if (parentOrder == null || !parentOrder.getBuyer().getId().equals(appUser.getId())) {
-            throw new AccessPermissionException(getMessage("api_errors.order_return.not_your_order"));
+
+        if (parentOrder == null
+                || parentOrder.getBuyer() == null
+                || !parentOrder.getBuyer().getId().equals(appUser.getId())) {
+
+            throw new AccessPermissionException(
+                    getMessage("api_errors.order_return.not_your_order")
+            );
         }
 
-        // ANTI-WITHDRAWAL SHIELD RULE 1:
-        // If the item status is PAID but the courier hasn't delivered it yet, reject any withdrawal attempts!
-        if (!orderItem.getOrderItemStatus().equals(OrderItemStatus.PAID)) {
-            // Find the shipment record associated with the item to check real-time transit state
-            // Throws an error to the frontend explaining that the seller may have already shipped the package.
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_return.withdrawal_blocked"));
+        // 4. Prevent disputes after receipt has been confirmed
+        if (orderItem.getReceiptConfirmationStatus()
+                == ReceiptConfirmationStatus.CONFIRMED) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_dispute.transaction_closed")
+            );
         }
 
-        SellerShipment sellerShipment = sellerShipmentRepo.findByListingOrderItemId(request.getOrderItemId())
-                .orElseThrow(()-> new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.order_return.access_denied")));
+        // 5. Only allow disputes for paid order items
+        if (orderItem.getOrderItemStatus() != OrderItemStatus.PAID) {
 
+            log.warn(
+                    "Dispute blocked: Buyer [{}] attempted to dispute order item [{}] with status [{}].",
+                    appUser.getId(),
+                    orderItem.getId(),
+                    orderItem.getOrderItemStatus()
+            );
 
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_return.withdrawal_blocked")
+            );
+        }
 
-        if ( !sellerShipment.getShipmentStatus().equals(ShipmentStatus.DELIVERED)) {
-            log.warn("Security Shield: Prevented mid-transit withdrawal attempt by Buyer [{}] on Order Item ID [{}].",
-                    appUser.getId(), orderItem.getId());
+        // 6. Find associated shipment / collection record
+        SellerShipment sellerShipment = sellerShipmentRepo
+                .findByListingOrderItemId(request.getOrderItemId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_errors.order_return.access_denied")
+                ));
 
-            //  EXPLICIT BUSINESS RULE REJECTION:
-            // Throws an error to the frontend explaining that the seller may have already shipped the package.
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    getMessage("api_errors.order_return.withdrawal_blocked"));
+        ShipmentStatus shipmentStatus = sellerShipment.getShipmentStatus();
+
+        // Allow complaints only after delivery or rejected personal collection
+        if (shipmentStatus != ShipmentStatus.DELIVERED && shipmentStatus != ShipmentStatus.REJECTED  && shipmentStatus != ShipmentStatus.RETURNED) {
+
+            log.warn(
+                    "Dispute blocked: Buyer [{}] attempted to dispute order item [{}] with shipment status [{}].",
+                    appUser.getId(),
+                    orderItem.getId(),
+                    shipmentStatus
+            );
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_return.withdrawal_blocked")
+            );
+        }
+
+        // 7. Check complaint deadline
+        // Assumes deliveredAt records the relevant event time for both statuses.
+        // 7. Apply the 24-hour complaint deadline only to non-personal collections
+        boolean isPersonalCollection =
+                sellerShipment.getShippingMethod() != null
+                        && sellerShipment.getShippingMethod()
+                        .equalsIgnoreCase("personal_pickup");
+
+        if (!isPersonalCollection) {
+
+            Instant deliveredAt = sellerShipment.getDeliveredAt();
+
+            if (deliveredAt == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_errors.order_return.withdrawal_blocked")
+                );
+            }
+
+            Instant deadline = deliveredAt.plus(24, ChronoUnit.HOURS);
+
+            if (Instant.now().isAfter(deadline)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_errors.order_return.deadline_expired")
+                );
+            }
         }
 
 
 
-        // Check for existing return entries to block double-filing bugs
-        OrderDispute returnItem = orderDisputeRepo.findByListingOrderItem(orderItem).orElse(null);
+        // 9. Generate dispute reference
+        String ticketNumber = "TK-" +
+                UUID.randomUUID()
+                        .toString()
+                        .substring(0, 8)
+                        .toUpperCase(Locale.ROOT);
 
-        if (returnItem != null) {
-            throw new DuplicateKeyException(getMessage("api_errors.order_return.duplicate_record"));
-        }
-
-        long hoursElapsed = ChronoUnit.HOURS.between(sellerShipment.getDeliveredAt(), Instant.now().plus(1,ChronoUnit.HOURS));
-        if (hoursElapsed>24) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_return.deadline_expired"));
-        }
-
-        // 1. Generate a distinct, cryptographic public tracking reference string (Receipt)
-        String ticketNumber = "TK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-
-        Integer[] sortOrder = IntStream.range(0,request.getImages().length).boxed().toArray(Integer[]::new);
-
+        // 10. Create dispute record
         OrderDispute orderReturn = OrderDispute.builder()
                 .buyerComment(request.getBuyerComment())
                 .listingOrderItem(orderItem)
                 .returnReason(getReturnReason(request.getReturnReason()))
                 .disputeStatus(DisputeStatus.OPEN)
-                .orderNumber(request.getOrderNumber())
+                .orderNumber(parentOrder.getOrderNumber())
                 .user(appUser)
                 .ticketId(ticketNumber)
                 .build();
-        OrderDispute savedReturn = orderDisputeRepo.save(orderReturn);
-        mediaService.uploadReturnImage(request.getImages(),sortOrder,savedReturn);
 
-        //hold item confirmation
-        orderItem.setReceiptConfirmationStatus(ReceiptConfirmationStatus.PENDING);
+        OrderDispute savedReturn = orderDisputeRepo.save(orderReturn);
+
+        // 11. Upload evidence only when provided
+        if (request.getImages() != null && request.getImages().length > 0) {
+
+            Integer[] sortOrder = IntStream
+                    .range(0, request.getImages().length)
+                    .boxed()
+                    .toArray(Integer[]::new);
+
+            mediaService.uploadReturnImage(
+                    request.getImages(),
+                    sortOrder,
+                    savedReturn
+            );
+        }
+
+        // 12. Hold receipt confirmation while dispute is being reviewed
+        orderItem.setReceiptConfirmationStatus(
+                ReceiptConfirmationStatus.PENDING
+        );
+
         listingOrderItemRepo.save(orderItem);
 
-        //notify seller
-        String email = orderReturn.getListingOrderItem().getSeller().getUser().getUsername();
-        String orderNumber = savedReturn.getOrderNumber();
-        String reason = savedReturn.getReturnReason().name();
-        emailNotificationService.notifySellerOfBuyerReturnComplaint(email,orderNumber,reason);
+        // 13. Notify seller
+        String email = orderItem.getSeller()
+                .getUser()
+                .getUsername();
 
-        log.info("Fulfillment Guard: Return requested for Order #{}. Escrow payout cron successfully paused.",
-                parentOrder.getOrderNumber());
+        String orderNumber = parentOrder.getOrderNumber();
+        String reason = savedReturn.getReturnReason().name();
+
+        emailNotificationService.notifySellerOfBuyerReturnComplaint(
+                email,
+                orderNumber,
+                reason
+        );
+
+        log.info(
+                "Dispute [{}] opened by buyer [{}] for order [{}], order item [{}]. Payout confirmation placed on hold.",
+                ticketNumber,
+                appUser.getId(),
+                orderNumber,
+                orderItem.getId()
+        );
+
         return true;
     }
 }

@@ -97,7 +97,7 @@ public class StripeWebhookController {
                 }
 
         } catch (Exception e) {
-            log.error("Stripe webhook processing failed :{}", e.getMessage());
+            log.error("Stripe webhook processing failed. Event processing error:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Webhook processing failed");
         }

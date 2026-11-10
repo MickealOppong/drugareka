@@ -302,6 +302,14 @@ public class SellerProfileService {
                 seller.setCurrentYearGrossVolumePln(BigDecimal.ZERO);
             }
 
+            //update sales count
+            int currentSalesCount = seller.getCurrentYearSalesCount() != null ? seller.getCurrentYearSalesCount() : 0;
+            if (currentSalesCount >= 0) {
+                seller.setCurrentYearSalesCount(currentSalesCount-1);
+            } else {
+                seller.setCurrentYearSalesCount(0);
+            }
+
             //update cancelled orders count;
             long currentCancelledOrders = seller.getNumberOfCancelledOrders()!=null?seller.getNumberOfCancelledOrders():0L;
             seller.setNumberOfCancelledOrders(currentCancelledOrders+1);

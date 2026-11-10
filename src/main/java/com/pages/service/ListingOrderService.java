@@ -344,7 +344,7 @@ public class ListingOrderService {
                         order.getId(), PaymentStatus.PAID)
                 .ifPresent(payment -> {
                     payoutProcessingService
-                            .createRefundForUnconfirmedOrderItem(
+                            .createRefundForReturnedOrderItem(
                                     payment, orderItem);
                     sellerProfileService.updateSellerTotalPayoutWithRefund(orderItem);
                 });
@@ -634,6 +634,7 @@ public class ListingOrderService {
                         .orderItemStatus(orderItem.getOrderItemStatus())
                         .currency(orderItem.getListingOrder().getCurrency())
                         .createdAt(orderItem.getCreatedAt())
+                        .shippingMethod(orderItem.getShippingMethod())
                         .seller(orderItem.getSellerNameSnapshot())
                         .buyer("Private person")
                         .paidAt(orderItem.getListingOrder().getPaidAt())
@@ -657,7 +658,7 @@ public class ListingOrderService {
             List<OrderDto> dataToSend = new ArrayList<>();
             ListingOrder order =listingOrderRepo.findById(orderId).orElse(null);
             if(order!=null){
-                String user = appUserDetailsService.getUsernameById(order.getBuyer().getId());
+               // String user = appUserDetailsService.getUsernameById(order.getBuyer().getId());
                 for(ListingOrderItem item :order.getItems()){
                     SellerShipment shipment= sellerShipmentRepo.findByListingOrderItemId(item.getId()).orElse(null);
                     String trackingNumber  =null;

@@ -42,6 +42,7 @@ public class OrderReturnService {
     private final MessageSource messageSource;
     private final ListingTransactionRepo listingTransactionRepo;
     private final ServiceChargeService serviceChargeService;
+    private final EmailNotificationService emailNotificationService;
 
 
 
@@ -68,13 +69,87 @@ public class OrderReturnService {
         try {
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
-         paymentRefundLedgerService.createRefundFromSellerCancellation(lockedItem);
+              paymentRefundLedgerService.createRefundFromSellerCancellation(lockedItem);
 
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
 
             //reverse service charge
             serviceChargeService.reverseCharge(lockedItem);
+
+            log.info("Fulfillment System Success: Order Item #{} successfully refunded and archived.", orderItemId);
+
+            String buyerEmail = lockedItem.getListingOrder().getBuyer().getUsername();
+            String orderNumber = lockedItem.getListingOrder().getOrderNumber();
+            String product = lockedItem.getProductNameSnapshot();
+            BigDecimal amount = lockedItem.getSellerPrice().add(lockedItem.getShippingCost()).add(lockedItem.getServiceCharge());
+            emailNotificationService.notifyBuyerOfOrderItemCancellation(buyerEmail,orderNumber,product,amount);
+
+        } catch (Exception e) {
+            log.error("CRITICAL API FAILURE: Failed to issue external customer refund for item ID: {}. Triggering database recovery rollback sequence.", orderItemId, e);
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    getMessage("api_errors.order_cancellation.gateway_failure")
+            );
+        }
+    }
+
+    @Transactional
+    public void executeBuyerPickupCancellation(Jwt jwt, Long orderItemId) {
+        if (jwt == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
+        }
+
+        AppUser authenticatedUser = appUserRepo.findByUsername(jwt.getSubject())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.user_not_found")));
+
+        // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
+        ListingOrderItem lockedItem = this.processBuyerCancellationDbTx(authenticatedUser, orderItemId);
+
+        try {
+            // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
+            // Fires an automated refund request to return the escrow funds back to the buyer's account.
+            paymentRefundLedgerService.createRefundFromReturn(lockedItem);
+
+            // Process accounting balance adjustment clawbacks securely inside the database instance lock
+            sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
+
+            //reverse service charge
+           // serviceChargeService.reverseCharge(lockedItem);
+
+            log.info("Fulfillment System Success: Order Item #{} successfully refunded and archived.", orderItemId);
+
+        } catch (Exception e) {
+            log.error("CRITICAL API FAILURE: Failed to issue external customer refund for item ID: {}. Triggering database recovery rollback sequence.", orderItemId, e);
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    getMessage("api_errors.order_cancellation.gateway_failure")
+            );
+        }
+    }
+
+
+    @Transactional
+    public void executeReturnApprovalBySeller(Jwt jwt, Long orderItemId) {
+        if (jwt == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
+        }
+
+        // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
+        ListingOrderItem lockedItem = this.processBuyerReturnDbTx( orderItemId);
+
+        try {
+            // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
+            // Fires an automated refund request to return the escrow funds back to the buyer's account.
+            paymentRefundLedgerService.createRefundFromReturn(lockedItem);
+
+            // Process accounting balance adjustment clawbacks securely inside the database instance lock
+            sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
+
+            //reverse service charge
+            // serviceChargeService.reverseCharge(lockedItem);
 
             log.info("Fulfillment System Success: Order Item #{} successfully refunded and archived.", orderItemId);
 
@@ -149,7 +224,10 @@ public class OrderReturnService {
         }
 
         SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId()).orElse(null);
-        if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED)) {
+        if (shipment != null && (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED
+                || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED
+        || shipment.getShipmentStatus() == ShipmentStatus.REJECTED ||
+                shipment.getShipmentStatus() == ShipmentStatus.RETURNED)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
         }
 
@@ -223,10 +301,10 @@ public class OrderReturnService {
         if(shipmentConfirmation !=null && !isAdmin){
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api.errors.order_cancellation.confirmed"));
         }
-        if (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED) {
+        if (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED
+                || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
         }
-
 
 
         if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
@@ -264,6 +342,135 @@ public class OrderReturnService {
 
             shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
             sellerShipmentRepo.save(shipment);
+
+
+        return orderItem;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    protected ListingOrderItem processBuyerReturnDbTx(Long orderItemId) {
+
+        // Enforce pessimistic write lock to completely block duplicate concurrent button clicks
+        ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
+
+
+        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId())
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
+
+
+        if (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED
+                || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
+        }
+
+
+        if (orderItem.getOrderItemStatus() == OrderItemStatus.RETURNED
+        || orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_cancelled"));
+        }
+
+        // Defensive Inventory Management: Hide broken inventory from catalog circulation
+        InventoryItem inventory = orderItem.getInventoryItem();
+        if (inventory != null) {
+            // Lock inventory item row explicitly before modifying fields
+            InventoryItem lockedInventory = inventoryItemRepo.findByIdForUpdate(inventory.getId()).orElse(null);
+
+            if(lockedInventory!=null){
+                lockedInventory.setStatus(InventoryStatus.AVAILABLE);
+                inventoryItemRepo.save(lockedInventory);
+            }
+
+        }
+
+        //cancel order
+        orderItem.setOrderItemStatus(OrderItemStatus.RETURNED);
+        listingOrderItemRepo.save(orderItem);
+
+        // Evaluate master order termination transitions
+        List<ListingOrderItem> siblingItems = listingOrderItemRepo.findByListingOrderId(orderItem.getListingOrder().getId());
+        boolean areAllItemsReturned = siblingItems.stream()
+                .allMatch(item -> item.getOrderItemStatus() == OrderItemStatus.RETURNED);
+
+        if (areAllItemsReturned) {
+            ListingOrder parent = orderItem.getListingOrder();
+            parent.setOrderStatus(OrderStatus.RETURNED);
+            listingOrderRepo.save(parent);
+        }
+
+
+        //shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
+       // sellerShipmentRepo.save(shipment);
+
+        return orderItem;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    protected ListingOrderItem processBuyerReturnOrderDbTx(AppUser authenticatedUser, Long orderItemId) {
+
+        // Enforce pessimistic write lock to completely block duplicate concurrent button clicks
+        ListingOrderItem orderItem = listingOrderItemRepo.findByIdForUpdate(orderItemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
+
+
+        SellerShipment shipment = sellerShipmentRepo.findByListingOrderItemId(orderItem.getId())
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.item_not_found")));
+
+        ShipmentConfirmationStatus shipmentConfirmation = shipment.getSellerShipmentToken()!=null?shipment.getSellerShipmentToken()
+                .getShipmentConfirmationStatus():null;
+
+        //only buyer or admin can cancel order
+        boolean isBuyer =!orderItem.getListingOrder().getBuyer().getId().equals(authenticatedUser.getId());
+        boolean isAdmin  = authenticatedUser.getUserRoles().stream().anyMatch(role->role.getRole().equals("ROLE_ADMIN"));
+
+        if(!isBuyer && !isAdmin){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api_errors.order_cancellation.forbidden"));
+        }
+
+        if(shipmentConfirmation !=null && !isAdmin){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, getMessage("api.errors.order_cancellation.confirmed"));
+        }
+        if (shipment.getShipmentStatus() == ShipmentStatus.SHIPPED
+                || shipment.getShipmentStatus() == ShipmentStatus.DELIVERED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_shipped"));
+        }
+
+
+        if (orderItem.getOrderItemStatus() == OrderItemStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_cancellation.already_cancelled"));
+        }
+
+        // Defensive Inventory Management: Hide broken inventory from catalog circulation
+        InventoryItem inventory = orderItem.getInventoryItem();
+        if (inventory != null) {
+            // Lock inventory item row explicitly before modifying fields
+            InventoryItem lockedInventory = inventoryItemRepo.findByIdForUpdate(inventory.getId()).orElse(null);
+
+            if(lockedInventory!=null){
+                lockedInventory.setStatus(InventoryStatus.AVAILABLE);
+                inventoryItemRepo.save(lockedInventory);
+            }
+
+        }
+
+        //cancel order
+        orderItem.setOrderItemStatus(OrderItemStatus.CANCELLED);
+        listingOrderItemRepo.save(orderItem);
+
+        // Evaluate master order termination transitions
+        List<ListingOrderItem> siblingItems = listingOrderItemRepo.findByListingOrderId(orderItem.getListingOrder().getId());
+        boolean areAllItemsCancelled = siblingItems.stream()
+                .allMatch(item -> item.getOrderItemStatus() == OrderItemStatus.CANCELLED);
+
+        if (areAllItemsCancelled) {
+            ListingOrder parent = orderItem.getListingOrder();
+            parent.setOrderStatus(OrderStatus.CANCELLED);
+            listingOrderRepo.save(parent);
+        }
+
+
+        shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
+        sellerShipmentRepo.save(shipment);
 
 
         return orderItem;

@@ -5,5 +5,6 @@ public enum OrderStatus {
     PROCESSING,
     CANCELLED,
     COMPLETED,
-    REFUNDED
+    REFUNDED,
+    RETURNED
 }

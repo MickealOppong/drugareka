@@ -6,5 +6,5 @@ public enum OrderItemStatus {
         RETURN_REQUESTED,
     CANCELLED,
     PROCESSING,
-    RETURNED
+    RETURNED,
 }

@@ -22,6 +22,7 @@ public class DisputeResponse {
     private String sellerComment;
     private String buyerComment;
     private String reason;
+    private String shippingMethod;
     private Instant createdAt;
     private List<String> images;
     private List<String> listingImages;

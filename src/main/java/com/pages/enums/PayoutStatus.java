@@ -13,5 +13,6 @@ public enum PayoutStatus {
     READY_FOR_REVIEW,
     APPROVED,
     REVERSED,
-    CHARGE_BACK
+    CHARGE_BACK,
+    RECOUPED
 }

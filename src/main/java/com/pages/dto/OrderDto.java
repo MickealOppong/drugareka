@@ -38,6 +38,7 @@ public class OrderDto {
     private String deliveryStatus;
     private Instant deliveryUpdatedAt;
     private String trackingNumber;
+    private String shippingMethod;
 
 
     @Column(nullable = false, precision = 12, scale = 2)

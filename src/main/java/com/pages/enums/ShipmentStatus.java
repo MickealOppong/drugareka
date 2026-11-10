@@ -7,5 +7,6 @@ public enum ShipmentStatus {
     AWAITING_SHIPMENT,
     CREATED,
     CANCELLED,
-    CONFIRMED
+    CONFIRMED,
+    REJECTED
 }
