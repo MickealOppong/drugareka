@@ -4,6 +4,7 @@ import com.pages.service.ListingOrderService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +20,8 @@ public class OrderCleanupService {
 
 
     // Runs once every 5 minutes (300,000 milliseconds)
-    @Scheduled(fixedDelay = 120_000)
+   // @Scheduled(fixedDelay = 120_000)
+    @Scheduled(cron = "0 0 11,16 * * *", zone = "Europe/Warsaw")
     @Transactional
     public void handleUnconfirmedPaidOrdersForPayout() {
 
@@ -36,7 +38,9 @@ public class OrderCleanupService {
 
 
     // Runs once every 5 minutes (300,000 milliseconds)
-    @Scheduled(fixedDelay = 120_000)
+   // @Scheduled(fixedDelay = 120_000)
+    @Primary
+    @Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
     @Transactional
     public void handleUnconfirmedPaidOrdersShipmentForRefund() {
 
