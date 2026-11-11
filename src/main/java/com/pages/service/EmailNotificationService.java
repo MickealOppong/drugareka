@@ -850,9 +850,9 @@ public class EmailNotificationService {
                                     <strong>NIP:</strong> 7712946929<br>
                                     <strong>REGON:</strong> 54582126100000<br>
                                     <strong>E-mail:</strong>
-                                    <a href="mailto:kasawa.corp@gmail.com"
+                                    <a href="mailto:kontakt@kasoa.pl"
                                        style="color: #68764B;">
-                                        kasawa.corp@gmail.com
+                                        kontakt@kasoa.pl
                                     </a><br>
                                     <strong>Telefon:</strong> +48 722 364 131
                                 </div>
@@ -5439,7 +5439,7 @@ public class EmailNotificationService {
                                                     ">
                                                         Przygotuj bezpiecznie zapakowany
                                                         produkt. Następnie utwórz przesyłkę
-                                                        InPost za pomocą przycisku poniżej.
+                                                        za pomocą przycisku poniżej.
                                                     </div>
 
                                                     <table role="presentation" width="100%%"
@@ -5458,7 +5458,7 @@ public class EmailNotificationService {
                                                                        padding:14px 26px;
                                                                        border-radius:10px;
                                                                    ">
-                                                                    Utwórz przesyłkę InPost
+                                                                Utwórz zlecenie wysyłki
                                                                 </a>
                                                             </td>
                                                         </tr>
