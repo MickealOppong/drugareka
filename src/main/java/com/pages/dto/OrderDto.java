@@ -26,6 +26,7 @@ public class OrderDto {
     private OrderItemStatus orderItemStatus;
     @Enumerated(EnumType.STRING)
     private OrderStatus orderStatus;
+    private String productName;
 
     private String currency;
     private Instant createdAt;

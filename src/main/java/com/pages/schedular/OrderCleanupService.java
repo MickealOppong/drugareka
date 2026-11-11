@@ -17,8 +17,6 @@ public class OrderCleanupService {
     private final ListingOrderService listingOrderService;
 
 
-
-
     // Runs once every 5 minutes (300,000 milliseconds)
    // @Scheduled(fixedDelay = 120_000)
     @Scheduled(cron = "0 0 11,16 * * *", zone = "Europe/Warsaw")
@@ -28,6 +26,7 @@ public class OrderCleanupService {
         log.info("Order confirmation scheduler started");
 
         try {
+            //checks for unConfirmed deliveries after 24 hours and confirm them
             listingOrderService.validateItemDeliveryAndApprovePayout();
             log.info("Order confirmation scheduler finished");
         } catch (Exception e) {
@@ -47,6 +46,7 @@ public class OrderCleanupService {
         log.info("Shipment confirmation scheduler started");
 
         try {
+            //checks for unconfirmed orders by seller and cancels them for refund
             listingOrderService.validateSellerUnConfirmedOrderForRefund();
             log.info("Shipment confirmation scheduler finished");
         } catch (Exception e) {
@@ -64,6 +64,7 @@ public class OrderCleanupService {
         log.info("Order cleanup scheduler started");
 
         try {
+            //checks for any order pending payment after few hours and cancels it, this mostly abandon checkouts
             listingOrderService.cleanUpAbandonOrders();
             log.info("Order cleanup scheduler finished");
         } catch (Exception e) {
