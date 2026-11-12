@@ -985,6 +985,7 @@ public class ShipmentService {
 
                return ShipmentItemResponse.builder()
                          .shipmentId(shipment.getId())
+                       .shipmentMethod(shipment.getShippingMethod())
                          .productName(shipment.getListingOrderItem().getProductNameSnapshot())
                         .orderNumber(shipment.getListingOrderItem().getListingOrder().getOrderNumber())
                          .build();
@@ -1009,21 +1010,21 @@ public class ShipmentService {
 
 
     @Transactional
-    public void updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
+    public boolean updateAndOrderCourierConfirmation(ShipmentConfirmationRequest request) {
 
         try{
             // 1. Guard clause for malformed or empty payloads
             if (request == null || request.getShipmentIds() == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("Provide necessary information"));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.missing_info"));
             }
 
             String token = request.getToken();
 
             SellerShipmentToken sellerShipmentToken= sellerShipmentTokenRepo.findByTokenForUpdate(token)
-                    .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("No associated token for this shipment")));
+                    .orElseThrow(()->new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.invalid_token")));
 
             if(sellerShipmentToken.getExpiresAt().isBefore(Instant.now()) || sellerShipmentToken.getUsedAt()!=null){
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("Token has expired or been already used"));
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,getMessage("api_errors.shipment.token_expired_or_used"));
             }
             //confirm token usage to prevent reuse
             sellerShipmentToken.setUsedAt(Instant.now());
@@ -1090,8 +1091,7 @@ public class ShipmentService {
 
             itemsToCancel.stream().map(SellerShipment::getListingOrderItem)
                     .forEach(listingOrderService::cancelUnconfirmedShipment);
-
-
+            return true;
         }catch (Exception e){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
         }

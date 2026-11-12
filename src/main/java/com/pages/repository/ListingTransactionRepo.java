@@ -14,6 +14,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +42,28 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
             @Param("category") String category,
             @Param("appUserId") Long appUserId ,
            Pageable pageable
+    );
+
+
+
+    List<ListingTransaction>
+    findAllByInventoryStatusAndListingStatusAndCreatedAtBefore(
+            InventoryStatus inventoryStatus,
+            ListingStatus listingStatus,
+            Instant createdAt
+    );
+
+    List<ListingTransaction>
+    findAllByInventoryStatusAndListingStatusAndConfirmationStatusIsNull(
+            InventoryStatus inventoryStatus,
+            ListingStatus listingStatus
+    );
+
+    Optional<ListingTransaction> findByConfirmationToken(String token);
+
+    List<ListingTransaction>
+    findAllByConfirmationTokenIsNotNullAndConfirmationTokenCreatedAtBefore(
+            Instant createdAt
     );
 
 

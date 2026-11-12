@@ -14,4 +14,5 @@ public class ShipmentItemResponse {
     private String orderNumber;
     private String productName;
     private String status;
+    private String shipmentMethod;
 }

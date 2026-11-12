@@ -259,107 +259,218 @@ public class EmailNotificationService {
                 .replaceAll("(?i)#182016", "#182016");
 
         String header = """
-            <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
-                   style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#68764B;border-radius:14px;overflow:hidden;">
-                <tr>
-                    <td align="center" style="padding:26px 20px;background-color:#68764B;border:12px solid #F5F6F1;border-radius:14px;;text-align:center;">
-                        <div style="font-family:Arial,Helvetica,sans-serif;font-size:27px;line-height:34px;
-                                    font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;">
-                            kasoa<span style="font-weight:400;color:#E4E8D9;">.pl</span>
-                        </div>
-                        <div style="margin-top:5px;font-family:Arial,Helvetica,sans-serif;
-                                    font-size:12px;line-height:18px;color:#E9EDDF;">
-                            Druga ręka. Dobre rzeczy. Mniej odpadów.
-                        </div>
-                    </td>
-                </tr>
-            </table>
-            """;
+        <!-- HEADER -->
+        <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
+               style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#68764B;border-radius:14px;overflow:hidden;">
+            <tr>
+                <td align="center" style="padding:26px 20px;background-color:#68764B;border:12px solid #F5F6F1;border-radius:14px;text-align:center;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:27px;line-height:34px;
+                                font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;">
+                        kasoa<span style="font-weight:400;color:#E4E8D9;">.pl</span>
+                    </div>
+                    <div style="margin-top:5px;font-family:Arial,Helvetica,sans-serif;
+                                font-size:12px;line-height:18px;color:#E9EDDF;">
+                        Druga ręka. Dobre rzeczy. Mniej odpadów.
+                    </div>
+                </td>
+            </tr>
+        </table>
+        """;
 
         String footer = """
-            <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
-                   style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#182016;border-radius:14px;overflow:hidden;">
-                <tr>
-                    <td align="center" style="padding:25px 20px;background-color:#182016;border:12px solid #F5F6F1;border-radius:14px;;text-align:center;">
-                        <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:24px;
-                                    font-weight:800;color:#FFFFFF;">kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span></div>
-                        <div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:11px;
-                                    line-height:18px;color:#AEB69D;">Dobre rzeczy. Drugie życie. (Good things. A second chance.)</div>
-                        <div style="margin-top:13px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
-                                    line-height:17px;color:#AEB69D;">
-                            Ta wiadomość została wygenerowana automatycznie.<br>
-                            Zarządzaj swoimi produktami i zamówieniami na Kasoa.pl.
-                        </div>
-                    </td>
-                </tr>
-            </table>
-            """;
+        <!-- FOOTER -->
+        <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
+               style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#182016;border-radius:14px;overflow:hidden;">
+            <tr>
+                <td align="center" style="padding:25px 20px;background-color:#182016;border:12px solid #F5F6F1;border-radius:14px;text-align:center;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:24px;
+                                font-weight:800;color:#FFFFFF;">
+                        kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span>
+                    </div>
+                    <div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                                line-height:18px;color:#AEB69D;">
+                        Dobre rzeczy zasługują na drugie życie.
+                    </div>
+                    <div style="margin-top:13px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                                line-height:17px;color:#AEB69D;">
+                        Ta wiadomość została wygenerowana automatycznie.<br>
+                        Zarządzaj swoimi produktami i zamówieniami na Kasoa.pl.
+                    </div>
+                </td>
+            </tr>
+        </table>
+        """;
+
+        // ---------------------------------------------------------
+        // HEADER: detect an existing header before adding a new one.
+        // ---------------------------------------------------------
 
         String lower = branded.toLowerCase(Locale.ROOT);
+
         int bodyOpen = lower.indexOf("<body");
-        int bodyContentStart = bodyOpen >= 0 ? lower.indexOf('>', bodyOpen) + 1 : 0;
+        int bodyContentStart = bodyOpen >= 0
+                ? lower.indexOf('>', bodyOpen) + 1
+                : 0;
+
+        if (bodyOpen >= 0 && bodyContentStart == 0) {
+            bodyContentStart = 0;
+        }
+
         int firstContentEnd = Math.min(branded.length(), bodyContentStart + 5000);
+
         String openingContent = branded.substring(bodyContentStart, firstContentEnd);
-        boolean hasHeader = openingContent.contains("<!-- HEADER -->")
-                || (openingContent.toLowerCase(Locale.ROOT).contains("kasoa")
-                && openingContent.matches("(?is).*background(?:-color)?\\s*:\\s*#68764B.*"));
+        String openingLower = openingContent.toLowerCase(Locale.ROOT);
+
+        boolean hasHeader = openingLower.contains("<!-- header -->")
+                || (openingLower.contains("kasoa")
+                && openingLower.contains("#68764b"));
 
         if (!hasHeader) {
             if (bodyOpen >= 0 && bodyContentStart > 0) {
-                branded = branded.substring(0, bodyContentStart) + header + branded.substring(bodyContentStart);
+                branded = branded.substring(0, bodyContentStart)
+                        + header
+                        + branded.substring(bodyContentStart);
             } else {
                 branded = header + branded;
             }
         }
 
-        // Normalize every explicitly marked header/footer, including older templates.
-        branded = normalizeKasoaSection(branded, "<!-- HEADER -->", "#68764B", "#FFFFFF");
-        branded = normalizeKasoaSection(branded, "<!-- FOOTER -->", "#182016", "#FFFFFF");
+        // Normalize explicitly marked headers and footers.
+        branded = normalizeKasoaSection(
+                branded,
+                "<!-- HEADER -->",
+                "#68764B",
+                "#FFFFFF"
+        );
+
+        branded = normalizeKasoaSection(
+                branded,
+                "<!-- FOOTER -->",
+                "#182016",
+                "#FFFFFF"
+        );
+
+        // ---------------------------------------------------------
+        // FOOTER: detect existing footer before adding a new one.
+        // ---------------------------------------------------------
 
         lower = branded.toLowerCase(Locale.ROOT);
-        int sloganIndex = branded.lastIndexOf("Dobre rzeczy. Drugie życie. (Good things. A second chance.)");
-        int footerSearchStart = Math.max(0, sloganIndex - 2200);
-        boolean hasFooter = branded.contains("<!-- FOOTER -->")
-                || (sloganIndex >= 0
-                && branded.substring(footerSearchStart, sloganIndex)
-                .matches("(?is).*background(?:-color)?\\s*:\\s*#182016.*"));
+
+        int bodyEnd = lower.lastIndexOf("</body>");
+
+        String footerSearchContent = bodyEnd >= 0
+                ? branded.substring(0, bodyEnd)
+                : branded;
+
+        String footerSearchLower = footerSearchContent.toLowerCase(Locale.ROOT);
+
+        boolean hasFooterMarker = footerSearchLower.contains("<!-- footer -->");
+
+        // Also recognise existing footers without an explicit marker.
+        // This prevents duplication when a template has its own Polish footer.
+        int footerSearchStart = Math.max(0, footerSearchContent.length() - 6000);
+
+        String footerCandidate = footerSearchContent.substring(footerSearchStart);
+        String footerCandidateLower = footerCandidate.toLowerCase(Locale.ROOT);
+
+        boolean hasExistingFooter = footerCandidateLower.contains("#182016")
+                && footerCandidateLower.contains("kasoa")
+                && (
+                footerCandidateLower.contains("automatycznie")
+                        || footerCandidateLower.contains("zarządzaj swoimi")
+                        || footerCandidateLower.contains("dobre rzeczy zasługują na drugie życie")
+                        || footerCandidateLower.contains("good things. a second chance.")
+        );
+
+        boolean hasFooter = hasFooterMarker || hasExistingFooter;
+
         if (!hasFooter) {
-            int bodyEnd = lower.lastIndexOf("</body>");
+            bodyEnd = lower.lastIndexOf("</body>");
+
             branded = bodyEnd >= 0
-                    ? branded.substring(0, bodyEnd) + footer + branded.substring(bodyEnd)
+                    ? branded.substring(0, bodyEnd)
+                    + footer
+                    + branded.substring(bodyEnd)
                     : branded + footer;
         }
 
-        // Force a centered, responsive email canvas for table- and div-based templates.
+        // ---------------------------------------------------------
+        // RESPONSIVE EMAIL STYLES
+        // ---------------------------------------------------------
+
         String centeredStyles = """
-            <style id="kasoa-email-base">
-                html, body { width:100% !important; margin:0 !important; padding:0 !important;
-                    background-color:#F5F6F1 !important; }
-                body { font-family:Arial,Helvetica,sans-serif !important; color:#182016; }
-                body > table, body > div, body > center { margin-left:auto !important; margin-right:auto !important; }
-                table { border-collapse:collapse; }
-                img { max-width:100%; height:auto; border:0; }
-                @media only screen and (max-width:600px) {
-                    table[role="presentation"] { max-width:100% !important; }
-                    .kasoa-email-content { padding-left:18px !important; padding-right:18px !important; }
+        <style id="kasoa-email-base">
+            html, body {
+                width:100% !important;
+                margin:0 !important;
+                padding:0 !important;
+                background-color:#F5F6F1 !important;
+            }
+
+            body {
+                font-family:Arial,Helvetica,sans-serif !important;
+                color:#182016;
+            }
+
+            body > table,
+            body > div,
+            body > center {
+                margin-left:auto !important;
+                margin-right:auto !important;
+            }
+
+            table {
+                border-collapse:collapse;
+            }
+
+            img {
+                max-width:100%;
+                height:auto;
+                border:0;
+            }
+
+            @media only screen and (max-width:600px) {
+                table[role="presentation"] {
+                    max-width:100% !important;
                 }
-            </style>
-            """;
+
+                .kasoa-email-content {
+                    padding-left:18px !important;
+                    padding-right:18px !important;
+                }
+            }
+        </style>
+        """;
+
         lower = branded.toLowerCase(Locale.ROOT);
+
         int headEnd = lower.indexOf("</head>");
+
         if (headEnd >= 0 && !lower.contains("id=\"kasoa-email-base\"")) {
-            branded = branded.substring(0, headEnd) + centeredStyles + branded.substring(headEnd);
+            branded = branded.substring(0, headEnd)
+                    + centeredStyles
+                    + branded.substring(headEnd);
+
         } else if (headEnd < 0 && bodyOpen >= 0) {
             int bodyTagStart = lower.indexOf("<body");
             int bodyTagEnd = lower.indexOf('>', bodyTagStart);
-            if (bodyTagEnd >= 0) {
-                branded = branded.substring(0, bodyTagEnd + 1) + centeredStyles + branded.substring(bodyTagEnd + 1);
+
+            if (bodyTagEnd >= 0 && !lower.contains("id=\"kasoa-email-base\"")) {
+                branded = branded.substring(0, bodyTagEnd + 1)
+                        + centeredStyles
+                        + branded.substring(bodyTagEnd + 1);
             }
         }
 
-        // Center all fixed-width email containers, regardless of whether their
-        // original template used a table or a div wrapper.
-        branded = branded.replaceAll("(?i)max-width\\s*:\\s*(600|650)px\\s*;?", "max-width:$1px;margin-left:auto;margin-right:auto;");
+        // ---------------------------------------------------------
+        // CENTER FIXED-WIDTH EMAIL CONTAINERS
+        // ---------------------------------------------------------
+
+        branded = branded.replaceAll(
+                "(?i)max-width\\s*:\\s*(600|650)px\\s*;?",
+                "max-width:$1px;margin-left:auto;margin-right:auto;"
+        );
+
         return branded;
     }
 
@@ -7121,6 +7232,506 @@ public class EmailNotificationService {
                 html
         );
     }
+
+
+
+
+
+    @Async
+    public void checkForAvailabilityWithSeller(
+            String email,
+            String product,
+            String baseURL,
+            String token
+    ) {
+        String subject = "Kupujący interesują się Twoim produktem – potwierdź dostępność";
+
+        String safeProduct = escapeHtml(product);
+
+        String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
+        String availableUrl = baseURL + "/confirm?token=" + encodedToken;
+        String soldUrl = baseURL + "/sold?token=" + encodedToken;
+
+        String html = """
+            <!DOCTYPE html>
+            <html lang="pl">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Potwierdź dostępność produktu</title>
+            </head>
+
+            <body style="
+                margin: 0;
+                padding: 0;
+                background-color: #F5F6F1;
+                font-family: Arial, Helvetica, sans-serif;
+                color: #182016;
+            ">
+
+            <table role="presentation"
+                   width="100%%"
+                   cellpadding="0"
+                   cellspacing="0"
+                   border="0"
+                   style="
+                       width: 100%%;
+                       background-color: #F5F6F1;
+                       border-collapse: collapse;
+                   ">
+                <tr>
+                    <td align="center" style="padding: 32px 16px;">
+
+                        <!-- GŁÓWNY KONTENER -->
+                        <table role="presentation"
+                               width="100%%"
+                               cellpadding="0"
+                               cellspacing="0"
+                               border="0"
+                               style="
+                                   width: 100%%;
+                                   max-width: 640px;
+                                   background-color: #FFFFFF;
+                                   border-collapse: separate;
+                                   border-spacing: 0;
+                                   margin: 0 auto;
+                                   border-radius: 14px;
+                                   overflow: hidden;
+                               ">
+
+                            <!-- NAGŁÓWEK -->
+                            <tr>
+                                <td align="center"
+                                    bgcolor="#68764B"
+                                    style="
+                                        background-color: #68764B;
+                                        padding: 28px 24px;
+                                        text-align: center;
+                                        border-radius: 14px 14px 0 0;
+                                    ">
+                                    <div style="
+                                        color: #FFFFFF;
+                                        font-size: 29px;
+                                        line-height: 35px;
+                                        font-weight: bold;
+                                        letter-spacing: 1px;
+                                        text-align: center;
+                                    ">
+                                        kasoa.pl
+                                    </div>
+
+                                    <div style="
+                                        margin-top: 7px;
+                                        color: #EEF1E8;
+                                        font-size: 13px;
+                                        line-height: 20px;
+                                        text-align: center;
+                                    ">
+                                        Dobre rzeczy zasługują na drugie życie.
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- TREŚĆ -->
+                            <tr>
+                                <td align="left"
+                                    style="
+                                        padding: 32px 28px;
+                                        text-align: left;
+                                        color: #182016;
+                                    ">
+
+                                    <h1 style="
+                                        margin: 0 0 18px 0;
+                                        font-size: 22px;
+                                        line-height: 29px;
+                                        font-weight: bold;
+                                        color: #182016;
+                                        text-align: left;
+                                    ">
+                                        Cześć!
+                                    </h1>
+
+                                    <p style="
+                                        margin: 0 0 16px 0;
+                                        font-size: 15px;
+                                        line-height: 24px;
+                                        color: #394235;
+                                        text-align: left;
+                                    ">
+                                        Zauważyliśmy zainteresowanie Twoim produktem.
+                                        Zanim kupujący złoży zamówienie, chcemy upewnić się,
+                                        że oferta jest nadal aktualna.
+                                    </p>
+
+                                    <!-- PRODUKT -->
+                                    <table role="presentation"
+                                           width="100%%"
+                                           cellpadding="0"
+                                           cellspacing="0"
+                                           border="0"
+                                           style="
+                                               width: 100%%;
+                                               margin: 24px 0;
+                                               background-color: #F8F9F5;
+                                               border: 1px solid #E4E7DE;
+                                               border-collapse: separate;
+                                               border-spacing: 0;
+                                               border-radius: 10px;
+                                           ">
+                                        <tr>
+                                            <td align="left"
+                                                style="
+                                                    padding: 18px 20px;
+                                                    text-align: left;
+                                                ">
+                                                <div style="
+                                                    margin-bottom: 8px;
+                                                    color: #68764B;
+                                                    font-size: 11px;
+                                                    line-height: 16px;
+                                                    font-weight: bold;
+                                                    letter-spacing: 1px;
+                                                ">
+                                                    TWOJA OFERTA
+                                                </div>
+
+                                                <div style="
+                                                    color: #182016;
+                                                    font-size: 17px;
+                                                    line-height: 24px;
+                                                    font-weight: bold;
+                                                    word-break: break-word;
+                                                ">
+                                                    %s
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <p style="
+                                        margin: 0 0 16px 0;
+                                        font-size: 15px;
+                                        line-height: 24px;
+                                        color: #394235;
+                                        text-align: left;
+                                    ">
+                                        Wybierz jedną z poniższych opcji:
+                                    </p>
+
+                                    <ul style="
+                                        margin: 0 0 22px 0;
+                                        padding-left: 21px;
+                                        color: #394235;
+                                        font-size: 14px;
+                                        line-height: 23px;
+                                    ">
+                                        <li style="padding-bottom: 8px;">
+                                            Potwierdź, jeśli produkt jest nadal dostępny.
+                                        </li>
+                                        <li>
+                                            Zaznacz, że został sprzedany poza Kasoa lub nie
+                                            jest już dostępny, jeśli nie możesz go wysłać.
+                                        </li>
+                                    </ul>
+
+                                    <!-- OSTRZEŻENIE -->
+                                    <table role="presentation"
+                                           width="100%%"
+                                           cellpadding="0"
+                                           cellspacing="0"
+                                           border="0"
+                                           style="
+                                               width: 100%%;
+                                               margin: 22px 0;
+                                               background-color: #FFF8E8;
+                                               border: 1px solid #E9D8A6;
+                                               border-collapse: separate;
+                                               border-spacing: 0;
+                                               border-radius: 10px;
+                                           ">
+                                        <tr>
+                                            <td align="left"
+                                                style="
+                                                    padding: 16px 18px;
+                                                    text-align: left;
+                                                ">
+                                                <div style="
+                                                    margin-bottom: 6px;
+                                                    color: #70551C;
+                                                    font-size: 14px;
+                                                    line-height: 20px;
+                                                    font-weight: bold;
+                                                ">
+                                                    Ważne – uniknij anulowania zamówienia
+                                                </div>
+
+                                                <p style="
+                                                    margin: 0;
+                                                    color: #70551C;
+                                                    font-size: 13px;
+                                                    line-height: 21px;
+                                                ">
+                                                    Aktualizowanie dostępności pomaga uniknąć
+                                                    zamówień na produkty, których nie możesz
+                                                    już sprzedać. Anulowanie opłaconego
+                                                    zamówienia może wiązać się z dodatkowymi
+                                                    konsekwencjami.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- PRZYCISKI -->
+                                    <table role="presentation"
+                                           width="100%%"
+                                           cellpadding="0"
+                                           cellspacing="0"
+                                           border="0"
+                                           style="
+                                               width: 100%%;
+                                               margin: 24px 0;
+                                               background-color: #EEF1E8;
+                                               border-collapse: separate;
+                                               border-spacing: 0;
+                                               border-radius: 12px;
+                                           ">
+                                        <tr>
+                                            <td align="left"
+                                                style="
+                                                    padding: 22px 20px;
+                                                    text-align: left;
+                                                ">
+                                                <h2 style="
+                                                    margin: 0 0 17px 0;
+                                                    color: #182016;
+                                                    font-size: 17px;
+                                                    line-height: 24px;
+                                                    text-align: left;
+                                                ">
+                                                    Potwierdź dostępność produktu
+                                                </h2>
+
+                                                <table role="presentation"
+                                                       width="100%%"
+                                                       cellpadding="0"
+                                                       cellspacing="0"
+                                                       border="0"
+                                                       style="width: 100%%;">
+                                                    <tr>
+                                                        <td align="center"
+                                                            bgcolor="#68764B"
+                                                            style="
+                                                                background-color: #68764B;
+                                                                text-align: center;
+                                                                border-radius: 7px;
+                                                            ">
+                                                            <a href="%s"
+                                                               style="
+                                                                   display: block;
+                                                                   padding: 15px 12px;
+                                                                   color: #FFFFFF;
+                                                                   font-size: 14px;
+                                                                   line-height: 20px;
+                                                                   font-weight: bold;
+                                                                   text-decoration: none;
+                                                                   text-align: center;
+                                                                   border-radius: 7px;
+                                                               ">
+                                                                ✓ Produkt jest nadal dostępny
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+
+                                                    <tr>
+                                                        <td height="12"
+                                                            style="
+                                                                height: 12px;
+                                                                font-size: 1px;
+                                                                line-height: 12px;
+                                                            ">
+                                                            &nbsp;
+                                                        </td>
+                                                    </tr>
+
+                                                    <!-- PRODUKT ZOSTAŁ SPRZEDANY -->
+                                                    <tr>
+                                                        <td align="center"
+                                                            bgcolor="#FFFFFF"
+                                                            style="
+                                                                background-color: #FFFFFF;
+                                                                border: 1px solid #C96B63;
+                                                                text-align: center;
+                                                                border-radius: 7px;
+                                                            ">
+                                                            <a href="%s"
+                                                               style="
+                                                                   display: block;
+                                                                   padding: 14px 12px;
+                                                                   color: #A8423B;
+                                                                   font-size: 14px;
+                                                                   line-height: 20px;
+                                                                   font-weight: bold;
+                                                                   text-decoration: none;
+                                                                   text-align: center;
+                                                                   border-radius: 7px;
+                                                               ">
+                                                                ✕ Produkt został sprzedany
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+
+                                                <p style="
+                                                    margin: 16px 0 0 0;
+                                                    color: #59634F;
+                                                    font-size: 12px;
+                                                    line-height: 19px;
+                                                    text-align: left;
+                                                ">
+                                                    Możesz zmienić swoją decyzję, korzystając
+                                                    z tego samego linku, dopóki pozostaje
+                                                    aktywny.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- INFORMACJA O WYGAŚNIĘCIU -->
+                                    <p style="
+                                        margin: 22px 0 12px 0;
+                                        color: #394235;
+                                        font-size: 14px;
+                                        line-height: 23px;
+                                        text-align: left;
+                                    ">
+                                        <strong>Co się stanie, jeśli nie odpowiesz?</strong>
+                                    </p>
+
+                                    <p style="
+                                        margin: 0 0 16px 0;
+                                        color: #394235;
+                                        font-size: 14px;
+                                        line-height: 23px;
+                                        text-align: left;
+                                    ">
+                                        Jeśli nie potwierdzisz dostępności w ciągu 24 godzin,
+                                        Twoja oferta zostanie przeniesiona do wersji roboczych
+                                        i przestanie być widoczna dla kupujących.
+                                    </p>
+
+                                    <p style="
+                                        margin: 0 0 24px 0;
+                                        color: #394235;
+                                        font-size: 14px;
+                                        line-height: 23px;
+                                        text-align: left;
+                                    ">
+                                        W każdej chwili możesz ponownie opublikować produkt
+                                        w sekcji <strong>Moje konto → Moje produkty</strong>,
+                                        zmieniając jego status z
+                                        <strong>Wersja robocza</strong> na
+                                        <strong>Opublikowane</strong>.
+                                    </p>
+
+                                    <!-- LINK DO STRONY -->
+                                    <table role="presentation"
+                                           width="100%%"
+                                           cellpadding="0"
+                                           cellspacing="0"
+                                           border="0"
+                                           style="
+                                               width: 100%%;
+                                               margin-top: 26px;
+                                               border-top: 1px solid #E4E7DE;
+                                           ">
+                                        <tr>
+                                            <td align="center"
+                                                style="
+                                                    padding: 24px 0 4px 0;
+                                                    text-align: center;
+                                                ">
+                                                <a href="%s"
+                                                   style="
+                                                       color: #68764B;
+                                                       font-size: 14px;
+                                                       line-height: 22px;
+                                                       font-weight: bold;
+                                                       text-decoration: none;
+                                                   ">
+                                                    Przejdź do kasoa.pl →
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                </td>
+                            </tr>
+
+                            <!-- JEDYNA STOPKA -->
+                            <tr>
+                                <td align="center"
+                                    bgcolor="#182016"
+                                    style="
+                                        background-color: #182016;
+                                        padding: 26px 24px;
+                                        text-align: center;
+                                        border-radius: 0 0 14px 14px;
+                                    ">
+                                    <div style="
+                                        margin: 0 0 8px 0;
+                                        color: #FFFFFF;
+                                        font-size: 18px;
+                                        line-height: 24px;
+                                        font-weight: bold;
+                                        text-align: center;
+                                    ">
+                                        kasoa.pl
+                                    </div>
+
+                                    <p style="
+                                        margin: 0 0 12px 0;
+                                        color: #DDE4D1;
+                                        font-size: 12px;
+                                        line-height: 19px;
+                                        text-align: center;
+                                    ">
+                                        Dobre rzeczy zasługują na drugie życie.
+                                    </p>
+
+                                    <p style="
+                                        margin: 0;
+                                        color: #AEB69D;
+                                        font-size: 11px;
+                                        line-height: 18px;
+                                        text-align: center;
+                                    ">
+                                        Wiadomość została wysłana automatycznie.
+                                        Prosimy na nią nie odpowiadać.
+                                    </p>
+                                </td>
+                            </tr>
+
+                        </table>
+                        <!-- KONIEC GŁÓWNEGO KONTENERA -->
+
+                    </td>
+                </tr>
+            </table>
+
+            </body>
+            </html>
+            """.formatted(
+                safeProduct,
+                escapeHtml(availableUrl),
+                escapeHtml(soldUrl),
+                escapeHtml(baseURL)
+        );
+
+        sendHtmlEmail(email, subject, html);
+    }
+
+
 
 
 

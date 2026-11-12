@@ -1,9 +1,6 @@
 package com.pages.controller;
 
-import com.pages.dto.AddressForm;
-import com.pages.dto.ResponseDto;
-import com.pages.dto.ShipmentConfirmationRequest;
-import com.pages.dto.ShipmentItemResponse;
+import com.pages.dto.*;
 import com.pages.model.SellerShipment;
 import com.pages.model.SellerShipmentToken;
 import com.pages.service.OrderReturnService;
@@ -33,12 +30,7 @@ public class ShipmentConfirmationController {
 
     @PostMapping(value = "/ship",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Boolean> executeShipment(ShipmentConfirmationRequest request){
-     try{
-        shipmentService.updateAndOrderCourierConfirmation(request);
-         return ResponseEntity.ok(true);
-     }catch (Exception e){
-         return ResponseEntity.ok(false);
-     }
+        return ResponseEntity.ok(shipmentService.updateAndOrderCourierConfirmation(request));
     }
 
     @GetMapping("/token")

@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @Entity
@@ -28,6 +29,14 @@ public class ListingTransaction extends LogEntity {
     @ToString.Exclude
     private InventoryItem inventory;
 
+
+    @Column(name = "confirmation_token")
+    private String confirmationToken;
+
+    @Column(name = "confirmation_token_created_at")
+    private Instant confirmationTokenCreatedAt;
+
+    private String confirmationStatus;
 
     @Enumerated(EnumType.STRING)
     private ListingStatus listingStatus;

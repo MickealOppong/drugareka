@@ -125,8 +125,19 @@ public class UtilService {
     public static SellerShipmentToken generateShipmentToken(){
         return SellerShipmentToken.builder()
                 .token(UUID.randomUUID().toString())
-                .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                .expiresAt(Instant.now().plus(24, ChronoUnit.HOURS))
                 .build();
+    }
+
+    public static String generateListingConfirmationToken(){
+        byte[] randomBytes = new byte[32];
+
+        SecureRandom secureRandom = new SecureRandom();
+        secureRandom.nextBytes(randomBytes);
+
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(randomBytes);
     }
 
 
