@@ -33,8 +33,8 @@ private final PaymentService paymentService;
      * Process eligible seller payouts.
      * Runs again 2 minutes after the previous execution finishes.
      */
-    @Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
-    //@Scheduled(fixedDelay = 240_000)
+    //@Scheduled(cron = "0 0 9,17 * * *", zone = "Europe/Warsaw")
+    @Scheduled(fixedDelay = 240_000)
     public void executeRefund() {
         log.info("Refund scheduler started");
 

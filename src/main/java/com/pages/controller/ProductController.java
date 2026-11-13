@@ -90,6 +90,10 @@ public class ProductController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     messageSource.getMessage("api.add_listing.automotive.item_number.error", null, LocaleContextHolder.getLocale()));
         }
+        if(productData.isPersonalCollectionAvailable() && productData.getCollectionCity().isBlank() ) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    messageSource.getMessage("api.add_listing.city.error", null, LocaleContextHolder.getLocale()));
+        }
         return listingTransactionService.addSellerProduct(jwt,productData);
     }
 

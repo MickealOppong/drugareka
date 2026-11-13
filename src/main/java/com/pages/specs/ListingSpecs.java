@@ -147,23 +147,43 @@ public class ListingSpecs {
         };
     }
 
-    public static Specification<ListingTransaction> hasCollectionCity(String collectionCity) {
+    public static Specification<ListingTransaction> hasCollectionCity(String location) {
 
         return (root, query, cb) -> {
+            String formatedLocation = location.replace("_",",");
 
-            if (collectionCity == null || collectionCity.isBlank()) {
+            String city = location.split("_")[0];
+            String region = location.split("_")[0];
+
+            if(city.isBlank()){
+                return cb.conjunction();
+            }
+
+            if (formatedLocation.isBlank()) {
                 return cb.conjunction();
             }
 
             Join<ListingTransaction, InventoryItem> inventoryJoin =
                     root.join("inventory");
 
-            return cb.equal(
-                    cb.lower(inventoryJoin.get("collectionCity")),
-                    collectionCity.trim().toLowerCase(Locale.ROOT)
+            return cb.or(
+                    cb.like(
+                            cb.lower(inventoryJoin.get("collectionCity")),
+                            region.trim().toLowerCase(Locale.ROOT)
+                    ),
+                    cb.like(
+                            cb.lower(inventoryJoin.get("collectionCity")),
+                            city.trim().toLowerCase(Locale.ROOT)
+                    ),
+                    cb.like(
+                            cb.lower(inventoryJoin.get("collectionCity")),
+                            formatedLocation.trim().toLowerCase(Locale.ROOT)
+                    )
             );
         };
     }
+
+
 
     public static Specification<ListingTransaction> hasBrand(String brand) {
 

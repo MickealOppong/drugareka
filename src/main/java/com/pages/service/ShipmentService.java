@@ -969,31 +969,69 @@ public class ShipmentService {
     }
 
     @Transactional(readOnly = true)
-    public ResponseDto<Object> getShipment(String token){
+    public ResponseDto<Object> getShipment(String token) {
 
-       SellerShipmentToken shipmentToken = sellerShipmentTokenRepo.findByToken(token).orElse(null);
-       if(shipmentToken!=null && shipmentToken.getShipmentConfirmationStatus()==ShipmentConfirmationStatus.CONFIRMED){
-           return ResponseDto.builder()
-                   .httpStatus(HttpStatus.OK.value())
-                   .data(shipmentToken.getShipmentConfirmationStatus())
-                   .message("Shipment already confirmed")
-                   .build();
-       }
-     List<ShipmentItemResponse>  items = sellerShipmentRepo.findBySellerShipmentTokenToken(token).stream()
-             .filter(shipment ->shipment.getListingOrderItem().getOrderItemStatus()!= OrderItemStatus.CANCELLED )
-             .map(shipment -> {
+        SellerShipmentToken shipmentToken = sellerShipmentTokenRepo
+                .findByToken(token)
+                .orElse(null);
 
-               return ShipmentItemResponse.builder()
-                         .shipmentId(shipment.getId())
-                       .shipmentMethod(shipment.getShippingMethod())
-                         .productName(shipment.getListingOrderItem().getProductNameSnapshot())
-                        .orderNumber(shipment.getListingOrderItem().getListingOrder().getOrderNumber())
-                         .build();
-             }).toList();
-       return ResponseDto.builder()
-               .data(items)
-               .httpStatus(HttpStatus.OK.value())
-               .build();
+        if (shipmentToken == null) {
+            return ResponseDto.builder()
+                    .httpStatus(HttpStatus.BAD_REQUEST.value())
+                    .data(null)
+                    .message("Record does not exist")
+                    .build();
+        }
+
+        List<ShipmentItemResponse> allItems = sellerShipmentRepo
+                .findBySellerShipmentTokenToken(token)
+                .stream()
+                .filter(shipment -> shipment.getListingOrderItem() != null)
+                .map(shipment -> {
+                    ListingOrderItem orderItem = shipment.getListingOrderItem();
+
+                    return ShipmentItemResponse.builder()
+                            .shipmentId(shipment.getId())
+                            .shipmentMethod(shipment.getShippingMethod())
+                            .productName(orderItem.getProductNameSnapshot())
+                            .orderNumber(orderItem.getListingOrder().getOrderNumber())
+                            .build();
+                })
+                .toList();
+
+        List<ShipmentItemResponse> activeItems = allItems.stream()
+                .filter(item -> {
+                    return sellerShipmentRepo
+                            .findById(item.getShipmentId())
+                            .map(shipment -> shipment.getListingOrderItem()
+                                    .getOrderItemStatus() != OrderItemStatus.CANCELLED)
+                            .orElse(false);
+                })
+                .toList();
+
+        boolean alreadyConfirmed =
+                shipmentToken.getShipmentConfirmationStatus()
+                        == ShipmentConfirmationStatus.CONFIRMED;
+
+        String message;
+
+        if (allItems.isEmpty()) {
+            message = messageSource.getMessage("api_errors.shipment.validation.none_selected",null,LocaleContextHolder.getLocale());
+        } else if (activeItems.isEmpty()) {
+            message = messageSource.getMessage(           "api_errors.shipment.cancelled",null,LocaleContextHolder.getLocale());
+
+        } else if (alreadyConfirmed) {
+            message =  messageSource.getMessage(           "api.errors.shipment.already-confirmed",null,LocaleContextHolder.getLocale());
+
+        } else {
+            message = null;
+        }
+
+        return ResponseDto.builder()
+                .httpStatus(HttpStatus.OK.value())
+                .data(activeItems)
+                .message(message)
+                .build();
     }
 
     @Transactional(readOnly = true)

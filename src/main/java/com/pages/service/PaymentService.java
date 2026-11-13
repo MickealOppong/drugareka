@@ -750,6 +750,7 @@ public class PaymentService{
                 throw new IllegalStateException(
                         "Refund ledger not found for Stripe Refund ID " + refund.getId()
                 );
+
             }
 
             Payment ledger = ledgerOptional;
@@ -873,7 +874,8 @@ public class PaymentService{
         // Calculate current net balance in your database
         BigDecimal netTotal = payments.stream()
                 .filter(record -> record.getStatus().equals(PaymentStatus.PAID)
-                        || record.getStatus().equals(PaymentStatus.AWAITING_REFUND))
+                        || record.getStatus().equals(PaymentStatus.AWAITING_REFUND)
+                ||record.getStatus().equals(PaymentStatus.PENDING))
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -896,6 +898,50 @@ public class PaymentService{
                     .orderNumber(originalPayment.getOrderNumber())
                     .providerSessionId(originalPayment.getProviderSessionId())
                     .stripePaymentIntentId(originalPayment.getStripePaymentIntentId())
+                    .build();
+
+            paymentRepo.save(refundRecord);
+
+        } catch (Exception e) {
+            log.error("Failed to create refund for order {}", order.getId(), e);
+            throw new InvalidOperationException("Failed to complete refund processing.");
+        }
+    }
+
+    @Transactional
+    public void createDoublePaymentRefund(ListingOrder order) {
+
+        if (order == null) {
+            return;
+        }
+
+        List<Payment> payments = paymentRepo.findByListingOrderId(order.getId());
+
+        // Calculate current net balance in your database
+        BigDecimal netTotal = payments.stream()
+                .filter(record -> record.getStatus().equals(PaymentStatus.PAID)
+                        || record.getStatus().equals(PaymentStatus.AWAITING_REFUND)
+                        ||record.getStatus().equals(PaymentStatus.PENDING))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (netTotal.compareTo(new BigDecimal("0.01")) <= 0) {
+            log.warn("Double-Refund Prevention: Order {} already fully refunded (Balance: {} PLN).", order.getId(), netTotal);
+            throw new InvalidOperationException("Cannot refund below zero.");
+        }
+
+
+        try {
+            // 1. Create a local accounting record matching the exact remaining net balance
+            Payment refundRecord = Payment.builder()
+                    .listingOrder(order)
+                    .status(PaymentStatus.AWAITING_REFUND)
+                    .amount(netTotal.negate()) // Refund exactly what's left
+                    .provider(payments.get(0).getProvider())
+                    .currency(payments.get(0).getCurrency())
+                    .orderNumber(payments.get(0).getOrderNumber())
+                    .providerSessionId(payments.get(0).getProviderSessionId())
+                    .stripePaymentIntentId(payments.get(0).getStripePaymentIntentId())
                     .build();
 
             paymentRepo.save(refundRecord);
@@ -1082,6 +1128,39 @@ public class PaymentService{
 
 
 
+    private void createTotalRefund(ListingOrder order,String chargeId) {
+
+
+        try {
+            RefundCreateParams params = RefundCreateParams.builder()
+                    .setCharge(chargeId)
+                    .setReason(RefundCreateParams.Reason.DUPLICATE)
+                    .putMetadata("orderNumber", order.getOrderNumber())
+                    .putMetadata("reason", "DUPLICATE_PAYMENT_INVENTORY_ALREADY_SOLD")
+                    .build();
+
+            RequestOptions options = RequestOptions.builder()
+                    .setIdempotencyKey("duplicate-payment-refund-" + order.getId())
+                    .build();
+
+            Refund refund = Refund.create(params, options);
+
+            log.info(
+                    "Stripe refund initiated. Order: {}, Refund ID: {}, Status: {}",
+                    order.getOrderNumber(),
+                    refund.getId(),
+                    refund.getStatus()
+            );
+
+        } catch (StripeException e) {
+            log.error(
+                    "Failed to refund duplicate payment for order {}",
+                    order.getOrderNumber(),
+                    e
+            );
+            throw new RuntimeException("Unable to refund duplicate payment", e);
+        }
+    }
 
 
 
@@ -1235,9 +1314,9 @@ public class PaymentService{
 
 
 
+    @Transactional
     private void finalizePaidCheckoutReconciliation(Session session) {
         try {
-
             if (!"paid".equals(session.getPaymentStatus())) {
                 throw new IllegalStateException(
                         "Cannot finalize unpaid Checkout Session: " + session.getId()
@@ -1270,6 +1349,14 @@ public class PaymentService{
                             "Order not found: " + orderId
                     ));
 
+            if (payment.getListingOrder() == null
+                    || !payment.getListingOrder().getId().equals(order.getId())) {
+                throw new IllegalStateException(
+                        "Stripe session, payment and order do not match"
+                );
+            }
+
+            // Verify the actual Stripe PaymentIntent before processing.
             String paymentIntentId = session.getPaymentIntent();
 
             if (paymentIntentId == null || paymentIntentId.isBlank()) {
@@ -1278,13 +1365,6 @@ public class PaymentService{
                 );
             }
 
-            if (!payment.getListingOrder().getId().equals(order.getId())) {
-                throw new IllegalStateException(
-                        "Stripe session, payment and order do not match"
-                );
-            }
-
-            // Verify the actual PaymentIntent state before fulfilling.
             PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId);
 
             if (!"succeeded".equals(intent.getStatus())) {
@@ -1293,21 +1373,96 @@ public class PaymentService{
                 );
             }
 
+            // Check whether all inventory items have already been sold.
+            List<ListingOrderItem> orderItems =
+                    listingOrderItemRepo.findByListingOrderId(order.getId());
+
+            boolean allItemsSold = !orderItems.isEmpty()
+                    && orderItems.stream()
+                    .allMatch(orderItem ->
+                            orderItem.getInventoryItem() != null
+                                    && orderItem.getInventoryItem().getStatus()
+                                    == InventoryStatus.SOLD
+                    );
+
+            if (order.getOrderStatus() == OrderStatus.PROCESSING && allItemsSold) {
+
+                log.warn(
+                        "Duplicate payment detected. Refunding Stripe PaymentIntent {} for order {}",
+                        paymentIntentId,
+                        order.getOrderNumber()
+                );
+
+                // Immediately refund the successful Stripe payment.
+                RefundCreateParams refundParams = RefundCreateParams.builder()
+                        .setPaymentIntent(paymentIntentId)
+                        .setReason(RefundCreateParams.Reason.DUPLICATE)
+                        .putMetadata("payment_ledger_id", orderId)
+                        .putMetadata("checkout_session_id", session.getId())
+                        .build();
+
+                RequestOptions requestOptions = RequestOptions.builder()
+                        .setIdempotencyKey("duplicate-payment-refund-" + session.getId())
+                        .build();
+
+                Refund refund = Refund.create(refundParams, requestOptions);
+
+                log.info(
+                        "Stripe refund created. Refund ID: {}, status: {}, order: {}",
+                        refund.getId(),
+                        refund.getStatus(),
+                        order.getOrderNumber()
+                );
+
+                // Store the refund state only after Stripe accepts the request.
+                payment.setStatus(PaymentStatus.REFUNDED);
+                payment.setStripePaymentIntentId(paymentIntentId);
+                payment.setStripeChargeId(intent.getLatestCharge());
+                payment.setStripeRefundId(refund.getId());
+                paymentRepo.save(payment);
+
+                // Cancel the duplicate order.
+                order.setOrderStatus(OrderStatus.CANCELLED);
+                listingOrderRepo.save(order);
+
+                orderItems.forEach(item -> {
+                    item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+                    listingOrderItemRepo.save(item);
+                });
+
+                log.warn(
+                        "Duplicate order {} cancelled and refund {} initiated",
+                        order.getOrderNumber(),
+                        refund.getId()
+                );
+
+                return;
+            }
+
+            // Normal successful payment processing.
             Instant paidAt = Instant.now();
 
             payment.setStatus(PaymentStatus.PAID);
             payment.setPaidAt(paidAt);
             payment.setStripePaymentIntentId(paymentIntentId);
             payment.setStripeChargeId(intent.getLatestCharge());
+
             order.setOrderStatus(OrderStatus.PAID);
             order.setPaidAt(paidAt);
 
-            for (ListingOrderItem item : order.getItems()) {
+            for (ListingOrderItem item : orderItems) {
                 InventoryItem inventory = item.getInventoryItem();
+
+                if (inventory == null) {
+                    throw new IllegalStateException(
+                            "Missing inventory item for order item: " + item.getId()
+                    );
+                }
 
                 inventory.setStatus(InventoryStatus.SOLD);
                 inventory.setReservedUntil(null);
                 inventory.setReservedBy(null);
+
                 inventoryItemRepo.save(inventory);
 
                 item.setOrderItemStatus(OrderItemStatus.PAID);
@@ -1315,6 +1470,7 @@ public class PaymentService{
             }
 
             paymentRepo.save(payment);
+
             // These operations must themselves be idempotent.
             serviceChargeService.createCharge(order);
             sellerPayoutService.createPayouts(order);
@@ -1323,18 +1479,35 @@ public class PaymentService{
             cartService.deleteCartById(order.getBuyer().getId());
 
             sendNotifications(order);
+
             log.info(
                     "Payment finalized successfully for order {}",
                     order.getOrderNumber()
             );
-        }catch (StripeException e){
+
+        } catch (StripeException e) {
             log.error(
-                    "Stripe error:{}",
-                    e.getMessage());
-        }catch (Exception e){
+                    "Stripe error while reconciling Checkout Session {}",
+                    session.getId(),
+                    e
+            );
+
+            throw new IllegalStateException(
+                    "Stripe payment reconciliation failed",
+                    e
+            );
+
+        } catch (Exception e) {
             log.error(
-                    "General error:{}",
-                    e.getMessage());
+                    "Error while reconciling Checkout Session {}",
+                    session.getId(),
+                    e
+            );
+
+            throw new IllegalStateException(
+                    "Checkout payment reconciliation failed",
+                    e
+            );
         }
     }
 
@@ -1947,7 +2120,7 @@ public class PaymentService{
         }
     }
 
-
+    @Transactional
     public void reconcilePayment(Long paymentId) {
 
         Payment payment = paymentRepo.findById(paymentId)

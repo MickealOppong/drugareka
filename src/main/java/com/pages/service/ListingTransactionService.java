@@ -434,6 +434,7 @@ public class ListingTransactionService {
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
 
+
         Specification<ListingTransaction> specification = Specification
                 .where(ListingSpecs.hasListingStatus(ListingStatus.PUBLISHED))
                 .and(ListingSpecs.hasCategoryId(categoryId))
@@ -660,9 +661,9 @@ public class ListingTransactionService {
     }
 
     @Transactional(readOnly = true)
-    public ListTransResponse getProductByListingSlug(String slug) {
+    public ListTransResponse getProductByListingSlug(Long id,String slug) {
 
-        ListingTransaction listingTransaction = listingTransactionRepo.findByInventoryProductCatalogSlug(slug).orElse(null);
+        ListingTransaction listingTransaction = listingTransactionRepo.findByIdAndInventoryProductCatalogSlug(id,slug).orElse(null);
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
             InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());

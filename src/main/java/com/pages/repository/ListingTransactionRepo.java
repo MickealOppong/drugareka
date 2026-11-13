@@ -26,7 +26,7 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
     List<ListingTransaction> findByListingStatus(ListingStatus listingStatus);
     Optional<ListingTransaction> findByIdAndInventoryStatus(Long id, InventoryStatus inventoryStatus);
     Optional<ListingTransaction> findByIdAndListingStatus(Long id, ListingStatus listingStatus);
-    Optional<ListingTransaction> findByInventoryProductCatalogSlug(String slug);
+    Optional<ListingTransaction> findByIdAndInventoryProductCatalogSlug(Long id,String slug);
 
     List<ListingTransaction> findByListingStatusAndInventoryProductCatalogCategoryNameAndInventorySellerIdNot(
             ListingStatus listingStatus,

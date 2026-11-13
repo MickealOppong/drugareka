@@ -96,8 +96,8 @@ public class StoreController {
     }
 
     @GetMapping("listing/slug")
-    public ListTransResponse getListingItemBySlug(@RequestParam String slug){
-        return   listingTransactionService.getProductByListingSlug(slug);
+    public ListTransResponse getListingItemBySlug(@RequestParam Long id,@RequestParam String slug){
+        return   listingTransactionService.getProductByListingSlug(id,slug);
     }
 
     @GetMapping("listings/seller")
