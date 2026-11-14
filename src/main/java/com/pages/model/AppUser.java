@@ -50,7 +50,6 @@ public class AppUser extends LogEntity implements UserDetails {
     private LocalDate dateOfBirth;
     private boolean isSysAdmin;
 
-    private String pesel;
 
     @Builder.Default
     private boolean isTermsAccepted =false;

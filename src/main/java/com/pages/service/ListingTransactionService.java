@@ -10,6 +10,7 @@ import com.pages.repository.ListingTransactionRepo;
 import com.pages.specs.ListingSpecs;
 import com.pages.util.GlobalAddress;
 import com.pages.util.UtilService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -38,6 +39,7 @@ import static com.pages.specs.ListingSpecs.hasBrand;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ListingTransactionService {
 
     private final ListingTransactionRepo listingTransactionRepo;
@@ -55,26 +57,9 @@ public class ListingTransactionService {
     private final ListingOfferRepo listingOfferRepo;
     private final MessageSource messageSource;
     private final ShippingOptionService shippingOptionService;
+    private final ListingEnquiryService listingEnquiryService;
 
-    public ListingTransactionService(ListingTransactionRepo listingTransactionRepo,
-                                     AppUserDetailsService appUserDetailsService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService, SellerProfileService sellerProfileService, ProductCatalogService productCatalogService, PricingService pricingService, InventoryItemService inventoryItemService, CategoryService categoryService, BrandService brandService, ProductConditionService productConditionService,
-                                     EmailNotificationService emailNotificationService, ListingOfferRepo listingOfferRepo, MessageSource messageSource, ShippingOptionService shippingOptionService) {
-        this.listingTransactionRepo = listingTransactionRepo;
-        this.appUserDetailsService = appUserDetailsService;
-        this.mediaService = mediaService;
-        this.inventoryItemPriceService = inventoryItemPriceService;
-        this.sellerProfileService = sellerProfileService;
-        this.productCatalogService = productCatalogService;
-        this.pricingService = pricingService;
-        this.inventoryItemService = inventoryItemService;
-        this.categoryService = categoryService;
-        this.brandService = brandService;
-        this.productConditionService = productConditionService;
-        this.emailNotificationService = emailNotificationService;
-        this.listingOfferRepo = listingOfferRepo;
-        this.messageSource = messageSource;
-        this.shippingOptionService = shippingOptionService;
-    }
+
 
     public void CreateListing(ListTransRequest dto) {
         ListingTransaction newTransaction = new ListingTransaction(dto);
@@ -136,6 +121,18 @@ public class ListingTransactionService {
             // =====================================================
             SellerProfile sellerProfile = sellerProfileService.getSellerProfile(appUser.getId());
 
+            //prevent listing for problematic sellers
+            boolean isNotEligible =sellerProfile.getStatus()==SellerStatus.BLOCKED
+                    ||sellerProfile.getStatus()==SellerStatus.SUSPENDED
+                    ||sellerProfile.getStatus()==SellerStatus.PENDING;
+
+            if(isNotEligible){
+                throw new DuplicateKeyException(
+                        messageSource.getMessage("api.add_listing.seller.forbidden",null,LocaleContextHolder.getLocale())
+                );
+            }
+
+
             // =====================================================
             // 4. FIND EXISTING LISTING
             // =====================================================
@@ -165,15 +162,6 @@ public class ListingTransactionService {
                 log.info("Security Gate: System Administrator [{}] granted moderation access to listing ID: {}",
                         appUser.getUsername(), productData.getId());
             } else {
-                if (sellerProfile == null) {
-                    log.warn("Security Shield: Access Denied. User [{}] has no registered seller profile.", appUser.getUsername());
-                    String msg = messageSource.getMessage("api.listing.seller.profile_missing", null, "You must register a seller profile before modifying listings.", locale);
-                    return ResponseDto.builder()
-                            .data(false)
-                            .message(msg)
-                            .httpStatus(HttpStatus.FORBIDDEN.value())
-                            .build();
-                }
 
                 if (!inventoryItem.getSeller().getId().equals(sellerProfile.getId())) {
                     log.warn("Security Shield: Unauthorized modification attempt on Listing [{}] by Vendor [{}]",
@@ -290,6 +278,8 @@ public class ListingTransactionService {
 // =====================================================
             listing.setListingStatus(getListingStatus(productData.getStatus()));
             listingTransactionRepo.save(listing);
+            listingEnquiryService.notifyEnquiringBuyers(listing.getId());
+
 // =====================================================
 // 13. RESPONSE
 // =====================================================
@@ -325,13 +315,24 @@ public class ListingTransactionService {
             SellerProfileDto sellerProfileDto = SellerProfileDto.builder()
                     .user(appUser)
                     .totalSales(BigDecimal.ZERO)
-                    .pesel(appUser.getPesel())
                     .dateOfBirth(appUser.getDateOfBirth())
                     .fullLegalName(appUser.getFirstName() + " " + appUser.getLastName())
-                    .status(appUser.isEnabled() ? SellerStatus.ACTIVE : SellerStatus.PENDING)
+                    .status(SellerStatus.ACTIVE )
                     .identityVerified(true)
                     .build();
             SellerProfile sellerProfile = sellerProfileService.findOrCreateSellerProfile(sellerProfileDto);
+
+            //prevent listing for problematic sellers
+            boolean isNotEligible =sellerProfile.getStatus()==SellerStatus.BLOCKED
+                    ||sellerProfile.getStatus()==SellerStatus.SUSPENDED
+                    ||sellerProfile.getStatus()==SellerStatus.PENDING;
+
+            if(isNotEligible){
+                throw new DuplicateKeyException(
+                        messageSource.getMessage("api.add_listing.seller.forbidden",null,LocaleContextHolder.getLocale())
+                );
+            }
+
             ProductRequest productRequest = ProductRequest.builder()
                     .brand(productData.getBrand())
                     .categoryPath(productData.getCategoryPath())

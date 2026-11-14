@@ -19,7 +19,7 @@ public class PayoutScheduler {
 
     /**
      * Process eligible seller payouts.
-     * Runs again 2 minutes after the previous execution finishes.
+     * Runs twice a day, at 11 am and 5pm
      */
   // @Scheduled(fixedDelay = 120_000)
     @Scheduled(cron = "0 0 11,17 * * *", zone = "Europe/Warsaw")
@@ -27,7 +27,6 @@ public class PayoutScheduler {
         log.info("Payout scheduler started");
 
         try {
-
             payoutProcessingService.confirmReceiptAndReleaseFunds();
             log.info("Payout scheduler finished");
         } catch (Exception e) {

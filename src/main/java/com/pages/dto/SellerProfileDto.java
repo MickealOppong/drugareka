@@ -28,8 +28,6 @@ public class SellerProfileDto {
     private BigDecimal totalSettlement = BigDecimal.ZERO;
 
 
-    private String pesel;
-
     private String fullLegalName;
 
     private String permanentResidentialAddress;

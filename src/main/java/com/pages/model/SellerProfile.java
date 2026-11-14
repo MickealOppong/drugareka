@@ -100,7 +100,7 @@ public class SellerProfile extends LogEntity {
 
     private Long numberOfCancelledOrders;
 
-
+    private String reason;
 
 
     public SellerProfile(SellerProfileDto dto) {

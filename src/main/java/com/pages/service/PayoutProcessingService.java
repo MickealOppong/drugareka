@@ -195,6 +195,15 @@ public class PayoutProcessingService {
                     continue;
                 }
 
+                boolean isNotEligible =payout.getSeller().getStatus()==SellerStatus.BLOCKED
+                        || payout.getSeller().getStatus()==SellerStatus.SUSPENDED
+                        ||payout.getSeller().getStatus()==SellerStatus.PENDING;
+
+                if(isNotEligible){
+                    continue;
+                }
+
+
                 ListingOrderItem item = payout.getListingOrderItem();
 
                 Payment payment = paymentRepo

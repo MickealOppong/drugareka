@@ -2202,8 +2202,8 @@ public class EmailNotificationService {
                     </div>
 
                     <div style="
-                        margin-top: 14px;
                         font-size: 10px;
+                        margin-top: 14px;
                         line-height: 1.7;
                         color: #AEB69D;
                     ">
@@ -7732,8 +7732,253 @@ public class EmailNotificationService {
     }
 
 
+    /**
+     * notify selelr of buyer enquiry
+     * @param email
+     * @param product
+     * @param message
+     */
+    @Async
+    public void notifySellerToUpdateListing(
+            String email,
+            String product,
+            String message
+    ) {
+        String subject = "Kupujący ma pytanie dotyczące Twojego produktu";
+
+        String safeProduct = escapeHtml(product);
+        String safeMessage = escapeHtml(message);
+
+        String frontend = frontEndUrl.replaceAll("/+$", "");
+        String accountUrl = frontend + "/account";
+
+        String html = """
+    <!DOCTYPE html>
+    <html lang="pl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Kupujący ma pytanie dotyczące Twojego produktu</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#F5F6F1;font-family:Helvetica,Arial,sans-serif;color:#182016;">
+        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+               style="background-color:#F5F6F1;padding:30px 10px;">
+            <tr>
+                <td align="center">
+                    <table width="640" cellpadding="0" cellspacing="0" border="0"
+                           style="max-width:640px;width:100%%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+
+                        <tr>
+                            <td style="background-color:#68764B;padding:28px 30px;text-align:center;">
+                                <h1 style="margin:0;color:#ffffff;font-size:25px;">Kasoa</h1>
+                                <p style="margin:8px 0 0;color:#ffffff;font-size:14px;">
+                                    Dobre rzeczy zasługują na drugie życie.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding:35px 30px;">
+                                <h2 style="margin:0 0 20px;font-size:22px;color:#182016;">
+                                    Kupujący ma pytanie dotyczące Twojego produktu
+                                </h2>
+
+                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
+                                    Kupujący ma pytanie dotyczące Twojego produktu wystawionego na Kasoa.
+                                </p>
+
+                                <div style="background-color:#F5F6F1;padding:18px;border-radius:6px;margin:20px 0;">
+                                    <p style="margin:0 0 8px;font-size:13px;color:#68764B;">
+                                        Produkt
+                                    </p>
+                                    <p style="margin:0;font-size:17px;font-weight:bold;color:#182016;">
+                                        %s
+                                    </p>
+                                </div>
+
+                                <div style="border:1px solid #E0E7E6;padding:18px;border-radius:6px;margin:20px 0;">
+                                    <p style="margin:0 0 10px;font-size:14px;font-weight:bold;color:#182016;">
+                                        Pytanie kupującego
+                                    </p>
+                                    <p style="margin:0;font-size:15px;line-height:1.7;color:#333333;white-space:pre-line;">
+                                        %s
+                                    </p>
+                                </div>
+
+                                <h3 style="font-size:17px;color:#182016;margin:28px 0 10px;">
+                                    Co należy zrobić?
+                                </h3>
+
+                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
+                                    Aby udzielić kupującemu potrzebnych informacji, zaloguj się na swoje konto
+                                    i przejdź do sekcji <strong>Moje konto → Moje produkty</strong>.
+                                    Odszukaj produkt, wybierz opcję edycji i uzupełnij ogłoszenie
+                                    o informacje, o które pyta kupujący.
+                                </p>
+
+                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
+                                    Po zaktualizowaniu ogłoszenia kupujący otrzyma powiadomienie.
+                                </p>
+
+                                <div style="text-align:center;margin:28px 0;">
+                                    <a href="%s"
+                                       style="display:inline-block;background-color:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:5px;font-size:15px;font-weight:bold;">
+                                        Przejdź do Moich produktów
+                                    </a>
+                                </div>
+
+                                <div style="background-color:#F5F6F1;padding:18px;border-radius:6px;margin:25px 0;">
+                                    <p style="margin:0 0 10px;font-size:15px;font-weight:bold;color:#182016;">
+                                        Produkt został już sprzedany lub nie jest dostępny?
+                                    </p>
+                                    <p style="margin:0;font-size:14px;line-height:1.7;color:#333333;">
+                                        Jeśli produkt nie jest już dostępny, zmień jego status na
+                                        <strong>Wersja robocza</strong> w sekcji Moje produkty.
+                                        Dzięki temu ogłoszenie nie będzie dostępne dla kupujących.
+                                    </p>
+                                </div>
+
+                                <p style="font-size:14px;line-height:1.7;color:#555555;margin:25px 0 0;">
+                                    Dziękujemy za korzystanie z Kasoa!
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="background-color:#182016;padding:22px 30px;text-align:center;">
+                                <p style="margin:0 0 8px;color:#ffffff;font-size:13px;">
+                                    <a href="%s" style="color:#ffffff;text-decoration:none;">kasoa.pl</a>
+                                </p>
+                                <p style="margin:0;color:#cccccc;font-size:12px;">
+                                    Wiadomość została wysłana automatycznie. Prosimy na nią nie odpowiadać.
+                                </p>
+                            </td>
+                        </tr>
+
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """.formatted(
+                safeProduct,
+                safeMessage,
+                escapeHtml(accountUrl),
+                escapeHtml(frontend)
+        );
+
+        sendHtmlEmail(email, subject, html);
+    }
 
 
+    /**
+     * Notify buyer after seller update
+     * @param email
+     * @param product
+     * @param productUrl
+     */
+    @Async
+    public void notifyBuyerAfterSellerUpdate(
+            String email,
+            String product,
+            String productUrl
+    ) {
+        String subject = "Sprzedający uzupełnił informacje o produkcie";
+
+        String safeProduct = escapeHtml(product);
+        String fullProductUrl = frontEndUrl.replaceAll("/+$", "")
+                + "/" + productUrl.replaceAll("^/+", "");
+
+        String html = """
+    <!DOCTYPE html>
+    <html lang="pl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sprzedający zaktualizował informacje o produkcie</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#F5F6F1;font-family:Helvetica,Arial,sans-serif;color:#182016;">
+        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
+               style="background-color:#F5F6F1;padding:30px 10px;">
+            <tr>
+                <td align="center">
+                    <table width="640" cellpadding="0" cellspacing="0" border="0"
+                           style="max-width:640px;width:100%%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+
+                        <tr>
+                            <td style="background-color:#68764B;padding:28px 30px;text-align:center;">
+                                <h1 style="margin:0;color:#ffffff;font-size:25px;">Kasoa</h1>
+                                <p style="margin:8px 0 0;color:#ffffff;font-size:14px;">
+                                    Dobre rzeczy zasługują na drugie życie.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding:35px 30px;">
+                                <h2 style="margin:0 0 20px;font-size:22px;color:#182016;">
+                                    Sprzedający zaktualizował informacje o produkcie
+                                </h2>
+
+                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
+                                    Produkt, o który pytałeś, został zaktualizowany.
+                                    Sprzedający uzupełnił ogłoszenie o dodatkowe informacje,
+                                    których potrzebowałeś.
+                                </p>
+
+                                <div style="background-color:#F5F6F1;padding:18px;border-radius:6px;margin:20px 0;">
+                                    <p style="margin:0 0 8px;font-size:13px;color:#68764B;">
+                                        Produkt
+                                    </p>
+                                    <p style="margin:0;font-size:17px;font-weight:bold;color:#182016;">
+                                        %s
+                                    </p>
+                                </div>
+
+                                <p style="font-size:15px;line-height:1.7;margin:20px 0;">
+                                    Możesz teraz przejść do ogłoszenia i zapoznać się
+                                    z uzupełnionymi informacjami.
+                                </p>
+
+                                <div style="text-align:center;margin:28px 0;">
+                                    <a href="%s"
+                                       style="display:inline-block;background-color:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:5px;font-size:15px;font-weight:bold;">
+                                        Zobacz produkt
+                                    </a>
+                                </div>
+
+                                <p style="font-size:14px;line-height:1.7;color:#555555;margin:25px 0 0;">
+                                    Dziękujemy za korzystanie z Kasoa!
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="background-color:#182016;padding:22px 30px;text-align:center;">
+                                <p style="margin:0 0 8px;color:#ffffff;font-size:13px;">
+                                    <a href="%s" style="color:#ffffff;text-decoration:none;">kasoa.pl</a>
+                                </p>
+                                <p style="margin:0;color:#cccccc;font-size:12px;">
+                                    Wiadomość została wysłana automatycznie. Prosimy na nią nie odpowiadać.
+                                </p>
+                            </td>
+                        </tr>
+
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """.formatted(
+                safeProduct,
+                escapeHtml(fullProductUrl),
+                escapeHtml(frontEndUrl)
+        );
+
+        sendHtmlEmail(email, subject, html);
+    }
 
 
     @Async

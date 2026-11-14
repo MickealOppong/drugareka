@@ -1,14 +1,24 @@
 package com.pages.service;
 
-import com.pages.dto.ResponseDto;
-import com.pages.dto.SellerProfileDto;
+import com.pages.dto.*;
+import com.pages.enums.ListingStatus;
+import com.pages.enums.SellerStatus;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
 import com.pages.model.*;
 import com.pages.repository.SellerPayoutRepo;
 import com.pages.repository.SellerProfileRepo;
+import com.pages.specs.SellerProfileSpec;
+import com.pages.specs.SellerShipmentSpecs;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +28,7 @@ import java.util.*;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class SellerProfileService {
 
     // PLATFORM PARAMETER CONSTANTS: Legal DAC7 threshold boundaries for EU consumer markets
@@ -27,12 +38,18 @@ public class SellerProfileService {
 
     private final SellerProfileRepo sellerProfileRepo;
     private final AppUserDetailsService appUserDetailsService;
-    private final SellerPayoutRepo sellerPayoutRepo;
+    private final MessageSource messageSource;
 
-    public SellerProfileService(SellerProfileRepo sellerProfileRepo, AppUserDetailsService appUserDetailsService, SellerPayoutRepo sellerPayoutRepo) {
-        this.sellerProfileRepo = sellerProfileRepo;
-        this.appUserDetailsService = appUserDetailsService;
-        this.sellerPayoutRepo = sellerPayoutRepo;
+
+    private SellerStatus getSellerStatus(String status) {
+        String cleanStatus = status.trim().toUpperCase();
+        return switch (cleanStatus) {
+            case "ACTIVE" -> SellerStatus.ACTIVE;
+            case "BLOCKED" -> SellerStatus.BLOCKED;
+            case "PENDING" -> SellerStatus.PENDING;
+            case "SUSPENDED" -> SellerStatus.SUSPENDED;
+            default -> throw new IllegalArgumentException("Unknown seller status"+cleanStatus);
+        };
     }
 
     public SellerProfile getSeller(Long id){
@@ -59,15 +76,102 @@ public class SellerProfileService {
                 .orElse(null);
     }
 
+    @Transactional
+    public boolean changeStatus(SellerProfileUpdate dto) {
+        try {
+            SellerProfile seller = sellerProfileRepo.findById(dto.getSellerId())
+                    .orElse(null);
+
+            if (seller == null) {
+                log.warn("Seller profile not found for seller id: {}", dto.getSellerId());
+                return false;
+            }
+
+            SellerStatus newStatus = getSellerStatus(dto.getStatus());
+
+            seller.setStatus(newStatus);
+            seller.setReason(dto.getReason());
+
+            sellerProfileRepo.save(seller);
+
+            return true;
+
+        } catch (Exception e) {
+            log.error(
+                    "Update failed for seller id: {}. Reason: {}",
+                    dto.getSellerId(),
+                    e.getMessage(),
+                    e
+            );
+            return false;
+        }
+    }
+
     public SellerProfile getSellerProfile(Long userId){
         return sellerProfileRepo.findByUserId(userId).orElse(null);
     }
 
-    public SellerProfile getSellerProfileById(Long id){
-        return sellerProfileRepo.findById(id).orElse(null);
+    public ListPageSellerProfile getSellers(String query,int page,int size){
+
+        Pageable pageable = PageRequest.of(
+                page == 0 ? 0 : page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+
+        Specification<SellerProfile> specification = Specification
+                .where(SellerProfileSpec.matchesSearch(query));
+
+       Page<SellerProfileResponse> sellers = sellerProfileRepo.findAll(specification,pageable)
+               .map(sellerProfile -> {
+                   return SellerProfileResponse.builder()
+                           .sellerId(sellerProfile.getId())
+                           .currentYearGrossVolumePln(sellerProfile.getCurrentYearGrossVolumePln())
+                           .fullLegalName(sellerProfile.getFullLegalName())
+                           .currentYearSalesCount(sellerProfile.getCurrentYearSalesCount())
+                           .dac7FlaggedAt(sellerProfile.getDac7FlaggedAt())
+                           .status(sellerProfile.getStatus().name())
+                           .numberOfCancelledOrders(sellerProfile.getNumberOfCancelledOrders())
+                           .identityVerified(sellerProfile.isIdentityVerified())
+                           .verifiedAt(sellerProfile.getVerifiedAt())
+                           .totalSales(sellerProfile.getTotalSales())
+                           .stripeAccountId(sellerProfile.getStripeAccountId())
+                           .stripeAccountUpdatedAt(sellerProfile.getStripeAccountUpdatedAt())
+                           .stripeChargesEnabled(sellerProfile.isStripeChargesEnabled())
+                           .stripePayoutsEnabled(sellerProfile.isStripePayoutsEnabled())
+                           .totalSettlement(sellerProfile.getTotalSettlement())
+                           .stripeTransfersStatus(sellerProfile.getStripeTransfersStatus())
+                           .userId(sellerProfile.getUser().getId())
+                           .stripeOnboardingComplete(sellerProfile.isStripeOnboardingComplete())
+                           .build();
+               });
+       return ListPageSellerProfile.builder()
+               .sellers(sellers.getContent())
+               .accumulatedItems(getAccumulatedItemsFromPage(sellers.getNumber(),sellers.getSize(),sellers.getTotalElements()))
+               .page(sellers.getNumber())
+               .pageSize(sellers.getSize())
+               .build();
     }
 
 
+    public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
+        // 1. Calculate how many items exist up to the start boundary of the current page
+        int itemsBeforeCurrentPage = currentPage * pageSize;
+
+        // 2. Compute the exact remaining items left in the database for this page and beyond
+        int remainingItems = (int)totalElements - itemsBeforeCurrentPage;
+
+        // 3.  If remaining items are less than page size,
+        // use the exact remainder; otherwise, add a full standard page size block.
+        int accumulatedTotal;
+        if (remainingItems < pageSize) {
+            accumulatedTotal = itemsBeforeCurrentPage + remainingItems; // Caps exactly at TotalElements
+        } else {
+            accumulatedTotal = itemsBeforeCurrentPage + pageSize;       // Adds a standard full page block
+        }
+        return accumulatedTotal;
+    }
     /**
      *
      * Aggregates total order lines, resolves multiple seller balances simultaneously without loop thrashing,
