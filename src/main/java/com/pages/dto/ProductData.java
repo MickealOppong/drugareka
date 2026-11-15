@@ -87,5 +87,6 @@ public class ProductData {
     private boolean personalCollectionAvailable;
 
     private String collectionCity;
+    private String token;
 
 }

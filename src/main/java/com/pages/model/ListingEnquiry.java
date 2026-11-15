@@ -37,5 +37,8 @@ public class ListingEnquiry {
     private boolean notified;
 
     private Instant notifiedAt;
+    private String token;
+    private Instant tokenExpiresAt;
+    private Instant usedAt;
 
 }

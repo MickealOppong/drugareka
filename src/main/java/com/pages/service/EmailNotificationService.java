@@ -7736,136 +7736,136 @@ public class EmailNotificationService {
      * notify selelr of buyer enquiry
      * @param email
      * @param product
-     * @param message
+     * @param enquiry
+     * @param token
      */
     @Async
     public void notifySellerToUpdateListing(
             String email,
             String product,
-            String message
+            String enquiry,
+            String token
     ) {
         String subject = "Kupujący ma pytanie dotyczące Twojego produktu";
 
         String safeProduct = escapeHtml(product);
-        String safeMessage = escapeHtml(message);
+        String safeEnquiry = escapeHtml(enquiry);
+        String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
 
-        String frontend = frontEndUrl.replaceAll("/+$", "");
-        String accountUrl = frontend + "/account";
+        String baseURL = frontEndUrl.replaceAll("/+$", "");
+
+        String updateUrl = baseURL + "/update-listing?token=" + encodedToken;
+        String soldUrl = baseURL + "/sold?token=" + encodedToken;
 
         String html = """
-    <!DOCTYPE html>
-    <html lang="pl">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Kupujący ma pytanie dotyczące Twojego produktu</title>
-    </head>
-    <body style="margin:0;padding:0;background-color:#F5F6F1;font-family:Helvetica,Arial,sans-serif;color:#182016;">
-        <table width="100%%" cellpadding="0" cellspacing="0" border="0"
-               style="background-color:#F5F6F1;padding:30px 10px;">
-            <tr>
-                <td align="center">
-                    <table width="640" cellpadding="0" cellspacing="0" border="0"
-                           style="max-width:640px;width:100%%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin:0;padding:0;background-color:#F5F6F1;font-family:Helvetica,Arial,sans-serif;color:#182016;">
+            <table width="100%%" cellpadding="0" cellspacing="0" style="padding:30px 10px;">
+                <tr>
+                    <td align="center">
+                        <table width="100%%" cellpadding="0" cellspacing="0"
+                               style="max-width:640px;background:#ffffff;border-radius:12px;overflow:hidden;">
 
-                        <tr>
-                            <td style="background-color:#68764B;padding:28px 30px;text-align:center;">
-                                <h1 style="margin:0;color:#ffffff;font-size:25px;">Kasoa</h1>
-                                <p style="margin:8px 0 0;color:#ffffff;font-size:14px;">
-                                    Dobre rzeczy zasługują na drugie życie.
-                                </p>
-                            </td>
-                        </tr>
-
-                        <tr>
-                            <td style="padding:35px 30px;">
-                                <h2 style="margin:0 0 20px;font-size:22px;color:#182016;">
-                                    Kupujący ma pytanie dotyczące Twojego produktu
-                                </h2>
-
-                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
-                                    Kupujący ma pytanie dotyczące Twojego produktu wystawionego na Kasoa.
-                                </p>
-
-                                <div style="background-color:#F5F6F1;padding:18px;border-radius:6px;margin:20px 0;">
-                                    <p style="margin:0 0 8px;font-size:13px;color:#68764B;">
-                                        Produkt
+                            <tr>
+                                <td style="background:#68764B;padding:25px;text-align:center;color:#ffffff;">
+                                    <h1 style="margin:0;font-size:28px;">Kasoa</h1>
+                                    <p style="margin:8px 0 0;font-size:14px;">
+                                        Dobre rzeczy zasługują na drugie życie.
                                     </p>
-                                    <p style="margin:0;font-size:17px;font-weight:bold;color:#182016;">
-                                        %s
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style="padding:30px;">
+                                    <h2 style="font-size:22px;margin-top:0;">
+                                        Kupujący ma pytanie dotyczące Twojego produktu
+                                    </h2>
+
+                                    <p style="font-size:15px;line-height:1.6;">
+                                        Kupujący potrzebuje dodatkowych informacji dotyczących
+                                        wystawionego przez Ciebie produktu.
                                     </p>
-                                </div>
 
-                                <div style="border:1px solid #E0E7E6;padding:18px;border-radius:6px;margin:20px 0;">
-                                    <p style="margin:0 0 10px;font-size:14px;font-weight:bold;color:#182016;">
-                                        Pytanie kupującego
+                                    <div style="background:#F5F6F1;padding:18px;border-radius:8px;margin:22px 0;">
+                                        <strong>%s</strong>
+                                    </div>
+
+                                    <div style="background:#EDF7F3;padding:18px;border-radius:8px;margin:22px 0;">
+                                        <strong>Pytanie kupującego:</strong>
+                                        <p style="margin-bottom:0;line-height:1.6;">%s</p>
+                                    </div>
+
+                                    <p style="font-size:15px;line-height:1.6;">
+                                        Kliknij poniższy przycisk, aby uzupełnić informacje
+                                        w ogłoszeniu. Dodane informacje będą widoczne dla
+                                        wszystkich kupujących.
                                     </p>
-                                    <p style="margin:0;font-size:15px;line-height:1.7;color:#333333;white-space:pre-line;">
-                                        %s
+
+                                    <div style="text-align:center;margin:28px 0;">
+                                        <a href="%s"
+                                           style="display:inline-block;background:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:6px;font-weight:bold;">
+                                            Uzupełnij informacje
+                                        </a>
+                                    </div>
+
+                                    <p style="font-size:14px;line-height:1.6;">
+                                        Po zaktualizowaniu ogłoszenia kupujący, którzy
+                                        poprosili o dodatkowe informacje, otrzymają powiadomienie.
                                     </p>
-                                </div>
 
-                                <h3 style="font-size:17px;color:#182016;margin:28px 0 10px;">
-                                    Co należy zrobić?
-                                </h3>
+                                    <hr style="border:none;border-top:1px solid #E0E7E6;margin:28px 0;">
 
-                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
-                                    Aby udzielić kupującemu potrzebnych informacji, zaloguj się na swoje konto
-                                    i przejdź do sekcji <strong>Moje konto → Moje produkty</strong>.
-                                    Odszukaj produkt, wybierz opcję edycji i uzupełnij ogłoszenie
-                                    o informacje, o które pyta kupujący.
-                                </p>
+                                    <h3 style="font-size:17px;">
+                                        Produkt został już sprzedany?
+                                    </h3>
 
-                                <p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
-                                    Po zaktualizowaniu ogłoszenia kupujący otrzyma powiadomienie.
-                                </p>
-
-                                <div style="text-align:center;margin:28px 0;">
-                                    <a href="%s"
-                                       style="display:inline-block;background-color:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:5px;font-size:15px;font-weight:bold;">
-                                        Przejdź do Moich produktów
-                                    </a>
-                                </div>
-
-                                <div style="background-color:#F5F6F1;padding:18px;border-radius:6px;margin:25px 0;">
-                                    <p style="margin:0 0 10px;font-size:15px;font-weight:bold;color:#182016;">
-                                        Produkt został już sprzedany lub nie jest dostępny?
+                                    <p style="font-size:14px;line-height:1.6;">
+                                        Jeśli produkt nie jest już dostępny, możesz oznaczyć
+                                        go jako sprzedany, korzystając z poniższego linku.
                                     </p>
-                                    <p style="margin:0;font-size:14px;line-height:1.7;color:#333333;">
-                                        Jeśli produkt nie jest już dostępny, zmień jego status na
-                                        <strong>Wersja robocza</strong> w sekcji Moje produkty.
-                                        Dzięki temu ogłoszenie nie będzie dostępne dla kupujących.
+
+                                    <div style="text-align:center;margin:24px 0;">
+                                        <a href="%s"
+                                           style="display:inline-block;background:#1E3A3A;color:#ffffff;text-decoration:none;padding:13px 25px;border-radius:6px;font-weight:bold;">
+                                            Oznacz jako sprzedany
+                                        </a>
+                                    </div>
+
+                                    <p style="font-size:12px;color:#68736B;line-height:1.5;">
+                                        Linki są przeznaczone wyłącznie dla Ciebie.
+                                        Nie udostępniaj ich innym osobom.
                                     </p>
-                                </div>
+                                </td>
+                            </tr>
 
-                                <p style="font-size:14px;line-height:1.7;color:#555555;margin:25px 0 0;">
-                                    Dziękujemy za korzystanie z Kasoa!
-                                </p>
-                            </td>
-                        </tr>
+                            <tr>
+                                <td style="background:#182016;padding:22px;text-align:center;color:#ffffff;">
+                                    <p style="margin:0;font-size:13px;">
+                                        Dziękujemy za korzystanie z Kasoa!
+                                    </p>
+                                    <p style="margin:10px 0 0;font-size:12px;color:#B8C2B4;">
+                                        <a href="%s" style="color:#ffffff;text-decoration:none;">Kasoa.pl</a>
+                                    </p>
+                                </td>
+                            </tr>
 
-                        <tr>
-                            <td style="background-color:#182016;padding:22px 30px;text-align:center;">
-                                <p style="margin:0 0 8px;color:#ffffff;font-size:13px;">
-                                    <a href="%s" style="color:#ffffff;text-decoration:none;">kasoa.pl</a>
-                                </p>
-                                <p style="margin:0;color:#cccccc;font-size:12px;">
-                                    Wiadomość została wysłana automatycznie. Prosimy na nią nie odpowiadać.
-                                </p>
-                            </td>
-                        </tr>
-
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-    """.formatted(
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """.formatted(
                 safeProduct,
-                safeMessage,
-                escapeHtml(accountUrl),
-                escapeHtml(frontend)
+                safeEnquiry,
+                escapeHtml(updateUrl),
+                escapeHtml(soldUrl),
+                escapeHtml(baseURL)
         );
 
         sendHtmlEmail(email, subject, html);

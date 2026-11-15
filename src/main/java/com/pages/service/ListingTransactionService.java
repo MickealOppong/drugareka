@@ -3,6 +3,7 @@ package com.pages.service;
 import com.pages.dto.*;
 import com.pages.enums.*;
 import com.pages.exception.InvalidOperationException;
+import com.pages.exception.PhotoNotFoundException;
 import com.pages.model.*;
 import com.pages.repository.GlobalAddressRepo;
 import com.pages.repository.ListingOfferRepo;
@@ -26,13 +27,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 import static com.pages.specs.ListingSpecs.hasBrand;
 
@@ -57,7 +58,29 @@ public class ListingTransactionService {
     private final ListingOfferRepo listingOfferRepo;
     private final MessageSource messageSource;
     private final ShippingOptionService shippingOptionService;
-    private final ListingEnquiryService listingEnquiryService;
+
+
+    private static final Set<String> DIMENSION_REQUIRED_CATEGORIES = Set.of(
+            "automotive",
+            "furniture",
+            "home-garden",
+            "travel-luggage",
+            "sports-recreation"
+    );
+
+    private static final Set<String> MODEL_REQUIRED_CATEGORIES = Set.of(
+            "automotive",
+            "electronics",
+            "home-appliances",
+            "tools"
+    );
+
+    private static final Set<String> ITEM_NUMBER_REQUIRED_CATEGORIES = Set.of(
+            "automotive-parts",
+            "electronics",
+            "home-appliances"
+    );
+
 
 
 
@@ -78,7 +101,7 @@ public class ListingTransactionService {
     }
 
     @Transactional
-    public ResponseDto<Object> editSellerProduct(Jwt jwt, ProductData productData) {
+    public boolean editSellerProduct(Jwt jwt, ProductData productData) {
         Locale locale = LocaleContextHolder.getLocale();
         try {
             // =====================================================
@@ -86,20 +109,99 @@ public class ListingTransactionService {
             // =====================================================
             if (jwt == null) {
                 String msg = messageSource.getMessage("api.listing.auth.required", null, "Authentication required.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.UNAUTHORIZED.value())
-                        .build();
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
             }
 
             if (productData == null || productData.getId() == null) {
                 String msg = messageSource.getMessage("api.listing.id.required", null, "Listing ID is required.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.BAD_REQUEST.value())
-                        .build();
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
+            }
+
+            // 1. Validate product images
+            if (productData.getImages() == null
+                    || productData.getImages().length==0) {
+
+                throw new PhotoNotFoundException(
+                        "api.add_listing.product.image.error"
+                );
+            }
+
+            // 2. Safely extract category path
+            List<String> categories = productData.getCategoryPath() == null
+                    ? Collections.emptyList()
+                    : Arrays.stream(productData.getCategoryPath().split("/"))
+                    .map(String::trim)
+                    .map(value -> value.toLowerCase(Locale.ROOT))
+                    .filter(StringUtils::hasText)
+                    .toList();
+
+            // 3. Determine category requirements
+            boolean requiresDimensions = categories.stream()
+                    .anyMatch(DIMENSION_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresModel = categories.stream()
+                    .anyMatch(MODEL_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresItemNumber = categories.stream()
+                    .anyMatch(ITEM_NUMBER_REQUIRED_CATEGORIES::contains);
+
+            // 4. Validate dimensions
+            boolean missingDimensions =
+                    !StringUtils.hasText(productData.getHeight())
+                            || !StringUtils.hasText(productData.getWidth())
+                            || !StringUtils.hasText(productData.getDepth());
+
+            if (requiresDimensions && missingDimensions) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 5. Validate model
+            if (requiresModel && !StringUtils.hasText(productData.getModel())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.model.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 6. Validate OEM / part / product number
+            if (requiresItemNumber
+                    && !StringUtils.hasText(productData.getItemNumber())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.automotive.item_number.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 7. Validate personal collection city
+            if (productData.isPersonalCollectionAvailable()
+                    && !StringUtils.hasText(productData.getCollectionCity())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.city.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
             }
 
             // =====================================================
@@ -109,11 +211,7 @@ public class ListingTransactionService {
             AppUser appUser = appUserDetailsService.getAppUserByUsername(username);
             if (appUser == null) {
                 String msg = messageSource.getMessage("api.listing.user.not_found", null, "User profile not found.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.NOT_FOUND.value())
-                        .build();
+                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,msg);
             }
 
             // =====================================================
@@ -167,11 +265,7 @@ public class ListingTransactionService {
                     log.warn("Security Shield: Unauthorized modification attempt on Listing [{}] by Vendor [{}]",
                             inventoryItem.getId(), sellerProfile.getId());
                     String msg = messageSource.getMessage("api.listing.edit.unauthorized", null, "You are not authorized to edit this listing.", locale);
-                    return ResponseDto.builder()
-                            .data(false)
-                            .message(msg)
-                            .httpStatus(HttpStatus.FORBIDDEN.value())
-                            .build();
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,msg);
                 }
             }
 
@@ -180,21 +274,13 @@ public class ListingTransactionService {
             // =====================================================
             if (inventoryItem.getStatus() == InventoryStatus.RESERVED) {
                 String msg = messageSource.getMessage("api.listing.edit.reserved", null, "This listing is currently reserved and cannot be modified.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.CONFLICT.value())
-                        .build();
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,msg);
             }
 
             if (inventoryItem.getStatus() == InventoryStatus.SOLD) {
 
                 String msg = messageSource.getMessage("api.listing.edit.sold", null, "A sold listing cannot be edited.", locale);
-                return ResponseDto.builder()
-                        .data(false)
-                        .message(msg)
-                        .httpStatus(HttpStatus.CONFLICT.value())
-                        .build();
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,msg);
             }
 // =====================================================
 // 8. UPDATE PRODUCT CATALOG
@@ -276,28 +362,369 @@ public class ListingTransactionService {
 // =====================================================
 // 12. UPDATE LISTING STATUS
 // =====================================================
-            listing.setListingStatus(getListingStatus(productData.getStatus()));
+            ListingStatus status = getListingStatus(productData.getStatus());
+            listing.setListingStatus(status);
+            listing.setConfirmationStatus(status==ListingStatus.PUBLISHED?null:listing.getConfirmationStatus());
             listingTransactionRepo.save(listing);
-            listingEnquiryService.notifyEnquiringBuyers(listing.getId());
 
 // =====================================================
 // 13. RESPONSE
 // =====================================================
             String successMsg = messageSource.getMessage("api.listing.edit.success", null, "Listing updated successfully.", locale);
-            return ResponseDto.builder()
-                    .data(true)
-                    .message(successMsg)
-                    .httpStatus(HttpStatus.OK.value())
-                    .build();
+           return true;
+        } catch (ResponseStatusException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getReason());
         } catch (Exception e) {
-            log.error("Error updating seller listing {}", productData != null ? productData.getId() : null, e);
-            return ResponseDto.builder()
-                    .data(false)
-                    .message(e.getMessage())
-                    .httpStatus(HttpStatus.BAD_REQUEST.value())
-                    .build();
+            if(isDuplicateMediaItemFileHash(e)){
+                throw new DuplicateKeyException(
+                        messageSource.getMessage("api.add_listing.product.duplicate.error",null,LocaleContextHolder.getLocale())
+                );
+            }
+            throw e;
         }
     }
+
+
+    @Transactional
+    public ListingTransaction editSellerProduct(
+            SellerProfile seller,
+            ProductData productData) {
+
+        try {
+            Locale locale = LocaleContextHolder.getLocale();
+
+            // 1. Validate input
+            if (seller == null) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            }
+
+            if (productData == null || productData.getId() == null) {
+                String msg = messageSource.getMessage(
+                        "api.listing.id.required",
+                        null,
+                        "Listing ID is required.",
+                        locale
+                );
+
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
+            }
+
+            // 2. Validate product images
+            if (productData.getImages() == null
+                    || productData.getImages().length == 0) {
+
+                throw new PhotoNotFoundException(
+                        "api.add_listing.product.image.error"
+                );
+            }
+
+            // 3. Safely extract category path
+            List<String> categories = productData.getCategoryPath() == null
+                    ? Collections.emptyList()
+                    : Arrays.stream(productData.getCategoryPath().split("/"))
+                    .map(String::trim)
+                    .map(value -> value.toLowerCase(Locale.ROOT))
+                    .filter(StringUtils::hasText)
+                    .toList();
+
+            // 4. Determine category requirements
+            boolean requiresDimensions = categories.stream()
+                    .anyMatch(DIMENSION_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresModel = categories.stream()
+                    .anyMatch(MODEL_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresItemNumber = categories.stream()
+                    .anyMatch(ITEM_NUMBER_REQUIRED_CATEGORIES::contains);
+
+            // 5. Validate dimensions
+            boolean missingDimensions =
+                    !StringUtils.hasText(productData.getHeight())
+                            || !StringUtils.hasText(productData.getWidth())
+                            || !StringUtils.hasText(productData.getDepth());
+
+            if (requiresDimensions && missingDimensions) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.error",
+                                null,
+                                locale
+                        )
+                );
+            }
+
+            // 6. Validate model
+            if (requiresModel && !StringUtils.hasText(productData.getModel())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.model.error",
+                                null,
+                                locale
+                        )
+                );
+            }
+
+            // 7. Validate OEM / part / product number
+            if (requiresItemNumber
+                    && !StringUtils.hasText(productData.getItemNumber())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.automotive.item_number.error",
+                                null,
+                                locale
+                        )
+                );
+            }
+
+            // 8. Validate personal collection city
+            if (productData.isPersonalCollectionAvailable()
+                    && !StringUtils.hasText(productData.getCollectionCity())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.city.error",
+                                null,
+                                locale
+                        )
+                );
+            }
+
+            // 9. Validate seller eligibility
+            boolean isNotEligible =
+                    seller.getStatus() == SellerStatus.BLOCKED
+                            || seller.getStatus() == SellerStatus.SUSPENDED
+                            || seller.getStatus() == SellerStatus.PENDING;
+
+            if (isNotEligible) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        messageSource.getMessage(
+                                "api.add_listing.seller.forbidden",
+                                null,
+                                locale
+                        )
+                );
+            }
+
+            // 10. Find existing listing
+            ListingTransaction listing = listingTransactionRepo
+                    .findById(productData.getId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            messageSource.getMessage(
+                                    "api.listing.not_found",
+                                    null,
+                                    "Listing not found.",
+                                    locale
+                            )
+                    ));
+            // 11. Get inventory
+            InventoryItem inventoryItem = listing.getInventory();
+
+            if (inventoryItem == null) {
+                throw new IllegalStateException(
+                        messageSource.getMessage(
+                                "api.listing.inventory.missing",
+                                null,
+                                "Inventory records missing for listing.",
+                                locale
+                        )
+                );
+            }
+
+            // 12. Verify seller ownership
+            if (inventoryItem.getSeller() == null
+                    || !inventoryItem.getSeller().getId().equals(seller.getId())) {
+
+                log.warn(
+                        "Unauthorized modification attempt on Listing [{}] by Seller [{}]",
+                        listing.getId(),
+                        seller.getId()
+                );
+
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        messageSource.getMessage(
+                                "api.listing.edit.unauthorized",
+                                null,
+                                "You are not authorized to edit this listing.",
+                                locale
+                        )
+                );
+            }
+
+            // 13. Prevent editing reserved or sold items
+            if (inventoryItem.getStatus() == InventoryStatus.RESERVED) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        messageSource.getMessage(
+                                "api.listing.edit.reserved",
+                                null,
+                                "This listing is currently reserved and cannot be modified.",
+                                locale
+                        )
+                );
+            }
+
+            if (inventoryItem.getStatus() == InventoryStatus.SOLD) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        messageSource.getMessage(
+                                "api.listing.edit.sold",
+                                null,
+                                "A sold listing cannot be edited.",
+                                locale
+                        )
+                );
+            }
+
+            // 14. Update product catalog
+            ProductCatalog productCatalog = inventoryItem.getProductCatalog();
+
+            if (productCatalog == null) {
+                throw new IllegalStateException(
+                        messageSource.getMessage(
+                                "api.listing.catalog.missing",
+                                null,
+                                "Product catalog entry not found.",
+                                locale
+                        )
+                );
+            }
+
+            Brand retrievedBrand = brandService.findByNameOrCreate(productData.getBrand());
+
+            if (productCatalog.getBrand() == null
+                    || !productCatalog.getBrand().getName()
+                    .equalsIgnoreCase(retrievedBrand.getName())) {
+
+                productCatalog.setBrand(retrievedBrand);
+            }
+
+            Category newCategory = categoryService.getCategoryByPath(
+                    productData.getCategoryPath()
+            );
+
+            if (productCatalog.getCategory() == null
+                    || !productCatalog.getCategory().getName()
+                    .equalsIgnoreCase(newCategory.getName())) {
+
+                productCatalog.setCategory(newCategory);
+            }
+
+            productCatalog.setName(productData.getName());
+            productCatalog.setDescription(productData.getDescription());
+            productCatalog.setSlug(UtilService.formatNameToSlug(productData.getName()));
+
+            productCatalogService.save(productCatalog);
+
+            // 15. Update inventory
+            inventoryItem.setDeliveryInfo(productData.getShippingInfo());
+            inventoryItem.setItemSize(
+                    inventoryItemService.getItemDimension(productData.getItemSize())
+            );
+
+            inventoryItem.setPersonalCollectionAvailable(
+                    productData.isPersonalCollectionAvailable()
+            );
+
+            inventoryItem.setCollectionCity(
+                    productData.isPersonalCollectionAvailable()
+                            ? productData.getCollectionCity()
+                            : null
+            );
+
+            if (StringUtils.hasText(productData.getProductionYear())) {
+                inventoryItem.setProductionYear(productData.getProductionYear());
+            }
+
+            if (StringUtils.hasText(productData.getWidth())) {
+                inventoryItem.setWidth(productData.getWidth());
+            }
+
+            if (StringUtils.hasText(productData.getHeight())) {
+                inventoryItem.setHeight(productData.getHeight());
+            }
+
+            if (StringUtils.hasText(productData.getDepth())) {
+                inventoryItem.setDepth(productData.getDepth());
+            }
+
+            if (StringUtils.hasText(productData.getModel())) {
+                inventoryItem.setModel(productData.getModel());
+            }
+
+            if (StringUtils.hasText(productData.getItemNumber())) {
+                inventoryItem.setItemNumber(productData.getItemNumber());
+            }
+
+            ProductCondition newCondition =
+                    productConditionService.getConditionByName(productData.getCondition());
+
+            if (inventoryItem.getProductCondition() == null
+                    || !inventoryItem.getProductCondition().getName()
+                    .equalsIgnoreCase(newCondition.getName())) {
+
+                inventoryItem.setProductCondition(newCondition);
+            }
+
+            inventoryItem.setQuantity(Long.parseLong(productData.getQuantity()));
+            inventoryItem.setSku(productData.getSku());
+
+            inventoryItemService.save(inventoryItem);
+
+            // 16. Update price
+            InventoryItemPrice currentPrice =
+                    inventoryItemPriceService.getPrices(inventoryItem.getId());
+
+            BigDecimal oldPrice = currentPrice.getSellerNewPrice();
+            BigDecimal newPrice = productData.getPrice();
+            BigDecimal minPrice = productData.getMinPrice();
+
+            if (newPrice == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.listing.product.price.empty",
+                                null,
+                                "Price is required.",
+                                locale
+                        )
+                );
+            }
+
+            currentPrice.setSellerOldPrice(oldPrice);
+            currentPrice.setSellerNewPrice(newPrice);
+            currentPrice.setServiceCharge(pricingService.getServiceCharge(newPrice));
+            currentPrice.setInventoryItem(inventoryItem);
+            currentPrice.setSellerMinPrice(minPrice);
+            currentPrice.setReason("Listing price updated");
+
+            inventoryItemPriceService.savePrice(currentPrice);
+
+            // 17. Update media
+            mediaService.updateMediaFile(
+                    productData.getImages(),
+                    productData.getImageSortOrder(),
+                    inventoryItem
+            );
+
+            // 18. Update listing status
+            listing.setListingStatus(getListingStatus(productData.getStatus()));
+
+            return listingTransactionRepo.save(listing);
+        }catch (Exception e){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
+        }
+    }
+
+
+
     @Transactional
     public ResponseDto<Object> addSellerProduct(Jwt jwt, ProductData productData) {
         Locale locale = LocaleContextHolder.getLocale();
@@ -309,6 +736,94 @@ public class ListingTransactionService {
                         .message(msg)
                         .build();
             }
+
+            // 1. Validate product images
+            if (productData.getImages() == null
+                    || productData.getImages().length==0) {
+
+                throw new PhotoNotFoundException(
+                        "api.add_listing.product.image.error"
+                );
+            }
+
+            // 2. Safely extract category path
+            List<String> categories = productData.getCategoryPath() == null
+                    ? Collections.emptyList()
+                    : Arrays.stream(productData.getCategoryPath().split("/"))
+                    .map(String::trim)
+                    .map(value -> value.toLowerCase(Locale.ROOT))
+                    .filter(StringUtils::hasText)
+                    .toList();
+
+            // 3. Determine category requirements
+            boolean requiresDimensions = categories.stream()
+                    .anyMatch(DIMENSION_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresModel = categories.stream()
+                    .anyMatch(MODEL_REQUIRED_CATEGORIES::contains);
+
+            boolean requiresItemNumber = categories.stream()
+                    .anyMatch(ITEM_NUMBER_REQUIRED_CATEGORIES::contains);
+
+            // 4. Validate dimensions
+            boolean missingDimensions =
+                    !StringUtils.hasText(productData.getHeight())
+                            || !StringUtils.hasText(productData.getWidth())
+                            || !StringUtils.hasText(productData.getDepth());
+
+            if (requiresDimensions && missingDimensions) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 5. Validate model
+            if (requiresModel && !StringUtils.hasText(productData.getModel())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.product.model.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 6. Validate OEM / part / product number
+            if (requiresItemNumber
+                    && !StringUtils.hasText(productData.getItemNumber())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.automotive.item_number.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
+            // 7. Validate personal collection city
+            if (productData.isPersonalCollectionAvailable()
+                    && !StringUtils.hasText(productData.getCollectionCity())) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        messageSource.getMessage(
+                                "api.add_listing.city.error",
+                                null,
+                                LocaleContextHolder.getLocale()
+                        )
+                );
+            }
+
             String username = jwt.getSubject();
             AppUser appUser = appUserDetailsService.getAppUserByUsername(username);
 
@@ -637,6 +1152,19 @@ public class ListingTransactionService {
         if(jwt==null){
             return ProductListResponse.builder().build();
         }
+        ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
+        if (listingTransaction != null) {
+            List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());
+            InventoryItemPrice price = inventoryItemPriceService.getPrices(listingTransaction.getInventory().getId());
+            BigDecimal serviceCharge = pricingService.getServiceCharge(price.getSellerNewPrice());
+            BigDecimal shipmentCost  = shippingOptionService.getItemShippingPrice(listingTransaction.getInventory(),DeliveryOption.HOME_COURIER.name());
+            return ListingTransaction.toProductListResponse(listingTransaction, mediaList, price,serviceCharge,shipmentCost);
+        }
+        return ProductListResponse.builder().build();
+    }
+
+    @Transactional(readOnly = true)
+    public ProductListResponse getProductById(Long listingId) {
         ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());

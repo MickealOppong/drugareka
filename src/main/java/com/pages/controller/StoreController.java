@@ -10,6 +10,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -54,6 +55,8 @@ public class StoreController {
     private OrderReturnService orderReturnService;
     @Autowired
     private PaymentService paymentService;
+    @Autowired
+    private ListingEnquiryService listingEnquiryService;
 
 
 
@@ -69,8 +72,13 @@ public class StoreController {
     }
 
     @GetMapping("/brands")
-    public List<BrandResponse >allBrands(String category){
+    public List<BrandResponse >allBrandsByCategory(String category){
         return brandService.allBrands(category);
+    }
+
+    @GetMapping("/brands/all")
+    public List<BrandResponse >allBrands(){
+        return brandService.allBrands();
     }
 
 
@@ -91,8 +99,8 @@ public class StoreController {
     }
 
     @GetMapping("listing/{listingId}")
-    public ListTransResponse getListItem(@RequestParam Long listingId){
-        return   listingTransactionService.getProductByListingId(listingId);
+    public ProductListResponse getListItem(@RequestParam Long listingId){
+        return   listingTransactionService.getProductById(listingId);
     }
 
     @GetMapping("listing/slug")
@@ -150,5 +158,11 @@ public class StoreController {
     public List<CategoryTreeDto> allStoreCategoriesTree(){
         return categoryService.getCategoryTree();
     }
+
+
+
+
+
+
 
 }

@@ -53,26 +53,6 @@ public class ProductController {
     @Autowired
     private MessageSource messageSource;
 
-    private static final Set<String> DIMENSION_REQUIRED_CATEGORIES = Set.of(
-            "automotive",
-            "furniture",
-            "home-garden",
-            "travel-luggage",
-            "sports-recreation"
-    );
-
-    private static final Set<String> MODEL_REQUIRED_CATEGORIES = Set.of(
-            "automotive",
-            "electronics",
-            "home-appliances",
-            "tools"
-    );
-
-    private static final Set<String> ITEM_NUMBER_REQUIRED_CATEGORIES = Set.of(
-            "automotive-parts",
-            "electronics",
-            "home-appliances"
-    );
 
 
     @PreAuthorize("hasAuthority('ROLE_USER')")
@@ -81,94 +61,7 @@ public class ProductController {
             @AuthenticationPrincipal Jwt jwt,
             @ModelAttribute @Valid ProductData productData) {
 
-        // 1. Validate product images
-        if (productData.getImages() == null
-                || productData.getImages().length==0) {
 
-            throw new PhotoNotFoundException(
-                    "api.add_listing.product.image.error"
-            );
-        }
-
-        // 2. Safely extract category path
-        List<String> categories = productData.getCategoryPath() == null
-                ? Collections.emptyList()
-                : Arrays.stream(productData.getCategoryPath().split("/"))
-                .map(String::trim)
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .filter(StringUtils::hasText)
-                .toList();
-
-        // 3. Determine category requirements
-        boolean requiresDimensions = categories.stream()
-                .anyMatch(DIMENSION_REQUIRED_CATEGORIES::contains);
-
-        boolean requiresModel = categories.stream()
-                .anyMatch(MODEL_REQUIRED_CATEGORIES::contains);
-
-        boolean requiresItemNumber = categories.stream()
-                .anyMatch(ITEM_NUMBER_REQUIRED_CATEGORIES::contains);
-
-        // 4. Validate dimensions
-        boolean missingDimensions =
-                !StringUtils.hasText(productData.getHeight())
-                        || !StringUtils.hasText(productData.getWidth())
-                        || !StringUtils.hasText(productData.getDepth());
-
-        if (requiresDimensions && missingDimensions) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.product.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
-
-        // 5. Validate model
-        if (requiresModel && !StringUtils.hasText(productData.getModel())) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.product.model.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
-
-        // 6. Validate OEM / part / product number
-        if (requiresItemNumber
-                && !StringUtils.hasText(productData.getItemNumber())) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.automotive.item_number.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
-
-        // 7. Validate personal collection city
-        if (productData.isPersonalCollectionAvailable()
-                && !StringUtils.hasText(productData.getCollectionCity())) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.city.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
-
-        // 8. Save listing
         return listingTransactionService.addSellerProduct(jwt, productData);
     }
 
@@ -222,77 +115,9 @@ public class ProductController {
 
     //@PreAuthorize("hasAuthority('ROLE_ADMIN') || hasAuthority('ROLE_SELLER')")
     @PutMapping(value = "/listing/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseDto<Object> editListing(
+    public boolean editListing(
             @AuthenticationPrincipal Jwt jwt,
             @ModelAttribute @Valid ProductData productData) {
-
-        if (productData.getImages() == null || productData.getImages().length==0) {
-            throw new PhotoNotFoundException(
-                    "api.add_listing.product.image.error"
-            );
-        }
-
-        // Tokenize category path safely
-        List<String> categories = productData.getCategoryPath() == null
-                ? Collections.emptyList()
-                : Arrays.stream(productData.getCategoryPath().split("/"))
-                .map(category -> category.trim().toLowerCase(Locale.ROOT))
-                .filter(StringUtils::hasText)
-                .toList();
-
-        // Dimension requirements
-        Set<String> dimensionKeys = Set.of(
-                "automotive",
-                "furniture",
-                "home-garden",
-                "travel-luggage",
-                "sports-recreation"
-        );
-
-        boolean requiresDimensions = categories.stream()
-                .anyMatch(dimensionKeys::contains);
-
-        boolean missingDimensions =
-                !StringUtils.hasText(productData.getHeight())
-                        || !StringUtils.hasText(productData.getWidth())
-                        || !StringUtils.hasText(productData.getDepth());
-
-        if (requiresDimensions && missingDimensions) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.product.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
-
-        // Automotive item number requirement
-        Set<String> itemNumberKeys = Set.of(
-                "automotive-parts",
-                "electronics",
-                "home-appliances",
-                "tools"
-        );
-
-        boolean requiresItemNumber = categories.stream()
-                .anyMatch(itemNumberKeys::contains);
-
-        boolean missingItemNumber =
-                !StringUtils.hasText(productData.getItemNumber());
-
-
-        if (requiresItemNumber && missingItemNumber) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    messageSource.getMessage(
-                            "api.add_listing.product.item_number.error",
-                            null,
-                            LocaleContextHolder.getLocale()
-                    )
-            );
-        }
 
         return listingTransactionService.editSellerProduct(jwt, productData);
     }

@@ -137,6 +137,16 @@ public class BrandService {
         }).toList();
     }
 
+    public List<BrandResponse> allBrands(){
+              return  brandRepo.findAll().stream().map(brand->{
+            return BrandResponse.builder()
+                    .id(brand.getId())
+                    .name(brand.getName())
+                    .slug(brand.getSlug())
+                    .sortOrder(brand.getSortOrder())
+                    .build();
+        }).toList();
+    }
     public List<BrandResponse> allBrands(String category){
 
         Specification<Brand> specification = Specification
