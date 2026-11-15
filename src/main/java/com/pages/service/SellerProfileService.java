@@ -2,6 +2,7 @@ package com.pages.service;
 
 import com.pages.dto.*;
 import com.pages.enums.ListingStatus;
+import com.pages.enums.PayoutStatus;
 import com.pages.enums.SellerStatus;
 import com.pages.exception.EntityNotFoundException;
 import com.pages.exception.InvalidOperationException;
@@ -38,6 +39,7 @@ public class SellerProfileService {
 
     private final SellerProfileRepo sellerProfileRepo;
     private final AppUserDetailsService appUserDetailsService;
+    private final SellerPayoutRepo sellerPayoutRepo;
     private final MessageSource messageSource;
 
 
@@ -450,7 +452,10 @@ public class SellerProfileService {
                 BigDecimal settlements = sellerProfile.getTotalSettlement()!=null?sellerProfile.getTotalSettlement():BigDecimal.ZERO;
               BigDecimal sales = sellerProfile.getTotalSales()!=null?sellerProfile.getTotalSales():BigDecimal.ZERO;
 
-               return sales.add(settlements);
+              BigDecimal chargeBacks = sellerPayoutRepo.findAllByStatus(PayoutStatus.CHARGE_BACK)
+                      .stream().map(SellerPayout::getAmount).reduce(BigDecimal.ZERO,BigDecimal::add);
+
+               return sales.add(settlements).add(chargeBacks);
             }
             return BigDecimal.ZERO;
         }
