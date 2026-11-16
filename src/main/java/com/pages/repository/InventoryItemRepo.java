@@ -42,5 +42,15 @@ public interface InventoryItemRepo extends JpaRepository<InventoryItem,Long> {
             @Param("time") Instant time
     );
 
+    @Query("""
+    SELECT DISTINCT i.collectionCity
+    FROM InventoryItem i
+    WHERE i.personalCollectionAvailable = true
+      AND i.collectionCity IS NOT NULL
+      AND TRIM(i.collectionCity) <> ''
+    ORDER BY i.collectionCity
+""")
+    List<String> findDistinctCollectionCities();
+
     List<InventoryItem> findByStatusAndReservedBy(InventoryStatus status,Long reservedBy);
 }

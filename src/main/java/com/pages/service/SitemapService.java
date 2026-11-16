@@ -21,7 +21,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -58,6 +60,13 @@ public class SitemapService {
 
             // Static public pages
             urlCount += writeStaticPages(writer);
+
+            // Personal-collection landing pages, derived from published listings
+            // with available inventory. collectionCity is already stored as
+            // the combined city/region value, so it is encoded without rebuilding it.
+            if (urlCount < MAX_URLS) {
+                urlCount += writeCollectionPages(writer, MAX_URLS - urlCount);
+            }
 
             // Active categories
             List<Category> categories =
@@ -114,6 +123,75 @@ public class SitemapService {
         writeUrl(writer, baseUrl + "/shop/categories", null);
 
         return 3;
+    }
+
+    private int writeCollectionPages(XMLStreamWriter writer, int remaining)
+            throws XMLStreamException {
+
+        if (remaining <= 0) {
+            return 0;
+        }
+
+        Set<String> collectionCities = new LinkedHashSet<>();
+        int pageNumber = 0;
+
+        // Use the same published/available inventory criteria as the product
+        // sitemap, so we only expose collection locations with live listings.
+        while (collectionCities.size() < remaining) {
+
+            Page<ListingTransaction> page =
+                    listingTransactionRepo.findSitemapListings(
+                            ListingStatus.PUBLISHED,
+                            InventoryStatus.AVAILABLE,
+                            PageRequest.of(
+                                    pageNumber,
+                                    PAGE_SIZE,
+                                    Sort.by(
+                                            Sort.Direction.DESC,
+                                            "createdAt"
+                                    )
+                            )
+                    );
+
+            if (page.isEmpty()) {
+                break;
+            }
+
+            for (ListingTransaction listing : page.getContent()) {
+
+                if (listing.getInventory() == null) {
+                    continue;
+                }
+
+                String collectionCity = listing.getInventory().getCollectionCity();
+
+                if (collectionCity != null && !collectionCity.isBlank()) {
+                    collectionCities.add(collectionCity.trim());
+                }
+
+                if (collectionCities.size() >= remaining) {
+                    break;
+                }
+            }
+
+            if (!page.hasNext()) {
+                break;
+            }
+
+            pageNumber++;
+        }
+
+        for (String collectionCity : collectionCities) {
+
+            String url = baseUrl + "/shop?category=all_0"
+                    + "&isCollectionAvailable=true"
+                    + "&collectionCity="
+                    + URLEncoder.encode(collectionCity, StandardCharsets.UTF_8);
+
+            writeUrl(writer, url, null);
+        }
+
+        return collectionCities.size();
     }
 
     private int writeListings(XMLStreamWriter writer, int remaining)
