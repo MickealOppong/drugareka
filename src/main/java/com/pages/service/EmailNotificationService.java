@@ -302,14 +302,14 @@ public class EmailNotificationService {
         String lower = branded.toLowerCase(Locale.ROOT);
         int bodyOpen = lower.indexOf("<body");
         int bodyContentStart = bodyOpen >= 0 ? lower.indexOf('>', bodyOpen) + 1 : 0;
-        int openingEnd = Math.min(branded.length(), bodyContentStart + 4500);
-        String opening = branded.substring(bodyContentStart, openingEnd);
-
-        // Recognise the actual logo in the header, not merely a brand-coloured
-        // button or a mention of Kasoa in the email copy.
-        boolean hasHeader = opening.contains("kasoa<span")
-                || opening.matches("(?is).*?>\\s*kasoa\\.pl\\s*</div>.*")
-                || opening.contains("<!-- HEADER -->");
+        // Inspect the complete message, not an arbitrary prefix. Existing
+        // templates place their branded header at different nesting depths.
+        // A single existing brand header is enough; never prepend a second one.
+        boolean hasHeader = branded.contains("<!-- HEADER -->")
+                || branded.contains("<!-- ORIGINAL HEADER")
+                || java.util.regex.Pattern.compile("(?is)<div[^>]*>\\s*kasoa\\.pl\\s*</div>")
+                .matcher(branded).find()
+                || branded.contains("kasoa<span");
         if (!hasHeader) {
             branded = bodyOpen >= 0 && bodyContentStart > 0
                     ? branded.substring(0, bodyContentStart) + header + branded.substring(bodyContentStart)
@@ -346,12 +346,14 @@ public class EmailNotificationService {
                     "background-color:#182016;padding:24px 30px;border:12px solid #F5F6F1;text-align:center;");
         }
 
+        // Footer templates also vary in length and nesting. Search the complete
+        // message so a long email cannot accidentally receive a second footer.
+        lower = branded.toLowerCase(Locale.ROOT);
+        boolean hasFooter = branded.contains("<!-- FOOTER -->")
+                || branded.contains("<!-- ORIGINAL FOOTER")
+                || branded.contains("Dobre rzeczy. Drugie życie.")
+                || branded.contains("Good things. A second chance.");
         int bodyEnd = lower.lastIndexOf("</body>");
-        int footerSearchStart = Math.max(0, (bodyEnd >= 0 ? bodyEnd : branded.length()) - 4200);
-        String ending = branded.substring(footerSearchStart, bodyEnd >= 0 ? bodyEnd : branded.length());
-        boolean hasFooter = ending.contains("Dobre rzeczy. Drugie życie.")
-                || ending.contains("Good things. A second chance.")
-                || ending.contains("<!-- FOOTER -->");
         if (!hasFooter) {
             branded = bodyEnd >= 0
                     ? branded.substring(0, bodyEnd) + footer + branded.substring(bodyEnd)
