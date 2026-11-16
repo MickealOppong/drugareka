@@ -77,7 +77,6 @@ public class ListingTransactionService {
 
     private static final Set<String> ITEM_NUMBER_REQUIRED_CATEGORIES = Set.of(
             "automotive-parts",
-            "electronics",
             "home-appliances"
     );
 
@@ -310,7 +309,7 @@ public class ListingTransactionService {
             inventoryItem.setItemSize(inventoryItemService.getItemDimension(productData.getItemSize()));
             inventoryItem.setPersonalCollectionAvailable(productData.isPersonalCollectionAvailable());
             inventoryItem.setCollectionCity(productData.getCollectionCity());
-            inventoryItem.setQuantity(Long.valueOf(productData.getQuantity()));
+            inventoryItem.setQuantity(productData.getQuantity());
 
             if (StringUtils.hasText(productData.getProductionYear())) {
                 inventoryItem.setProductionYear(productData.getProductionYear());
@@ -633,7 +632,7 @@ public class ListingTransactionService {
             inventoryItem.setPersonalCollectionAvailable(
                     productData.isPersonalCollectionAvailable()
             );
-            inventoryItem.setQuantity(Long.valueOf(productData.getQuantity()));
+            inventoryItem.setQuantity(productData.getQuantity());
 
             inventoryItem.setCollectionCity(
                     productData.isPersonalCollectionAvailable()
@@ -720,8 +719,8 @@ public class ListingTransactionService {
             listing.setListingStatus(getListingStatus(productData.getStatus()));
 
             return listingTransactionRepo.save(listing);
-        }catch (Exception e){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());
+        }catch (ResponseStatusException e){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getReason());
         }
     }
 
