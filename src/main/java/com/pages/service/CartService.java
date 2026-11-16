@@ -371,6 +371,7 @@ public class CartService {
                     CartItem cartItem = CartItem.builder()
                             .cart(cart)
                             .inventoryItem(inventoryItem)
+                            .quantity(inventoryItem.getQuantity())
                             .listingId(targetListingId)
                             .price(price.getSellerNewPrice())
                             .serviceCharge(pricingService.getServiceCharge(price.getSellerNewPrice()))
@@ -504,6 +505,7 @@ public class CartService {
                     CartItem cartItem = CartItem.builder()
                             .cart(cart)
                             .inventoryItem(inventoryItem)
+                            .quantity(inventoryItem.getQuantity())
                             .listingId(targetListingId)
                             .price(offer)
                             .serviceCharge(pricingService.getServiceCharge(offer))
@@ -670,6 +672,7 @@ public class CartService {
                                     : BigDecimal.ZERO)
                             .image(media != null ? media.getImage() : null)
                             .productName(productName)
+                            .quantity(cartItem.getQuantity())
                             .reservedUntil(cartItem.getReservedUntil())
                             .sellerId(cartItem.getInventoryItem().getSeller().getId())
                             .build();

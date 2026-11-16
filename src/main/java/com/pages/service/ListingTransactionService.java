@@ -310,6 +310,7 @@ public class ListingTransactionService {
             inventoryItem.setItemSize(inventoryItemService.getItemDimension(productData.getItemSize()));
             inventoryItem.setPersonalCollectionAvailable(productData.isPersonalCollectionAvailable());
             inventoryItem.setCollectionCity(productData.getCollectionCity());
+            inventoryItem.setQuantity(Long.valueOf(productData.getQuantity()));
 
             if (StringUtils.hasText(productData.getProductionYear())) {
                 inventoryItem.setProductionYear(productData.getProductionYear());
@@ -333,7 +334,7 @@ public class ListingTransactionService {
             if (!inventoryItem.getProductCondition().getName().equalsIgnoreCase(newCondition.getName())) {
                 inventoryItem.setProductCondition(newCondition);
             }
-            inventoryItem.setQuantity(Long.parseLong(productData.getQuantity()));
+            inventoryItem.setQuantity(productData.getQuantity());
             inventoryItem.setSku(productData.getSku());
             inventoryItemService.save(inventoryItem);
 // =====================================================
@@ -632,6 +633,7 @@ public class ListingTransactionService {
             inventoryItem.setPersonalCollectionAvailable(
                     productData.isPersonalCollectionAvailable()
             );
+            inventoryItem.setQuantity(Long.valueOf(productData.getQuantity()));
 
             inventoryItem.setCollectionCity(
                     productData.isPersonalCollectionAvailable()
@@ -673,7 +675,7 @@ public class ListingTransactionService {
                 inventoryItem.setProductCondition(newCondition);
             }
 
-            inventoryItem.setQuantity(Long.parseLong(productData.getQuantity()));
+            inventoryItem.setQuantity(productData.getQuantity());
             inventoryItem.setSku(productData.getSku());
 
             inventoryItemService.save(inventoryItem);
@@ -864,9 +866,10 @@ public class ListingTransactionService {
                     .shippingInfo(productData.getShippingInfo())
                     .itemSize(productData.getItemSize())
                     .depth(productData.getDepth())
-                    .quantity(Long.parseLong(productData.getQuantity()))
+                    .quantity(productData.getQuantity())
                     .width(productData.getWidth())
                     .height(productData.getHeight())
+                    .quantity(productData.getQuantity())
                     .personalCollectionAvailable(productData.isPersonalCollectionAvailable())
                     .collectionCity(productData.getCollectionCity())
                     .productionYear(productData.getProductionYear())

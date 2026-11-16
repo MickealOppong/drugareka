@@ -141,6 +141,7 @@ public class ListingOrderService {
                     .serviceCharge(cartItem.getServiceCharge())
                     .sellerNameSnapshot(sellerName)
                     .shippingMethod(cart.getShippingMethod())
+                    .quantity(cartItem.getQuantity())
                     .productBrandSnapshot(inventoryItem.getProductCatalog().getBrand().getName())
                     .productConditionSnapshot(inventoryItem.getProductCondition().getName())
                     .productNameSnapshot(inventoryItem.getProductCatalog().getName())

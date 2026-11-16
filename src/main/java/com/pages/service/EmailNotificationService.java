@@ -259,219 +259,182 @@ public class EmailNotificationService {
                 .replaceAll("(?i)#182016", "#182016");
 
         String header = """
-        <!-- HEADER -->
-        <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
-               style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#68764B;border-radius:14px;overflow:hidden;">
-            <tr>
-                <td align="center" style="padding:26px 20px;background-color:#68764B;border:12px solid #F5F6F1;border-radius:14px;text-align:center;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:27px;line-height:34px;
-                                font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;">
-                        kasoa<span style="font-weight:400;color:#E4E8D9;">.pl</span>
-                    </div>
-                    <div style="margin-top:5px;font-family:Arial,Helvetica,sans-serif;
-                                font-size:12px;line-height:18px;color:#E9EDDF;">
-                        Druga ręka. Dobre rzeczy. Mniej odpadów.
-                    </div>
-                </td>
-            </tr>
-        </table>
-        """;
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse;">
+                <tr>
+                    <td align="left" style="background-color:#68764B;padding:28px 30px;border:12px solid #F5F6F1;">
+                        <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:1;
+                                    font-weight:800;letter-spacing:-1px;color:#FFFFFF;">
+                            kasoa<span style="font-weight:400;color:#E9EDDF;">.pl</span>
+                        </div>
+                        <div style="margin-top:10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                                    line-height:18px;color:#E9EDDF;letter-spacing:.5px;">
+                            DRUGA RĘKA · BEZPIECZNE ZAKUPY
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            """;
 
         String footer = """
-        <!-- FOOTER -->
-        <table role="presentation" width="94%" cellpadding="0" cellspacing="0" border="0"
-               style="width:94%;max-width:560px;margin:18px auto;border-collapse:separate;border-spacing:0;background-color:#182016;border-radius:14px;overflow:hidden;">
-            <tr>
-                <td align="center" style="padding:25px 20px;background-color:#182016;border:12px solid #F5F6F1;border-radius:14px;text-align:center;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:24px;
-                                font-weight:800;color:#FFFFFF;">
-                        kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span>
-                    </div>
-                    <div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:11px;
-                                line-height:18px;color:#AEB69D;">
-                        Dobre rzeczy zasługują na drugie życie.
-                    </div>
-                    <div style="margin-top:13px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
-                                line-height:17px;color:#AEB69D;">
-                        Ta wiadomość została wygenerowana automatycznie.<br>
-                        Zarządzaj swoimi produktami i zamówieniami na Kasoa.pl.
-                    </div>
-                </td>
-            </tr>
-        </table>
-        """;
-
-        // ---------------------------------------------------------
-        // HEADER: detect an existing header before adding a new one.
-        // ---------------------------------------------------------
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse;">
+                <tr>
+                    <td align="center" style="background-color:#182016;padding:24px 30px;border:12px solid #F5F6F1;">
+                        <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:24px;
+                                    font-weight:800;color:#FFFFFF;">
+                            kasoa<span style="font-weight:400;color:#AEB69D;">.pl</span>
+                        </div>
+                        <div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                                    line-height:18px;color:#AEB69D;">
+                            Dobre rzeczy. Drugie życie. (Good things. A second chance.)
+                        </div>
+                        <div style="margin-top:14px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                                    line-height:1.7;color:#AEB69D;">
+                            Ta wiadomość została wygenerowana automatycznie.<br>
+                            Status i szczegóły możesz sprawdzić na Kasoa.pl.
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            """;
 
         String lower = branded.toLowerCase(Locale.ROOT);
-
         int bodyOpen = lower.indexOf("<body");
-        int bodyContentStart = bodyOpen >= 0
-                ? lower.indexOf('>', bodyOpen) + 1
-                : 0;
+        int bodyContentStart = bodyOpen >= 0 ? lower.indexOf('>', bodyOpen) + 1 : 0;
+        int openingEnd = Math.min(branded.length(), bodyContentStart + 4500);
+        String opening = branded.substring(bodyContentStart, openingEnd);
 
-        if (bodyOpen >= 0 && bodyContentStart == 0) {
-            bodyContentStart = 0;
-        }
-
-        int firstContentEnd = Math.min(branded.length(), bodyContentStart + 5000);
-
-        String openingContent = branded.substring(bodyContentStart, firstContentEnd);
-        String openingLower = openingContent.toLowerCase(Locale.ROOT);
-
-        boolean hasHeader = openingLower.contains("<!-- header -->")
-                || (openingLower.contains("kasoa")
-                && openingLower.contains("#68764b"));
-
+        // Recognise the actual logo in the header, not merely a brand-coloured
+        // button or a mention of Kasoa in the email copy.
+        boolean hasHeader = opening.contains("kasoa<span")
+                || opening.matches("(?is).*?>\\s*kasoa\\.pl\\s*</div>.*")
+                || opening.contains("<!-- HEADER -->");
         if (!hasHeader) {
-            if (bodyOpen >= 0 && bodyContentStart > 0) {
-                branded = branded.substring(0, bodyContentStart)
-                        + header
-                        + branded.substring(bodyContentStart);
-            } else {
-                branded = header + branded;
-            }
+            branded = bodyOpen >= 0 && bodyContentStart > 0
+                    ? branded.substring(0, bodyContentStart) + header + branded.substring(bodyContentStart)
+                    : header + branded;
         }
 
-        // Normalize explicitly marked headers and footers.
-        branded = normalizeKasoaSection(
-                branded,
-                "<!-- HEADER -->",
-                "#68764B",
-                "#FFFFFF"
-        );
-
-        branded = normalizeKasoaSection(
-                branded,
-                "<!-- FOOTER -->",
-                "#182016",
-                "#FFFFFF"
-        );
-
-        // ---------------------------------------------------------
-        // FOOTER: detect existing footer before adding a new one.
-        // ---------------------------------------------------------
+        // Normalize marked and unmarked header/footer cells. Several older
+        // notifications predate the HEADER/FOOTER comments but contain the same
+        // Kasoa logo and tagline.
+        branded = normalizeKasoaSection(branded, "<!-- HEADER -->", "#68764B", "#FFFFFF");
+        branded = normalizeKasoaSection(branded, "<!-- FOOTER -->", "#182016", "#FFFFFF");
 
         lower = branded.toLowerCase(Locale.ROOT);
+        int logoIndex = branded.indexOf("kasoa<span", Math.max(0, bodyContentStart));
+        if (logoIndex < 0) {
+            java.util.regex.Matcher logoMatcher = java.util.regex.Pattern
+                    .compile("(?is)>\\s*kasoa\\.pl\\s*</div>")
+                    .matcher(branded);
+            if (logoMatcher.find(Math.max(0, bodyContentStart))) {
+                logoIndex = logoMatcher.start();
+            }
+        }
+        if (logoIndex >= 0 && logoIndex < Math.min(branded.length(), bodyContentStart + 6000)) {
+            branded = normalizeKasoaCell(branded, logoIndex,
+                    "background-color:#68764B;padding:28px 30px;border:12px solid #F5F6F1;text-align:left;");
+        }
+
+        int footerToken = branded.lastIndexOf("Dobre rzeczy. Drugie życie.");
+        if (footerToken < 0) {
+            footerToken = branded.lastIndexOf("Good things. A second chance.");
+        }
+        if (footerToken >= 0) {
+            branded = normalizeKasoaCell(branded, footerToken,
+                    "background-color:#182016;padding:24px 30px;border:12px solid #F5F6F1;text-align:center;");
+        }
 
         int bodyEnd = lower.lastIndexOf("</body>");
-
-        String footerSearchContent = bodyEnd >= 0
-                ? branded.substring(0, bodyEnd)
-                : branded;
-
-        String footerSearchLower = footerSearchContent.toLowerCase(Locale.ROOT);
-
-        boolean hasFooterMarker = footerSearchLower.contains("<!-- footer -->");
-
-        // Also recognise existing footers without an explicit marker.
-        // This prevents duplication when a template has its own Polish footer.
-        int footerSearchStart = Math.max(0, footerSearchContent.length() - 6000);
-
-        String footerCandidate = footerSearchContent.substring(footerSearchStart);
-        String footerCandidateLower = footerCandidate.toLowerCase(Locale.ROOT);
-
-        boolean hasExistingFooter = footerCandidateLower.contains("#182016")
-                && footerCandidateLower.contains("kasoa")
-                && (
-                footerCandidateLower.contains("automatycznie")
-                        || footerCandidateLower.contains("zarządzaj swoimi")
-                        || footerCandidateLower.contains("dobre rzeczy zasługują na drugie życie")
-                        || footerCandidateLower.contains("good things. a second chance.")
-        );
-
-        boolean hasFooter = hasFooterMarker || hasExistingFooter;
-
+        int footerSearchStart = Math.max(0, (bodyEnd >= 0 ? bodyEnd : branded.length()) - 4200);
+        String ending = branded.substring(footerSearchStart, bodyEnd >= 0 ? bodyEnd : branded.length());
+        boolean hasFooter = ending.contains("Dobre rzeczy. Drugie życie.")
+                || ending.contains("Good things. A second chance.")
+                || ending.contains("<!-- FOOTER -->");
         if (!hasFooter) {
-            bodyEnd = lower.lastIndexOf("</body>");
-
             branded = bodyEnd >= 0
-                    ? branded.substring(0, bodyEnd)
-                    + footer
-                    + branded.substring(bodyEnd)
+                    ? branded.substring(0, bodyEnd) + footer + branded.substring(bodyEnd)
                     : branded + footer;
         }
 
-        // ---------------------------------------------------------
-        // RESPONSIVE EMAIL STYLES
-        // ---------------------------------------------------------
-
-        String centeredStyles = """
-        <style id="kasoa-email-base">
-            html, body {
-                width:100% !important;
-                margin:0 !important;
-                padding:0 !important;
-                background-color:#F5F6F1 !important;
-            }
-
-            body {
-                font-family:Arial,Helvetica,sans-serif !important;
-                color:#182016;
-            }
-
-            body > table,
-            body > div,
-            body > center {
-                margin-left:auto !important;
-                margin-right:auto !important;
-            }
-
-            table {
-                border-collapse:collapse;
-            }
-
-            img {
-                max-width:100%;
-                height:auto;
-                border:0;
-            }
-
-            @media only screen and (max-width:600px) {
-                table[role="presentation"] {
-                    max-width:100% !important;
+        // Shared outer canvas: 600px content width, centred layout, identical
+        // page background, font and responsive horizontal spacing.
+        String baseStyles = """
+            <style id="kasoa-email-base">
+                html,body{width:100%!important;margin:0!important;padding:0!important;background:#F5F6F1!important;}
+                body{font-family:Arial,Helvetica,sans-serif!important;color:#182016!important;}
+                body>div{width:100%!important;max-width:100%!important;margin:0 auto!important;padding:30px 15px!important;
+                         box-sizing:border-box!important;background:#F5F6F1!important;}
+                body>table{width:100%!important;max-width:600px!important;margin:0 auto!important;}
+                body>div>table{width:100%!important;max-width:600px!important;margin:0 auto!important;}
+                table{border-collapse:collapse;}
+                img{max-width:100%;height:auto;border:0;}
+                @media only screen and (max-width:600px){
+                    body>div{padding:18px 8px!important;}
+                    table[role=presentation]{max-width:100%!important;}
+                    .kasoa-email-content{padding-left:18px!important;padding-right:18px!important;}
                 }
-
-                .kasoa-email-content {
-                    padding-left:18px !important;
-                    padding-right:18px !important;
-                }
-            }
-        </style>
-        """;
-
+            </style>
+            """;
         lower = branded.toLowerCase(Locale.ROOT);
-
         int headEnd = lower.indexOf("</head>");
-
-        if (headEnd >= 0 && !lower.contains("id=\"kasoa-email-base\"")) {
-            branded = branded.substring(0, headEnd)
-                    + centeredStyles
-                    + branded.substring(headEnd);
-
-        } else if (headEnd < 0 && bodyOpen >= 0) {
-            int bodyTagStart = lower.indexOf("<body");
-            int bodyTagEnd = lower.indexOf('>', bodyTagStart);
-
+        if (headEnd >= 0) {
+            if (!lower.contains("id=\"kasoa-email-base\"")) {
+                branded = branded.substring(0, headEnd) + baseStyles + branded.substring(headEnd);
+            }
+        } else if (bodyOpen >= 0) {
+            int bodyTagEnd = lower.indexOf('>', bodyOpen);
             if (bodyTagEnd >= 0 && !lower.contains("id=\"kasoa-email-base\"")) {
-                branded = branded.substring(0, bodyTagEnd + 1)
-                        + centeredStyles
-                        + branded.substring(bodyTagEnd + 1);
+                branded = branded.substring(0, bodyTagEnd + 1) + baseStyles + branded.substring(bodyTagEnd + 1);
             }
         }
 
-        // ---------------------------------------------------------
-        // CENTER FIXED-WIDTH EMAIL CONTAINERS
-        // ---------------------------------------------------------
-
-        branded = branded.replaceAll(
-                "(?i)max-width\\s*:\\s*(600|650)px\\s*;?",
-                "max-width:$1px;margin-left:auto;margin-right:auto;"
-        );
-
+        // Bring common fixed-width variants onto the same 600px content grid.
+        branded = branded.replaceAll("(?i)max-width\\s*:\\s*(640|650)px\\s*;?", "max-width:600px;margin-left:auto;margin-right:auto;");
         return branded;
+    }
+
+    private String normalizeKasoaCell(String html, int contentIndex, String normalizedStyle) {
+        if (html == null || contentIndex < 0 || contentIndex >= html.length()) {
+            return html;
+        }
+
+        String lowerHtml = html.toLowerCase(Locale.ROOT);
+        int cellStart = lowerHtml.lastIndexOf("<td", contentIndex);
+        int cellTagEnd = cellStart >= 0 ? lowerHtml.indexOf('>', cellStart) : -1;
+        int cellEnd = lowerHtml.indexOf("</td", contentIndex);
+
+        // Only alter a table cell when the supplied content is actually inside it.
+        if (cellStart < 0 || cellTagEnd < 0 || cellTagEnd >= contentIndex
+                || cellEnd < 0 || cellEnd - contentIndex > 12000) {
+            return html;
+        }
+
+        String openingTag = html.substring(cellStart, cellTagEnd + 1);
+        java.util.regex.Matcher styleMatcher = java.util.regex.Pattern
+                .compile("(?is)\\sstyle\\s*=\\s*([\\\"'])(.*?)\\1")
+                .matcher(openingTag);
+
+        String replacementTag;
+        if (styleMatcher.find()) {
+            String existingStyle = styleMatcher.group(2);
+            existingStyle = existingStyle
+                    .replaceAll("(?i)(^|;)\\s*background(?:-color)?\\s*:[^;]*;?", "$1")
+                    .replaceAll("(?i)(^|;)\\s*padding(?:-[a-z]+)?\\s*:[^;]*;?", "$1")
+                    .replaceAll("(?i)(^|;)\\s*border(?:-[a-z]+)?\\s*:[^;]*;?", "$1")
+                    .replaceAll("(?i)(^|;)\\s*text-align\\s*:[^;]*;?", "$1")
+                    .trim();
+            String mergedStyle = normalizedStyle + (existingStyle.isEmpty() ? "" : existingStyle);
+            replacementTag = openingTag.substring(0, styleMatcher.start())
+                    + " style=\"" + mergedStyle + "\""
+                    + openingTag.substring(styleMatcher.end());
+        } else {
+            replacementTag = openingTag.substring(0, openingTag.length() - 1)
+                    + " style=\"" + normalizedStyle + "\">";
+        }
+
+        return html.substring(0, cellStart) + replacementTag + html.substring(cellTagEnd + 1);
     }
 
     private String normalizeKasoaSection(String html, String marker, String background, String textColor) {

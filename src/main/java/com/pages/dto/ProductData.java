@@ -63,7 +63,7 @@ public class ProductData {
     private String sku;
 
     @NotNull(message = "{api.product.quantity.min}")
-    private String quantity;
+    private Long quantity;
 
     @NotNull(message = "{api.product.brand.empty}")
     @NotBlank(message = "{api.product.brand.empty}")

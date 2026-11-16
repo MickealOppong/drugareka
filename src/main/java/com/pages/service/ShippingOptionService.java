@@ -266,7 +266,7 @@ public class ShippingOptionService {
                         "Shipping price not configured for combination size " + inventoryItem.getItemSize()+" and option"
                                +option
                 ));
-        return shippingCost.getPrice().subtract(shippingCost.getDiscount()).multiply(BigDecimal.valueOf(cartItem.getInventoryItem().getQuantity()));
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
 
     }
 
@@ -283,7 +283,7 @@ public class ShippingOptionService {
                         +deliveryOption
                 ));
 
-        return shippingCost.getPrice().subtract(shippingCost.getDiscount()).multiply(BigDecimal.valueOf(item.getQuantity()));
+        return shippingCost.getPrice().subtract(shippingCost.getDiscount());
     }
 
     private boolean isHeavyOrBulky(ItemSize size) {

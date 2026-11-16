@@ -31,7 +31,7 @@ public class CartItem extends LogEntity{
     private Cart cart;
 
     private Long listingId;
-
+    private Long quantity;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;

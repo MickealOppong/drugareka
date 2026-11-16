@@ -26,4 +26,5 @@ public class CartItemDto {
     private String image;
     private BigDecimal shipping;
     private Long sellerId;
+    private Long quantity;
 }

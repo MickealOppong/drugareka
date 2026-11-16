@@ -27,6 +27,7 @@ public class ListingOrderItem extends LogEntity {
     @JoinColumn(name = "listing_order_id",nullable = false)
     private ListingOrder listingOrder;
 
+    private Long quantity;
 
     @ManyToOne
     @JoinColumn(name = "seller_id",nullable = false)
