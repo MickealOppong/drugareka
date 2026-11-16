@@ -11,6 +11,7 @@ import com.pages.model.*;
 import com.pages.repository.InventoryItemPriceRepo;
 import com.pages.repository.WishListRepo;
 import com.pages.util.Media;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,23 +23,16 @@ import java.util.List;
 import java.util.Optional;
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class WishListService {
 
     private final WishListRepo wishListRepo;
     private final AppUserDetailsService appUserDetailsService;
-    private final InventoryItemService inventoryItemService;
     private final ListingTransactionService listingTransactionService;
     private final MediaService mediaService;
     private final InventoryItemPriceService inventoryItemPriceService;
 
-    public WishListService(WishListRepo wishListRepo, AppUserDetailsService appUserDetailsService, InventoryItemService inventoryItemService, ListingTransactionService listingTransactionService, MediaService mediaService, InventoryItemPriceService inventoryItemPriceService) {
-        this.wishListRepo = wishListRepo;
-        this.appUserDetailsService = appUserDetailsService;
-        this.inventoryItemService = inventoryItemService;
-        this.listingTransactionService = listingTransactionService;
-        this.mediaService = mediaService;
-        this.inventoryItemPriceService = inventoryItemPriceService;
-    }
+
 
 @Transactional
     public ResponseDto<Object> toggleWishList(Long listingId, Jwt jwt){
@@ -67,7 +61,7 @@ public class WishListService {
                 }
 
                 Long currentUserId = currentUser.getId();
-                Long sellerUserId = listing.getInventory().getSeller().getId();
+                Long sellerUserId = listing.getInventory().getSeller().getUser().getId();
 
                 if(currentUserId.equals(sellerUserId)){
                     return ResponseDto.builder()
