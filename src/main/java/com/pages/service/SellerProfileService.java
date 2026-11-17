@@ -58,6 +58,10 @@ public class SellerProfileService {
        return sellerProfileRepo.findById(id).orElse(null);
     }
 
+    public Long totalSellers(Instant date){
+        return sellerProfileRepo.countByCreatedAtBefore(date);
+    }
+
     public SellerProfile findOrCreateSellerProfile(SellerProfileDto dto){
               return    sellerProfileRepo.findByUser(dto.getUser())
                          .orElseGet(()->{

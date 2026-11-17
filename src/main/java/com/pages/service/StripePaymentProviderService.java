@@ -217,7 +217,7 @@ public class StripePaymentProviderService {
                 SessionCreateParams.LineItem lineItem =
                         SessionCreateParams.LineItem.builder()
                                 .setPriceData(priceData)
-                                .setQuantity(item.getQuantity())
+                                .setQuantity(1L)
                                 .build();
 
                 params.addLineItem(lineItem);

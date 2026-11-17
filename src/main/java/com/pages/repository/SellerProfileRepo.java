@@ -7,6 +7,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,5 +25,7 @@ Optional<SellerProfile> findByStripeAccountId(String id);
     @org.springframework.data.jpa.repository.Query("SELECT s FROM SellerProfile s WHERE s.id = :id")
     Optional<SellerProfile> findByIdForUpdate(Long id);
     List<SellerProfile> findByStripeAccountIdIsNull();
+
+    long countByCreatedAtBefore(Instant date);
 
 }

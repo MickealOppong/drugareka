@@ -87,8 +87,6 @@ public class ProductController {
 
 
 
-
-
     @GetMapping("/categories")
     public List<CategoryResponse> allCategories(@RequestParam("page") int page,@RequestParam("size") int size,@RequestParam("query") String query){
         return categoryService.getAllCategoriesByPage(query,page,size);

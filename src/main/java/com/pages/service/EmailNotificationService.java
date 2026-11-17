@@ -25,7 +25,6 @@ import java.util.Locale;
 import java.util.Map;
 
 
-
 @Slf4j
 @Service
 public class EmailNotificationService {
@@ -64,6 +63,342 @@ public class EmailNotificationService {
     }
 
 
+    // =====================================================================
+    //  DESIGN TOKENS
+    //  One brand colour, one neutral scale. Status colours (warn / danger)
+    //  are used only for badges and notice panels, never for buttons.
+    // =====================================================================
+
+    private static final String FONT =
+            "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif";
+    private static final String MONO =
+            "SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace";
+
+    private static final String INK = "#1A1F16";     // headings, values
+    private static final String BODY = "#3D4538";    // paragraphs
+    private static final String MUTED = "#677060";   // secondary text
+    private static final String FAINT = "#8F968A";   // labels, captions
+    private static final String LINE = "#E8EAE3";    // hairlines
+    private static final String BRAND = "#66704A";   // the only button colour
+
+    private static final String HOME_URL = "https://www.kasoa.pl";
+
+    private enum Tone {
+        NEUTRAL("#F7F7F4", "#E8EAE3", "#66704A"),
+        /** Anything the recipient must notice: deadlines, required actions, cancellations, failures. */
+        ALERT("#FDF1EF", "#F0CFCA", "#B3261E");
+
+        final String bg;
+        final String line;
+        final String fg;
+
+        Tone(String bg, String line, String fg) {
+            this.bg = bg;
+            this.line = line;
+            this.fg = fg;
+        }
+    }
+
+
+    // =====================================================================
+    //  LAYOUT SHELL
+    // =====================================================================
+
+    /**
+     * Shared Kasoa email shell: brand header, white content card, dark footer.
+     * The marker attribute lets sendHtmlEmail() detect an already wrapped message.
+     */
+    private String buildEmailLayout(String bodyContent) {
+        return """
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta http-equiv="X-UA-Compatible" content="IE=edge">
+            <meta name="color-scheme" content="light">
+            <meta name="supported-color-schemes" content="light">
+            <title>kasoa.pl</title>
+            <style>
+                body { margin:0; padding:0; width:100%; background-color:#F4F5F1;
+                       -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+                table { border-collapse:collapse; mso-table-lspace:0; mso-table-rspace:0; }
+                img { border:0; max-width:100%; height:auto; }
+                a { color:#66704A; }
+                @media only screen and (max-width:620px) {
+                    .k-outer { padding:16px 10px 0 !important; }
+                    .k-pad { padding-left:22px !important; padding-right:22px !important; }
+                    .k-h1 { font-size:23px !important; line-height:29px !important; }
+                    .k-btn-wrap { width:100% !important; }
+                    .k-btn { display:block !important; }
+                }
+            </style>
+        </head>
+        <body style="margin:0;padding:0;background-color:#F4F5F1;font-family:__FONT__;color:#1A1F16;">
+            <table data-kasoa-email-layout="true" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="width:100%;background-color:#F4F5F1;">
+                <tr>
+                    <td class="k-outer" align="center" style="padding:32px 12px 0;">
+                        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+                               style="width:100%;max-width:600px;border-collapse:separate;background-color:#FFFFFF;border:1px solid #E8EAE3;border-radius:16px;">
+                            <tr>
+                                <td class="k-pad" align="center" bgcolor="#66704A"
+                                    style="padding:26px 36px;background-color:#66704A;border-radius:16px 16px 0 0;text-align:center;">
+                                    <a href="https://www.kasoa.pl"
+                                       style="display:inline-block;font-family:__FONT__;font-size:28px;line-height:34px;font-weight:800;letter-spacing:-0.5px;color:#FFFFFF;text-decoration:none;">kasoa.pl</a>
+                                    <div style="margin-top:4px;font-family:__FONT__;font-size:12px;line-height:18px;font-weight:600;letter-spacing:0.6px;color:#E6EAD8;">
+                                        Dobre rzeczy. Drugie życie.
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="k-pad" style="padding:36px 36px 40px;background-color:#FFFFFF;font-family:__FONT__;font-size:15px;line-height:24px;color:#3D4538;">
+                                    __BODY__
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="k-pad" align="center" bgcolor="#2B2B2B"
+                                    style="padding:28px 36px 30px;background-color:#2B2B2B;border-radius:0 0 16px 16px;text-align:center;">
+                                    <div style="font-family:__FONT__;font-size:17px;line-height:24px;font-weight:800;color:#FFFFFF;">
+                                        kasoa<span style="font-weight:500;color:#B9C49A;">.pl</span>
+                                    </div>
+                                    <div style="margin-top:4px;font-family:__FONT__;font-size:12px;line-height:18px;color:#CFCFCA;">
+                                        Dobre rzeczy. Drugie życie. (Good things. A second chance.)
+                                    </div>
+                                    <div style="margin-top:16px;padding-top:16px;border-top:1px solid #444444;font-family:__FONT__;font-size:11px;line-height:18px;color:#9C9C97;">
+                                        Ta wiadomość została wygenerowana automatycznie.<br><br>
+                                        KASAWA Sp. z o.o. · ul. Kostromska nr 55 lok. 95, 97-300 Piotrków Trybunalski, Polska<br>
+                                        KRS: 0001269876 · NIP: 7712946929
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                        <div style="height:24px;line-height:24px;font-size:1px;">&nbsp;</div>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """
+                .replace("__FONT__", FONT)
+                .replace("__BODY__", bodyContent);
+    }
+
+
+    // =====================================================================
+    //  COMPONENT HELPERS
+    //  All helpers take already-escaped HTML. Only button()/textLink()
+    //  escape their URL argument themselves.
+    // =====================================================================
+
+    private String el(String tag, String style, String inner) {
+        return "<" + tag + " style=\"" + style + "\">" + inner + "</" + tag + ">";
+    }
+
+    private String h1(String text) {
+        return "<h1 class=\"k-h1\" style=\"margin:0 0 12px;font-family:" + FONT
+                + ";font-size:26px;line-height:32px;font-weight:800;letter-spacing:-0.5px;color:" + INK + ";\">"
+                + text + "</h1>";
+    }
+
+    /** Heading with a muted English subtitle. */
+    private String h1(String pl, String en) {
+        return "<h1 class=\"k-h1\" style=\"margin:0 0 4px;font-family:" + FONT
+                + ";font-size:26px;line-height:32px;font-weight:800;letter-spacing:-0.5px;color:" + INK + ";\">"
+                + pl + "</h1>"
+                + el("div", "margin:0 0 20px;font-size:14px;line-height:20px;color:" + FAINT + ";", en);
+    }
+
+    private String h2(String text) {
+        return el("h2", "margin:0 0 10px;font-family:" + FONT
+                + ";font-size:17px;line-height:24px;font-weight:700;color:" + INK + ";", text);
+    }
+
+    /** Intro paragraph under a heading. */
+    private String lead(String html) {
+        return el("p", "margin:0 0 24px;font-size:15px;line-height:24px;color:" + MUTED + ";", html);
+    }
+
+    private String p(String html) {
+        return el("p", "margin:0 0 16px;font-size:15px;line-height:24px;color:" + BODY + ";", html);
+    }
+
+    private String muted(String html) {
+        return el("p", "margin:0;font-size:13px;line-height:21px;color:" + MUTED + ";", html);
+    }
+
+    private String caption(String html) {
+        return el("p", "margin:14px 0 0;font-size:12px;line-height:19px;color:" + FAINT + ";text-align:center;", html);
+    }
+
+    private String strong(String html) {
+        return "<strong style=\"color:" + INK + ";\">" + html + "</strong>";
+    }
+
+    /** Polish text followed by a muted English translation. */
+    private String bi(String pl, String en) {
+        return pl + "<br><span style=\"color:" + FAINT + ";\">" + en + "</span>";
+    }
+
+    private String label(String text) {
+        return el("div", "margin:0 0 6px;font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px;"
+                + "text-transform:uppercase;color:" + FAINT + ";", text);
+    }
+
+    private String value(String html) {
+        return el("div", "margin:0 0 16px;font-size:16px;line-height:24px;font-weight:700;color:" + INK
+                + ";overflow-wrap:anywhere;", html);
+    }
+
+    private String orderNumber(String safeOrderNumber) {
+        return el("div", "margin:0;font-family:" + MONO + ";font-size:18px;line-height:26px;font-weight:700;color:"
+                + INK + ";overflow-wrap:anywhere;", "#" + safeOrderNumber);
+    }
+
+    private String spacer(int px) {
+        return "<div style=\"height:" + px + "px;line-height:" + px + "px;font-size:1px;\">&nbsp;</div>";
+    }
+
+    private String divider() {
+        return "<div style=\"margin:20px 0;height:1px;line-height:1px;font-size:1px;background-color:" + LINE + ";\">&nbsp;</div>";
+    }
+
+    private String badge(String text, Tone tone) {
+        return "<div style=\"margin:0 0 18px;\"><span style=\"display:inline-block;padding:6px 12px;"
+                + "border-radius:999px;background-color:" + tone.bg + ";border:1px solid " + tone.line
+                + ";font-family:" + FONT + ";font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.3px;color:"
+                + tone.fg + ";\">" + text + "</span></div>";
+    }
+
+    private String panel(Tone tone, String inner) {
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+                + " style=\"width:100%;margin:0 0 20px;border-collapse:separate;\"><tr>"
+                + "<td style=\"padding:18px 20px;background-color:" + tone.bg + ";border:1px solid " + tone.line
+                + (tone == Tone.ALERT ? ";border-left:4px solid " + tone.fg : "")
+                + ";border-radius:12px;font-family:" + FONT + ";font-size:14px;line-height:22px;color:" + BODY + ";\">"
+                + inner + "</td></tr></table>";
+    }
+
+    /** Panel with a brand accent on the left, used to quote user-written text. */
+    private String quotePanel(String labelText, String safeBody) {
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+                + " style=\"width:100%;margin:0 0 22px;border-collapse:separate;\"><tr>"
+                + "<td style=\"padding:16px 20px;background-color:#F7F7F4;border:1px solid " + LINE
+                + ";border-left:3px solid " + BRAND + ";border-radius:10px;font-family:" + FONT + ";\">"
+                + label(labelText)
+                + el("div", "font-size:14px;line-height:23px;color:" + BODY + ";overflow-wrap:anywhere;", safeBody)
+                + "</td></tr></table>";
+    }
+
+    private String section(String title, String inner) {
+        return "<div style=\"margin:28px 0 0;padding-top:24px;border-top:1px solid " + LINE + ";\">"
+                + h2(title) + inner + "</div>";
+    }
+
+    private String steps(String... items) {
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < items.length; i++) {
+            boolean last = i == items.length - 1;
+            rows.append("<tr><td width=\"38\" valign=\"top\" style=\"padding:0 0 ").append(last ? 0 : 14)
+                    .append("px;\"><div style=\"width:26px;height:26px;line-height:26px;text-align:center;border-radius:13px;"
+                            + "background-color:").append(BRAND)
+                    .append(";color:#FFFFFF;font-family:").append(FONT)
+                    .append(";font-size:12px;font-weight:700;\">").append(i + 1).append("</div></td>")
+                    .append("<td valign=\"top\" style=\"padding:2px 0 ").append(last ? 0 : 14)
+                    .append("px;font-family:").append(FONT)
+                    .append(";font-size:14px;line-height:22px;color:").append(BODY).append(";\">")
+                    .append(items[i]).append("</td></tr>");
+        }
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+                + " style=\"width:100%;\">" + rows + "</table>";
+    }
+
+    // ---- Buttons: one solid brand colour for every primary action --------
+
+    /** PRIMARY = the one olive CTA, SECONDARY = neutral outline, DANGER = red, for negative actions. */
+    private enum Variant { PRIMARY, SECONDARY, DANGER }
+
+    private String button(String url, String text) {
+        return buttonHtml(url, text, Variant.PRIMARY, false, "28px auto 0");
+    }
+
+    private String buttonFull(String url, String text, Variant variant) {
+        return buttonHtml(url, text, variant, true, "0 0 12px");
+    }
+
+    private String buttonHtml(String url, String text, Variant variant, boolean full, String margin) {
+        String bg = variant == Variant.PRIMARY ? BRAND : variant == Variant.DANGER ? "#FDF1EF" : "#FFFFFF";
+        String fg = variant == Variant.PRIMARY ? "#FFFFFF" : variant == Variant.DANGER ? Tone.ALERT.fg : INK;
+        String border = variant == Variant.PRIMARY ? BRAND : variant == Variant.DANGER ? "#E2A8A1" : "#D3D8C9";
+        String tableAttrs = full
+                ? "width=\"100%\" style=\"width:100%;margin:" + margin + ";border-collapse:separate;\""
+                : "align=\"center\" style=\"margin:" + margin + ";border-collapse:separate;\"";
+        return "<table role=\"presentation\" class=\"k-btn-wrap\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" "
+                + tableAttrs + "><tr>"
+                + "<td align=\"center\" bgcolor=\"" + bg + "\" style=\"background-color:" + bg + ";border:1px solid "
+                + border + ";border-radius:10px;\">"
+                + "<a class=\"k-btn\" href=\"" + escapeHtml(url) + "\" target=\"_blank\" style=\"display:"
+                + (full ? "block" : "inline-block") + ";padding:14px 28px;font-family:" + FONT
+                + ";font-size:15px;line-height:20px;font-weight:700;color:" + fg
+                + ";text-decoration:none;text-align:center;border-radius:10px;\">" + text + "</a>"
+                + "</td></tr></table>";
+    }
+
+    private String textLink(String url, String text) {
+        return "<a href=\"" + escapeHtml(url) + "\" target=\"_blank\" style=\"font-size:14px;line-height:22px;"
+                + "font-weight:700;color:" + BRAND + ";text-decoration:none;\">" + text + "</a>";
+    }
+
+    // ---- Key / value tables ----------------------------------------------
+
+    private String table(String rows) {
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+                + " style=\"width:100%;margin:0 0 4px;\">" + rows + "</table>";
+    }
+
+    private String kvRow(String label, String value) {
+        return "<tr><td style=\"padding:7px 0;font-family:" + FONT + ";font-size:13px;line-height:20px;color:" + MUTED
+                + ";\">" + label + "</td><td align=\"right\" style=\"padding:7px 0 7px 16px;font-family:" + FONT
+                + ";font-size:14px;line-height:20px;color:" + INK + ";white-space:nowrap;\">" + value + "</td></tr>";
+    }
+
+    /** Last row of a group: closes it with a hairline. */
+    private String kvRowEnd(String label, String value) {
+        return "<tr><td style=\"padding:7px 0 18px;border-bottom:1px solid " + LINE + ";font-family:" + FONT
+                + ";font-size:13px;line-height:20px;color:" + MUTED + ";\">" + label
+                + "</td><td align=\"right\" style=\"padding:7px 0 18px 16px;border-bottom:1px solid " + LINE
+                + ";font-family:" + FONT + ";font-size:14px;line-height:20px;color:" + INK + ";white-space:nowrap;\">"
+                + value + "</td></tr>";
+    }
+
+    private String kvTotal(String label, String value) {
+        return "<tr><td style=\"padding:14px 0 4px;font-family:" + FONT
+                + ";font-size:14px;line-height:24px;font-weight:700;color:" + INK + ";\">" + label
+                + "</td><td align=\"right\" style=\"padding:14px 0 4px 16px;font-family:" + FONT
+                + ";font-size:18px;line-height:24px;font-weight:800;color:" + INK + ";white-space:nowrap;\">"
+                + value + "</td></tr>";
+    }
+
+    private String productRow(String safeName, String qtyLine, String price) {
+        return "<tr><td valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid " + LINE + ";font-family:" + FONT + ";\">"
+                + el("div", "font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeName)
+                + el("div", "margin-top:2px;font-size:13px;line-height:20px;color:" + MUTED + ";", qtyLine)
+                + "</td><td align=\"right\" valign=\"top\" style=\"padding:14px 0 14px 16px;border-bottom:1px solid " + LINE
+                + ";font-family:" + FONT + ";font-size:15px;line-height:22px;font-weight:700;color:" + INK
+                + ";white-space:nowrap;\">" + price + "</td></tr>";
+    }
+
+    private String infoBlock(String labelText, String safeValue) {
+        return "<div style=\"margin:0 0 16px;\">" + label(labelText)
+                + el("div", "font-size:15px;line-height:22px;font-weight:600;color:" + INK + ";overflow-wrap:anywhere;", safeValue)
+                + "</div>";
+    }
+
+
+    // =====================================================================
+    //  PASSWORD RESET
+    // =====================================================================
+
     /**
      * PASSWORD RESET LINK
      * @param email
@@ -81,115 +416,24 @@ public class EmailNotificationService {
 
         String subject = "Resetowanie hasła do konta Kasoa.pl";
 
-        String htmlContent = """
-<h2 style="margin:0 0 20px; font-size:22px;
-                                               line-height:1.4; color:#182016;">
-                                        Resetowanie hasła (Reset your password)
-                                    </h2>
-<p style="margin:0 0 16px; font-size:15px;
-                                              line-height:1.8; color:#182016;">
-                                        Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta w serwisie Kasoa.pl.
-                                        (We received a request to reset the password for your Kasoa.pl account.)
-                                    </p>
-<p style="margin:0 0 24px; font-size:15px;
-                                              line-height:1.8; color:#182016;">
-                                        Kliknij poniższy przycisk, aby ustawić nowe hasło.
-                                        (Click the button below to create a new password.)
-                                    </p>
-
-
-
-<a href="%s" style="display:inline-block; padding:15px 28px;
-                                                          font-size:15px; font-weight:bold;
-                                                          color:#ffffff; text-decoration:none;
-                                                          border-radius:6px;">
-                                                    Zresetuj hasło (Reset password)
-                                                </a>
-
-
-
-
-
-
-<p style="margin:0 0 14px; font-size:14px;
-                                                          line-height:1.8; color:#182016;">
-<strong>Ważne:</strong> Link do resetowania
-                                                    hasła wygaśnie po 24 godzinach.
-                                                    Jeśli nie prosiłeś(-aś) o zmianę hasła,
-                                                    zignoruj tę wiadomość. Twoje hasło
-                                                    pozostanie bez zmian.
-                                                </p>
-<p style="margin:0; font-size:14px;
-                                                          line-height:1.8; color:#182016;">
-                                                    (This password reset link expires in 24 hours.
-                                                    If you did not request a password reset,
-                                                    you can ignore this email. Your password
-                                                    will remain unchanged.)
-                                                </p>
-        """.formatted(escapeHtml(resetLink));
+        String htmlContent =
+                h1("Resetowanie hasła", "(Reset your password)")
+                        + p(bi("Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta w serwisie Kasoa.pl.",
+                        "(We received a request to reset the password for your Kasoa.pl account.)"))
+                        + p(bi("Kliknij poniższy przycisk, aby ustawić nowe hasło.",
+                        "(Click the button below to create a new password.)"))
+                        + button(resetLink, "Zresetuj hasło (Reset password)")
+                        + spacer(32)
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 8px;font-size:14px;line-height:22px;color:" + BODY + ";",
+                                strong("Ważne:") + " Link do resetowania hasła wygaśnie po 24 godzinach. "
+                                        + "Jeśli nie prosiłeś(-aś) o zmianę hasła, zignoruj tę wiadomość. "
+                                        + "Twoje hasło pozostanie bez zmian.")
+                                + el("div", "font-size:13px;line-height:20px;color:" + FAINT + ";",
+                                "(This password reset link expires in 24 hours. If you did not request a password reset, "
+                                        + "you can ignore this email. Your password will remain unchanged.)"));
 
         sendHtmlEmail(email, subject, buildEmailLayout(htmlContent));
-    }
-
-
-    /**
-     * Wraps email-specific content in the shared Kasoa email layout.
-     * Header, body and footer are rows in the same 600px presentation table.
-     */
-    private String buildEmailLayout(String bodyContent) {
-        return """
-        <!DOCTYPE html>
-        <html lang="pl">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body style="margin:0; padding:30px 12px; background-color:#F5F6F1; font-family:Arial,Helvetica,sans-serif; color:#182016;">
-            <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="width:100%%; background-color:#F5F6F1;">
-                <tr>
-                    <td align="center">
-                        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%%; max-width:600px; table-layout:fixed; border-collapse:collapse;">
-                            <tr>
-                                <td width="600" align="center" style="width:100%%; background-color:#68764B; padding:28px 30px; text-align:center; box-sizing:border-box;">
-                                    <div style="font-size:26px; line-height:1; font-weight:800; color:#FFFFFF;">
-                                        kasoa<span style="font-weight:400;">.pl</span>
-                                    </div>
-                                    <div style="margin-top:10px; font-size:12px; line-height:18px; color:#E9EDDF; letter-spacing:0.5px;">
-                                        DRUGA RĘKA · BEZPIECZNE ZAKUPY
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td width="600" style="width:100%%; background-color:#FFFFFF; padding:32px 30px; box-sizing:border-box;">
-                                    %s
-                                </td>
-                            </tr>
-                            <tr>
-                                <td width="600" style="width:100%%; background-color:#182016; padding:24px 30px; text-align:center; box-sizing:border-box;">
-                                    <div style="font-size:17px; line-height:24px; font-weight:800; color:#FFFFFF;">
-                                        kasoa<span style="font-weight:400; color:#AEB69D;">.pl</span>
-                                    </div>
-                                    <div style="margin-top:7px; font-size:11px; line-height:18px; color:#AEB69D;">
-                                        Dobre rzeczy. Drugie życie. (Good things. A second chance.)
-                                    </div>
-                                    <div style="margin-top:14px; font-size:10px; line-height:1.7; color:#AEB69D;">
-                                        Ta wiadomość została wygenerowana automatycznie.
-                                        <br>
-                                        Status zamówienia możesz śledzić w zakładce „Zamówienia”.
-                                        <br><br>
-                                        KASAWA Sp. z o.o. · ul. Kostromska nr 55 lok. 95, 97-300 Piotrków Trybunalski, Polska
-                                        <br>
-                                        KRS: 0001269876 · NIP: 7712946929
-                                    </div>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """.formatted(bodyContent);
     }
 
 
@@ -201,6 +445,18 @@ public class EmailNotificationService {
      */
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
         try {
+            if (htmlContent == null || htmlContent.isBlank()) {
+                log.warn("Skipping Kasoa email with empty HTML content. Recipient: {}", to);
+                return;
+            }
+
+            // Enforce the shared branded layout at the final dispatch boundary.
+            // Individual notification methods may already wrap their content;
+            // the marker prevents the header and footer from being duplicated.
+            if (!htmlContent.contains("data-kasoa-email-layout=\"true\"")) {
+                htmlContent = buildEmailLayout(htmlContent);
+            }
+
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(resendApiKey);
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -259,6 +515,10 @@ public class EmailNotificationService {
     }
 
 
+    // =====================================================================
+    //  BUYER: ORDER PAID
+    // =====================================================================
+
     /**
      * Sends a consolidated, itemized confirmation receipt to the Buyer for multiple products.
      */
@@ -272,7 +532,6 @@ public class EmailNotificationService {
     ) {
         String subject = "🎉 Twoje zamówienie na kasoa.pl zostało opłacone! #" + orderNumber;
 
-        // Build order items
         StringBuilder itemsHtml = new StringBuilder();
 
         if (items != null) {
@@ -296,102 +555,16 @@ public class EmailNotificationService {
                         ? item.getServiceCharge().toPlainString()
                         : "0.00";
 
-
-                itemsHtml.append("""
-                <tr>
-                    <td colspan="2" style="
-                        padding: 16px 0 8px 0;
-                        border-bottom: 1px dashed #DDE2D8;
-                    ">
-                        <div style="
-                            font-size: 14px;
-                            line-height: 1.5;
-                            color: #182016;
-                            font-weight: 700;
-                        ">
-                            %s
-                        </div>
-
-                        <div style="
-                            margin-top: 6px;
-                            font-size: 12px;
-                            line-height: 1.8;
-                            color: #667066;
-                        ">
-                            Sprzedawca:
-                            <strong style="color: #182016;">%s</strong>
-                            <br>
-                            Status sprzedawcy:
-                            <strong>Osoba prywatna</strong>
-                            <br>
-                            Ilość: <strong>%s</strong>
-                        </div>
-                    </td>
-                </tr>
-
-                <tr>
-                    <td style="
-                        padding: 8px 0;
-                        font-size: 12px;
-                        color: #667066;
-                    ">
-                        Cena produktu
-                    </td>
-                    <td align="right" style="
-                        padding: 8px 0;
-                        font-size: 13px;
-                        color: #182016;
-                        white-space: nowrap;
-                    ">
-                        %s zł
-                    </td>
-                </tr>
-
-                <tr>
-                    <td style="
-                        padding: 6px 0;
-                        font-size: 12px;
-                        color: #667066;
-                    ">
-                        Koszt dostawy
-                    </td>
-                    <td align="right" style="
-                        padding: 6px 0;
-                        font-size: 13px;
-                        color: #182016;
-                        white-space: nowrap;
-                    ">
-                        %s zł
-                    </td>
-                </tr>
-
-                <tr>
-                    <td style="
-                        padding: 6px 0 16px 0;
-                        font-size: 12px;
-                        color: #667066;
-                        border-bottom: 1px dashed #DDE2D8;
-                    ">
-                        Opłata serwisowa
-                    </td>
-                    <td align="right" style="
-                        padding: 6px 0 16px 0;
-                        font-size: 13px;
-                        color: #182016;
-                        border-bottom: 1px dashed #DDE2D8;
-                        white-space: nowrap;
-                    ">
-                        %s zł
-                    </td>
-                </tr>
-                """.formatted(
-                        productName,
-                        sellerName,
-                        escapeHtml(quantity),
-                        escapeHtml(amount),
-                        escapeHtml(shippingCost),
-                        escapeHtml(serviceCharge)
-                ));
+                itemsHtml.append("<tr><td colspan=\"2\" style=\"padding:18px 0 6px;font-family:").append(FONT).append(";\">")
+                        .append(el("div", "font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", productName))
+                        .append(el("div", "margin-top:6px;font-size:13px;line-height:21px;color:" + MUTED + ";",
+                                "Sprzedawca: " + strong(sellerName)
+                                        + "<br>Status sprzedawcy: " + strong("Osoba prywatna")
+                                        + "<br>Ilość: " + strong(escapeHtml(quantity))))
+                        .append("</td></tr>")
+                        .append(kvRow("Cena produktu", escapeHtml(amount) + " zł"))
+                        .append(kvRow("Koszt dostawy", escapeHtml(shippingCost) + " zł"))
+                        .append(kvRowEnd("Opłata serwisowa", escapeHtml(serviceCharge) + " zł"));
             }
         }
 
@@ -399,275 +572,32 @@ public class EmailNotificationService {
                 ? totalAmount.toPlainString()
                 : "0.00";
 
-        String htmlContent = """
-✓ Płatność potwierdzona (Payment confirmed)
-                    
-<h1 style="
-                        margin: 18px 0 10px 0;
-                        font-size: 25px;
-                        line-height: 1.25;
-                        color: #182016;
-                        font-weight: 800;
-                        letter-spacing: -0.5px;
-                    ">
-                        Dziękujemy za zakupy, %s!
-                    </h1>
-<p style="
-                        margin: 0 0 26px 0;
-                        font-size: 15px;
-                        line-height: 1.7;
-                        color: #667066;
-                    ">
-                        Twoja płatność za zamówienie
-                        <strong style="color: #182016;">#%s</strong>
-                        została pomyślnie przetworzona.
-                        Poniżej znajdziesz szczegóły zamówienia,
-                        dane sprzedawców oraz informacje o podmiocie
-                        obsługującym transakcję.
-                    </p>
+        String safeOrder = escapeHtml(orderNumber);
 
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 7px;
-                                ">
-                                    Numer zamówienia
-                                </div>
-<div style="
-                                    font-family: monospace;
-                                    font-size: 17px;
-                                    font-weight: 700;
-                                    color: #182016;
-                                ">
-                                    #%s
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                ">
-                                    Podsumowanie zamówienia
-                                </div>
-
-
-
-
-
-                                    %s
-                                
-
-
-
-
-
-
-
-
-                                            Łączna kwota zamówienia
-                                        
-
-                                            %s zł
-                                        
-
-
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 14px;
-                                    font-weight: 800;
-                                    color: #182016;
-                                    margin-bottom: 9px;
-                                ">
-                                    Informacje o sprzedawcach
-                                </div>
-<p style="
-                                    margin: 0;
-                                    font-size: 13px;
-                                    line-height: 1.7;
-                                    color: #667066;
-                                ">
-                                    Produkty w tym zamówieniu są oferowane
-                                    przez sprzedawców wskazanych przy
-                                    poszczególnych pozycjach. W przypadku
-                                    sprzedawcy oznaczonego jako osoba
-                                    prywatna sprzedaż odbywa się pomiędzy
-                                    kupującym a tym sprzedawcą.
-                                    Kasoa.pl nie jest sprzedawcą tych
-                                    produktów wyłącznie z tytułu
-                                    udostępniania platformy.
-                                </p>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 10px;
-                                ">
-                                    Podmiot obsługujący transakcję
-                                </div>
-<div style="
-                                    font-size: 14px;
-                                    font-weight: 800;
-                                    line-height: 1.5;
-                                    color: #182016;
-                                ">
-                                    KASAWA SPÓŁKA Z OGRANICZONĄ
-                                    ODPOWIEDZIALNOŚCIĄ
-                                </div>
-
-<p style="
-                                    margin: 12px 0 0 0;
-                                    font-size: 12px;
-                                    line-height: 1.7;
-                                    color: #667066;
-                                ">
-                                    KASAWA Sp. z o.o. prowadzi platformę
-                                    Kasoa.pl i pełni funkcję podmiotu
-                                    obsługującego transakcję.
-                                    Spółka nie jest sprzedawcą produktów
-                                    wymienionych w tym zamówieniu.
-                                </p>
-
-
-
-
-<div style="
-                        margin-top: 28px;
-                        padding-top: 24px;
-                        border-top: 1px solid #E8EBE5;
-                    ">
-<div style="
-                            font-size: 13px;
-                            font-weight: 800;
-                            color: #182016;
-                            margin-bottom: 14px;
-                        ">
-                            Co dalej?
-                        </div>
-<table border="0" cellpadding="0" cellspacing="0" width="100%%">
-<tr>
-<td style="padding-bottom: 13px;" valign="top" width="32">
-<div style="
-                                        width: 24px;
-                                        height: 24px;
-                                        line-height: 24px;
-                                        text-align: center;
-                                        background-color: #68764B;
-                                        color: #FFFFFF;
-                                        border-radius: 50%%;
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                    ">1</div>
-</td>
-<td style="
-                                    padding: 3px 0 13px 8px;
-                                    font-size: 13px;
-                                    line-height: 1.5;
-                                    color: #667066;
-                                ">
-                                    Sprzedawcy przygotują produkty
-                                    do wysyłki.
-                                </td>
-</tr>
-<tr>
-<td style="padding-bottom: 13px;" valign="top" width="32">
-<div style="
-                                        width: 24px;
-                                        height: 24px;
-                                        line-height: 24px;
-                                        text-align: center;
-                                        background-color: #68764B;
-                                        color: #FFFFFF;
-                                        border-radius: 50%%;
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                    ">2</div>
-</td>
-<td style="
-                                    padding: 3px 0 13px 8px;
-                                    font-size: 13px;
-                                    line-height: 1.5;
-                                    color: #667066;
-                                ">
-                                    Otrzymasz informacje o wysyłce
-                                    i numerach śledzenia, gdy będą dostępne.
-                                </td>
-</tr>
-<tr>
-<td valign="top" width="32">
-<div style="
-                                        width: 24px;
-                                        height: 24px;
-                                        line-height: 24px;
-                                        text-align: center;
-                                        background-color: #68764B;
-                                        color: #FFFFFF;
-                                        border-radius: 50%%;
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                    ">3</div>
-</td>
-<td style="
-                                    padding: 3px 0 0 8px;
-                                    font-size: 13px;
-                                    line-height: 1.5;
-                                    color: #667066;
-                                ">
-                                    Śledź przesyłki i odbierz swoje zakupy.
-                                </td>
-</tr>
-</table>
-</div>
-
-<div style="margin-top: 28px; text-align: center;">
-<a href="https://www.kasoa.pl" style="
-                               display: inline-block;
-                               padding: 14px 28px;
-                               background-color: #68764B;
-                               color: #FFFFFF;
-                               text-decoration: none;
-                               border-radius: 9px;
-                               font-size: 13px;
-                               font-weight: 700;
-                           ">
-                            Sprawdź moje zamówienie →
-                        </a>
-</div>
-        """.formatted(
-                escapeHtml(buyerName),
-                escapeHtml(orderNumber),
-                escapeHtml(orderNumber),
-                itemsHtml.toString(),
-                escapeHtml(total)
-        );
+        String htmlContent =
+                badge("✓ Płatność potwierdzona (Payment confirmed)", Tone.NEUTRAL)
+                        + h1("Dziękujemy za zakupy, " + escapeHtml(buyerName) + "!")
+                        + lead("Twoja płatność za zamówienie " + strong("#" + safeOrder)
+                        + " została pomyślnie przetworzona. Poniżej znajdziesz szczegóły zamówienia, "
+                        + "dane sprzedawców oraz informacje o podmiocie obsługującym transakcję.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrder))
+                        + label("Podsumowanie zamówienia")
+                        + table(itemsHtml + kvTotal("Łączna kwota zamówienia", escapeHtml(total) + " zł"))
+                        + section("Informacje o sprzedawcach",
+                        muted("Produkty w tym zamówieniu są oferowane przez sprzedawców wskazanych przy poszczególnych pozycjach. "
+                                + "W przypadku sprzedawcy oznaczonego jako osoba prywatna sprzedaż odbywa się pomiędzy kupującym "
+                                + "a tym sprzedawcą. Kasoa.pl nie jest sprzedawcą tych produktów wyłącznie z tytułu "
+                                + "udostępniania platformy."))
+                        + section("Podmiot obsługujący transakcję",
+                        el("div", "margin:0 0 8px;font-size:14px;line-height:21px;font-weight:700;color:" + INK + ";",
+                                "KASAWA SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ")
+                                + muted("KASAWA Sp. z o.o. prowadzi platformę Kasoa.pl i pełni funkcję podmiotu obsługującego "
+                                + "transakcję. Spółka nie jest sprzedawcą produktów wymienionych w tym zamówieniu."))
+                        + section("Co dalej?", steps(
+                        "Sprzedawcy przygotują produkty do wysyłki.",
+                        "Otrzymasz informacje o wysyłce i numerach śledzenia, gdy będą dostępne.",
+                        "Śledź przesyłki i odbierz swoje zakupy."))
+                        + button(HOME_URL, "Sprawdź moje zamówienie →");
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -693,156 +623,27 @@ public class EmailNotificationService {
                 ? amount.toPlainString()
                 : "0.00";
 
-        String htmlContent = """
-Anulowanie produktu
-                
-<h1 style="
-                    margin: 18px 0 10px 0;
-                    font-size: 25px;
-                    line-height: 1.25;
-                    color: #182016;
-                    font-weight: 800;
-                ">
-                    Produkt został anulowany
-                </h1>
-<p style="
-                    margin: 0 0 25px 0;
-                    font-size: 14px;
-                    line-height: 1.8;
-                    color: #667066;
-                ">
-                    Informujemy, że sprzedający anulował poniższy
-                    produkt z Twojego zamówienia.
-                </p>
-
-
-
-
-<div style="
-                                font-size: 10px;
-                                font-weight: 700;
-                                color: #8A9288;
-                                text-transform: uppercase;
-                                letter-spacing: 1px;
-                                margin-bottom: 7px;
-                            ">
-                                Numer zamówienia
-                            </div>
-<div style="
-                                font-family: monospace;
-                                font-size: 17px;
-                                font-weight: 700;
-                                color: #182016;
-                            ">
-                                #%s
-                            </div>
-
-
-
-
-
-
-
-<div style="
-                                font-size: 10px;
-                                font-weight: 700;
-                                color: #8A9288;
-                                text-transform: uppercase;
-                                letter-spacing: 1px;
-                                margin-bottom: 10px;
-                            ">
-                                Anulowany produkt
-                            </div>
-<div style="
-                                font-size: 15px;
-                                font-weight: 700;
-                                line-height: 1.6;
-                                color: #182016;
-                            ">
-                                %s
-                            </div>
-<div style="
-                                margin-top: 12px;
-                                font-size: 12px;
-                                color: #B54735;
-                                font-weight: 700;
-                            ">
-                                Status: Anulowano przez sprzedającego (Cancelled by seller)
-                            </div>
-
-
-
-
-
-
-
-<div style="
-                                font-size: 10px;
-                                font-weight: 700;
-                                color: #8A9288;
-                                text-transform: uppercase;
-                                letter-spacing: 1px;
-                                margin-bottom: 8px;
-                            ">
-                                Kwota zwrotu
-                            </div>
-<div style="
-                                font-size: 25px;
-                                font-weight: 800;
-                                color: #68764B;
-                            ">
-                                %s zł
-                            </div>
-
-
-
-
-<p style="
-                    margin: 24px 0 0 0;
-                    font-size: 13px;
-                    line-height: 1.8;
-                    color: #667066;
-                ">
-                    Przepraszamy za niedogodności.
-                    Zwrot środków zostanie zlecony na pierwotną
-                    metodę płatności.
-                </p>
-<p style="
-                    margin: 12px 0 0 0;
-                    font-size: 13px;
-                    line-height: 1.8;
-                    color: #667066;
-                ">
-                    Pozostałe produkty z Twojego zamówienia
-                    nie są objęte tym anulowaniem.
-                    Szczegóły możesz sprawdzić w zakładce
-                    „Zamówienia” na swoim koncie Kasoa.
-                </p>
-
-<div style="margin-top: 28px; text-align: center;">
-<a href="https://www.kasoa.pl" style="
-                            display: inline-block;
-                            padding: 14px 28px;
-                            background-color: #68764B;
-                            color: #FFFFFF;
-                            text-decoration: none;
-                            border-radius: 9px;
-                            font-size: 13px;
-                            font-weight: 700;
-                       ">
-                        Sprawdź moje zamówienie →
-                    </a>
-</div>
-        """.formatted(
-                escapeHtml(orderNumber),
-                escapeHtml(product),
-                escapeHtml(formattedAmount)
-        );
+        String htmlContent =
+                badge("Anulowanie produktu", Tone.ALERT)
+                        + h1("Produkt został anulowany")
+                        + lead("Informujemy, że sprzedający anulował poniższy produkt z Twojego zamówienia.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(escapeHtml(orderNumber)))
+                        + panel(Tone.NEUTRAL,
+                        label("Anulowany produkt")
+                                + el("div", "font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", escapeHtml(product))
+                                + el("div", "margin-top:10px;font-size:13px;line-height:20px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "Status: Anulowano przez sprzedającego (Cancelled by seller)"))
+                        + panel(Tone.NEUTRAL,
+                        label("Kwota zwrotu")
+                                + el("div", "font-size:28px;line-height:34px;font-weight:800;color:" + INK + ";", escapeHtml(formattedAmount) + " zł"))
+                        + muted("Przepraszamy za niedogodności. Zwrot środków zostanie zlecony na pierwotną metodę płatności.")
+                        + spacer(12)
+                        + muted("Pozostałe produkty z Twojego zamówienia nie są objęte tym anulowaniem. "
+                        + "Szczegóły możesz sprawdzić w zakładce „Zamówienia” na swoim koncie Kasoa.")
+                        + button(HOME_URL, "Sprawdź moje zamówienie →");
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(htmlContent));
     }
-
-
 
 
     @Async
@@ -880,242 +681,38 @@ Anulowanie produktu
                 .replace("\n", "<br>")
                 : "Sprzedawca nie dodał dodatkowych instrukcji.";
 
-        String htmlContent = """
-✓ Odbiór osobisty potwierdzony (Personal collection confirmed)
-                    
-<h1 style="
-                        margin: 18px 0 10px;
-                        font-size: 25px;
-                        line-height: 1.3;
-                        color: #182016;
-                        font-weight: 800;
-                    ">
-                        Odbiór osobisty został potwierdzony, %s!
-                    </h1>
-<p style="
-                        margin: 0 0 24px;
-                        font-size: 15px;
-                        line-height: 1.7;
-                        color: #667066;
-                    ">
-                        Sprzedawca potwierdził Twoje zamówienie i przekazał
-                        szczegóły dotyczące odbioru. Możesz teraz skontaktować
-                        się ze sprzedawcą, aby ustalić dogodny termin.
-                    </p>
-
-
-
-
-<div style="
-                                    font-size: 13px;
-                                    font-weight: 800;
-                                    color: #8A5A12;
-                                    margin-bottom: 8px;
-                                ">
-                                    ⏰ Masz 48 godzin na odbiór
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    line-height: 1.7;
-                                    color: #765B2C;
-                                ">
-                                    Od momentu otrzymania tej wiadomości
-                                    masz 48 godzin, aby skontaktować się
-                                    ze sprzedawcą, ustalić dogodny termin
-                                    i odebrać zamówiony produkt.
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 12px;
-                                ">
-                                    Szczegóły zamówienia
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    color: #667066;
-                                    margin-bottom: 5px;
-                                ">
-                                    Numer zamówienia
-                                </div>
-<div style="
-                                    font-family: monospace;
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                    color: #182016;
-                                    margin-bottom: 16px;
-                                ">
-                                    #%s
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    color: #667066;
-                                    margin-bottom: 5px;
-                                ">
-                                    Produkt
-                                </div>
-<div style="
-                                    font-size: 15px;
-                                    font-weight: 700;
-                                    color: #182016;
-                                ">
-                                    %s
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #68764B;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 12px;
-                                ">
-                                    📍 Adres odbioru
-                                </div>
-<div style="
-                                    font-size: 16px;
-                                    line-height: 1.7;
-                                    font-weight: 700;
-                                    color: #182016;
-                                ">
-                                    %s
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 10px;
-                                ">
-                                    Kontakt ze sprzedawcą
-                                </div>
-<div style="
-                                    font-size: 14px;
-                                    line-height: 1.7;
-                                    color: #182016;
-                                ">
-                                    %s
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 10px;
-                                ">
-                                    Informacje od sprzedawcy
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    line-height: 1.8;
-                                    color: #667066;
-                                ">
-                                    %s
-                                </div>
-
-
-
-
-<div style="
-                        padding-top: 22px;
-                        border-top: 1px solid #E8EBE5;
-                    ">
-<div style="
-                            font-size: 14px;
-                            font-weight: 800;
-                            color: #182016;
-                            margin-bottom: 12px;
-                        ">
-                            Co teraz zrobić?
-                        </div>
-<p style="
-                            margin: 0 0 10px;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">1.</strong>
-                            Skontaktuj się ze sprzedawcą, aby ustalić
-                            dogodny termin odbioru.
-                        </p>
-<p style="
-                            margin: 0 0 10px;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">2.</strong>
-                            Odbierz produkt pod wskazanym adresem
-                            w ciągu 48 godzin od otrzymania tej wiadomości.
-                        </p>
-<p style="
-                            margin: 0;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">3.</strong>
-                            Po odbiorze produktu sprzedawca zaktualizuje
-                            status zamówienia. Następnie otrzymasz od
-                            Kasoa.pl osobną wiadomość e-mail z instrukcją
-                            potwierdzenia odbioru.
-                        </p>
-</div>
-
-<div style="margin-top: 28px; text-align: center;">
-<a href="https://www.kasoa.pl/account/orders" style="
-                               display: inline-block;
-                               padding: 14px 28px;
-                               background-color: #68764B;
-                               color: #FFFFFF;
-                               text-decoration: none;
-                               border-radius: 9px;
-                               font-size: 13px;
-                               font-weight: 700;
-                           ">
-                            Zobacz moje zamówienia →
-                        </a>
-</div>
-        """.formatted(
-                safeBuyerName,
-                safeOrderNumber,
-                safeProduct,
-                safeAddress,
-                safeSellerContact,
-                safeSellerComment
-        );
+        String htmlContent =
+                badge("✓ Odbiór osobisty potwierdzony (Personal collection confirmed)", Tone.NEUTRAL)
+                        + h1("Odbiór osobisty został potwierdzony, " + safeBuyerName + "!")
+                        + lead("Sprzedawca potwierdził Twoje zamówienie i przekazał szczegóły dotyczące odbioru. "
+                        + "Możesz teraz skontaktować się ze sprzedawcą, aby ustalić dogodny termin.")
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 6px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "⏰ Masz 48 godzin na odbiór")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Od momentu otrzymania tej wiadomości masz 48 godzin, aby skontaktować się ze sprzedawcą, "
+                                        + "ustalić dogodny termin i odebrać zamówiony produkt."))
+                        + panel(Tone.NEUTRAL,
+                        label("Szczegóły zamówienia")
+                                + el("div", "margin:0 0 4px;font-size:13px;color:" + MUTED + ";", "Numer zamówienia")
+                                + el("div", "margin:0 0 14px;font-family:" + MONO + ";font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";", "#" + safeOrderNumber)
+                                + el("div", "margin:0 0 4px;font-size:13px;color:" + MUTED + ";", "Produkt")
+                                + el("div", "font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProduct))
+                        + panel(Tone.NEUTRAL,
+                        label("📍 Adres odbioru")
+                                + el("div", "font-size:16px;line-height:26px;font-weight:700;color:" + INK + ";", safeAddress))
+                        + panel(Tone.NEUTRAL,
+                        label("Kontakt ze sprzedawcą")
+                                + el("div", "font-size:14px;line-height:23px;color:" + INK + ";", safeSellerContact))
+                        + panel(Tone.NEUTRAL,
+                        label("Informacje od sprzedawcy")
+                                + el("div", "font-size:13px;line-height:21px;color:" + MUTED + ";", safeSellerComment))
+                        + section("Co teraz zrobić?", steps(
+                        "Skontaktuj się ze sprzedawcą, aby ustalić dogodny termin odbioru.",
+                        "Odbierz produkt pod wskazanym adresem w ciągu 48 godzin od otrzymania tej wiadomości.",
+                        "Po odbiorze produktu sprzedawca zaktualizuje status zamówienia. Następnie otrzymasz od Kasoa.pl "
+                                + "osobną wiadomość e-mail z instrukcją potwierdzenia odbioru."))
+                        + button("https://www.kasoa.pl/account/orders", "Zobacz moje zamówienia →");
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -1146,189 +743,31 @@ Anulowanie produktu
         String safeOrderNumber = escapeHtml(orderNumber);
         String safeProduct = escapeHtml(product);
 
-        String htmlContent = """
-ODBIÓR OSOBISTY
-                    
-<h1 style="
-                        margin: 18px 0 10px;
-                        font-size: 25px;
-                        line-height: 1.3;
-                        color: #182016;
-                        font-weight: 800;
-                    ">
-                        Produkt został przekazany kupującemu, %s?
-                    </h1>
-<p style="
-                        margin: 0 0 24px;
-                        font-size: 15px;
-                        line-height: 1.7;
-                        color: #667066;
-                    ">
-                        Po osobistym przekazaniu produktu kupującemu
-                        pamiętaj o zaktualizowaniu statusu zamówienia
-                        na Kasoa.pl. Dzięki temu kupujący otrzyma
-                        wiadomość e-mail z prośbą o potwierdzenie odbioru.
-                    </p>
-
-
-
-
-<div style="
-                                    font-size: 10px;
-                                    font-weight: 700;
-                                    color: #8A9288;
-                                    text-transform: uppercase;
-                                    letter-spacing: 1px;
-                                    margin-bottom: 12px;
-                                ">
-                                    Szczegóły zamówienia
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    color: #667066;
-                                    margin-bottom: 5px;
-                                ">
-                                    Numer zamówienia
-                                </div>
-<div style="
-                                    font-family: monospace;
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                    color: #182016;
-                                    margin-bottom: 16px;
-                                ">
-                                    #%s
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    color: #667066;
-                                    margin-bottom: 5px;
-                                ">
-                                    Produkt
-                                </div>
-<div style="
-                                    font-size: 15px;
-                                    font-weight: 700;
-                                    color: #182016;
-                                ">
-                                    %s
-                                </div>
-
-
-
-
-
-
-
-<div style="
-                                    font-size: 13px;
-                                    font-weight: 800;
-                                    color: #8A5A12;
-                                    margin-bottom: 8px;
-                                ">
-                                    Wymagane działanie
-                                </div>
-<div style="
-                                    font-size: 13px;
-                                    line-height: 1.7;
-                                    color: #765B2C;
-                                ">
-                                    Zaloguj się na swoje konto Kasoa.pl
-                                    i przejdź do szczegółów zamówienia.
-                                    W sekcji wysyłki zaktualizuj status
-                                    zamówienia na
-                                    <strong>„Dostarczono” (DELIVERED)</strong>.
-                                </div>
-
-
-
-
-<div style="
-                        padding-top: 22px;
-                        border-top: 1px solid #E8EBE5;
-                    ">
-<div style="
-                            font-size: 14px;
-                            font-weight: 800;
-                            color: #182016;
-                            margin-bottom: 14px;
-                        ">
-                            Co stanie się dalej?
-                        </div>
-<p style="
-                            margin: 0 0 12px;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">1.</strong>
-                            Po zmianie statusu na „Dostarczono” kupujący
-                            otrzyma od Kasoa.pl osobną wiadomość e-mail
-                            z bezpiecznym linkiem do potwierdzenia odbioru.
-                        </p>
-<p style="
-                            margin: 0 0 12px;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">2.</strong>
-                            Kupujący musi skorzystać z otrzymanego linku
-                            i potwierdzić, że odebrał produkt.
-                        </p>
-<p style="
-                            margin: 0;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-<strong style="color: #182016;">3.</strong>
-                            Po potwierdzeniu odbioru przez kupującego
-                            Kasoa.pl rozpocznie proces realizacji wypłaty
-                            należnych Ci środków.
-                        </p>
-</div>
-
-
-
-
-<div style="
-                                    font-size: 12px;
-                                    line-height: 1.7;
-                                    color: #667066;
-                                ">
-<strong style="color: #182016;">
-                                        Ważne:
-                                    </strong>
-                                    Status „Dostarczono” aktualizuj
-                                    wyłącznie po faktycznym przekazaniu
-                                    produktu kupującemu. Sama zmiana
-                                    statusu nie oznacza jeszcze
-                                    potwierdzenia odbioru przez kupującego.
-                                </div>
-
-
-
-
-<div style="margin-top: 28px; text-align: center;">
-<a href="https://www.kasoa.pl/account/orders" style="
-                               display: inline-block;
-                               padding: 14px 28px;
-                               background-color: #68764B;
-                               color: #FFFFFF;
-                               text-decoration: none;
-                               border-radius: 9px;
-                               font-size: 13px;
-                               font-weight: 700;
-                           ">
-                            Przejdź do moich zamówień →
-                        </a>
-</div>
-        """.formatted(
-                safeSellerName,
-                safeOrderNumber,
-                safeProduct
-        );
+        String htmlContent =
+                badge("ODBIÓR OSOBISTY", Tone.NEUTRAL)
+                        + h1("Produkt został przekazany kupującemu, " + safeSellerName + "?")
+                        + lead("Po osobistym przekazaniu produktu kupującemu pamiętaj o zaktualizowaniu statusu zamówienia "
+                        + "na Kasoa.pl. Dzięki temu kupujący otrzyma wiadomość e-mail z prośbą o potwierdzenie odbioru.")
+                        + panel(Tone.NEUTRAL,
+                        label("Szczegóły zamówienia")
+                                + el("div", "margin:0 0 4px;font-size:13px;color:" + MUTED + ";", "Numer zamówienia")
+                                + el("div", "margin:0 0 14px;font-family:" + MONO + ";font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";", "#" + safeOrderNumber)
+                                + el("div", "margin:0 0 4px;font-size:13px;color:" + MUTED + ";", "Produkt")
+                                + el("div", "font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProduct))
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 6px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";", "Wymagane działanie")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Zaloguj się na swoje konto Kasoa.pl i przejdź do szczegółów zamówienia. "
+                                        + "W sekcji wysyłki zaktualizuj status zamówienia na " + strong("„Dostarczono” (DELIVERED)") + "."))
+                        + section("Co stanie się dalej?", steps(
+                        "Po zmianie statusu na „Dostarczono” kupujący otrzyma od Kasoa.pl osobną wiadomość e-mail "
+                                + "z bezpiecznym linkiem do potwierdzenia odbioru.",
+                        "Kupujący musi skorzystać z otrzymanego linku i potwierdzić, że odebrał produkt.",
+                        "Po potwierdzeniu odbioru przez kupującego Kasoa.pl rozpocznie proces realizacji wypłaty należnych Ci środków."))
+                        + spacer(24)
+                        + muted(strong("Ważne:") + " Status „Dostarczono” aktualizuj wyłącznie po faktycznym przekazaniu produktu "
+                        + "kupującemu. Sama zmiana statusu nie oznacza jeszcze potwierdzenia odbioru przez kupującego.")
+                        + button("https://www.kasoa.pl/account/orders", "Przejdź do moich zamówień →");
 
         sendHtmlEmail(sellerEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -1370,131 +809,34 @@ ODBIÓR OSOBISTY
                 .toPlainString()
                 : "0.00";
 
-        String htmlContent = """
-ZAMÓWIENIE ANULOWANE
-                        
-<h1 style="
-                            margin:18px 0 10px;
-                            font-size:25px;
-                            line-height:1.25;
-                            color:#182016;
-                            font-weight:800;
-                        ">
-                            Zamówienie zostało anulowane
-                        </h1>
-<p style="
-                            margin:0 0 24px;
-                            font-size:15px;
-                            line-height:1.7;
-                            color:#667066;
-                        ">
-                            Dzień dobry %s,
-                            <br/><br/>
-                            informujemy, że zamówienie
-                            <strong style="color:#182016;">#%s</strong>
-                            zostało anulowane, ponieważ sprzedawca
-                            nie potwierdził go w wymaganym terminie.
-                        </p>
-
-
-
-
-<div style="
-                                        font-size:10px;
-                                        font-weight:700;
-                                        color:#8A9288;
-                                        text-transform:uppercase;
-                                        letter-spacing:1px;
-                                        margin-bottom:8px;
-                                    ">
-                                        Anulowany produkt
-                                    </div>
-<div style="
-                                        font-size:16px;
-                                        line-height:1.5;
-                                        font-weight:700;
-                                        color:#182016;
-                                        overflow-wrap:anywhere;
-                                    ">
-                                        %s
-                                    </div>
-<div style="
-                                        margin-top:22px;
-                                        padding-top:18px;
-                                        border-top:1px solid #E4E8DE;
-                                    ">
-<div style="
-                                            font-size:10px;
-                                            font-weight:700;
-                                            color:#8A9288;
-                                            text-transform:uppercase;
-                                            letter-spacing:1px;
-                                        ">
-                                            Kwota zwrotu
-                                        </div>
-<div style="
-                                            margin-top:8px;
-                                            font-size:27px;
-                                            line-height:1.3;
-                                            font-weight:800;
-                                            color:#68764B;
-                                        ">
-                                            %s zł
-                                        </div>
-</div>
-<p style="
-                                        margin:12px 0 0;
-                                        font-size:13px;
-                                        line-height:1.7;
-                                        color:#667066;
-                                    ">
-                                        Zwrot zostanie przekazany na pierwotną
-                                        metodę płatności. Zaksięgowanie środków
-                                        może potrwać kilka dni roboczych,
-                                        w zależności od banku lub operatora
-                                        płatności.
-                                    </p>
-
-
-
-
-<p style="
-                            margin:0;
-                            font-size:14px;
-                            line-height:1.7;
-                            color:#667066;
-                        ">
-                            Przepraszamy za niedogodności i dziękujemy
-                            za wyrozumiałość. W razie pytań możesz
-                            skontaktować się z naszym zespołem.
-                        </p>
-
-<div style="margin-top:28px;text-align:center;">
-<a href="https://www.kasoa.pl" style="
-                                   display:inline-block;
-                                   padding:14px 28px;
-                                   background-color:#68764B;
-                                   color:#FFFFFF;
-                                   text-decoration:none;
-                                   border-radius:9px;
-                                   font-size:13px;
-                                   font-weight:700;
-                               ">
-                                Odwiedź Kasoa.pl →
-                            </a>
-</div>
-        """.formatted(
-                safeBuyerName,
-                safeOrderNumber,
-                safeProductName,
-                escapeHtml(total)
-        );
+        String htmlContent =
+                badge("ZAMÓWIENIE ANULOWANE", Tone.ALERT)
+                        + h1("Zamówienie zostało anulowane")
+                        + lead("Dzień dobry " + safeBuyerName + ",<br><br>informujemy, że zamówienie "
+                        + strong("#" + safeOrderNumber)
+                        + " zostało anulowane, ponieważ sprzedawca nie potwierdził go w wymaganym terminie.")
+                        + panel(Tone.NEUTRAL,
+                        label("Anulowany produkt")
+                                + el("div", "margin:0 0 18px;font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProductName)
+                                + label("Kwota zwrotu")
+                                + el("div", "font-size:28px;line-height:34px;font-weight:800;color:" + INK + ";", escapeHtml(total) + " zł"))
+                        + muted("Zwrot zostanie przekazany na pierwotną metodę płatności. Zaksięgowanie środków może potrwać "
+                        + "kilka dni roboczych, w zależności od banku lub operatora płatności.")
+                        + spacer(16)
+                        + muted("Przepraszamy za niedogodności i dziękujemy za wyrozumiałość. "
+                        + "W razie pytań możesz skontaktować się z naszym zespołem.")
+                        + button(HOME_URL, "Odwiedź Kasoa.pl →");
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(htmlContent));
     }
 
+
+    // =====================================================================
+    //  SELLER: LISTING + DAC7
+    // =====================================================================
+
     /**
-     * Compiles a beautiful brand confirmation email when a product goes live.
+     * Compiles a brand confirmation email when a product goes live.
      */
     @Async
     public void sendProductCreatedNotification(
@@ -1512,257 +854,38 @@ ZAMÓWIENIE ANULOWANE
                 ? price.toPlainString()
                 : "0.00";
 
-        String htmlContent = """
-✓ Oferta opublikowana
-                        
-<h1 style="
-                            margin: 20px 0 10px 0;
-                            font-size: 26px;
-                            line-height: 1.2;
-                            color: #182016;
-                            font-weight: 800;
-                            letter-spacing: -0.6px;
-                        ">
-                            Cześć %s!
-                        </h1>
-<p style="
-                            margin: 0 0 28px 0;
-                            font-size: 15px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-                            Twój przedmiot został pomyślnie wystawiony
-                            na <strong style="color: #68764B;">kasoa.pl</strong>.
-                            Teraz może znaleźć nowego właściciela.
-                        </p>
+        String htmlContent =
+                badge("✓ Oferta opublikowana", Tone.NEUTRAL)
+                        + h1("Cześć " + safeSellerName + "!")
+                        + lead("Twój przedmiot został pomyślnie wystawiony na " + strong("kasoa.pl")
+                        + ". Teraz może znaleźć nowego właściciela.")
+                        + panel(Tone.NEUTRAL,
+                        label("Twój przedmiot")
+                                + el("div", "font-size:17px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProductName)
+                                + el("div", "margin-top:10px;font-size:24px;line-height:30px;font-weight:800;color:" + INK + ";", escapeHtml(formattedPrice) + " zł"))
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 4px;font-size:14px;line-height:21px;font-weight:700;color:" + INK + ";", "💡 Wskazówka od kasoa.pl")
+                                + el("div", "font-size:13px;line-height:21px;color:" + MUTED + ";",
+                                "Dobre zdjęcia i dokładny opis zwiększają szanse na szybką sprzedaż."))
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 6px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "💳 Przygotuj się na otrzymywanie wypłat")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Aby móc otrzymywać płatności za sprzedane przedmioty, ukończ weryfikację sprzedawcy, "
+                                        + "jeśli jeszcze tego nie zrobiłeś. Przejdź do "
+                                        + strong("Konto → Profil → Weryfikacja sprzedawcy") + " i postępuj zgodnie z instrukcjami.")
+                                + el("div", "margin-top:8px;font-size:12px;line-height:19px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "Warto zrobić to już teraz, aby uniknąć opóźnień w otrzymaniu wypłaty po sprzedaży."))
+                        + section("Co dalej?", steps(
+                        "Poczekaj na zainteresowanego kupującego.",
+                        "Po sprzedaży otrzymasz od nas wszystkie informacje dotyczące wysyłki.",
+                        "Przygotuj przedmiot i wyślij go do nowego właściciela."))
+                        + button(HOME_URL, "Przejdź do kasoa.pl →");
 
-
-
-
-<div style="
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Twój przedmiot
-                                    </div>
-<div style="
-                                        font-size: 17px;
-                                        line-height: 1.4;
-                                        font-weight: 700;
-                                        color: #182016;
-                                    ">
-                                        %s
-                                    </div>
-<div style="
-                                        margin-top: 12px;
-                                        font-size: 23px;
-                                        line-height: 1;
-                                        font-weight: 800;
-                                        color: #68764B;
-                                    ">
-                                        %s zł
-                                    </div>
-
-
-
-
-
-
-
-                                    💡
-                                
-
-<div style="
-                                        font-size: 13px;
-                                        font-weight: 800;
-                                        color: #68764B;
-                                        margin-bottom: 5px;
-                                    ">
-                                        Wskazówka od kasoa.pl
-                                    </div>
-<div style="
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #536047;
-                                    ">
-                                        Dobre zdjęcia i dokładny opis zwiększają
-                                        szanse na szybką sprzedaż.
-                                    </div>
-
-
-
-
-
-
-
-                                    💳
-                                
-
-<div style="
-                                        font-size: 13px;
-                                        font-weight: 800;
-                                        color: #795A20;
-                                        margin-bottom: 6px;
-                                    ">
-                                        Przygotuj się na otrzymywanie wypłat
-                                    </div>
-<div style="
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #6B5A3C;
-                                    ">
-                                        Aby móc otrzymywać płatności za
-                                        sprzedane przedmioty, ukończ
-                                        weryfikację sprzedawcy, jeśli jeszcze
-                                        tego nie zrobiłeś. Przejdź do
-                                        <strong>
-                                            Konto → Profil → Weryfikacja sprzedawcy
-                                        </strong>
-                                        i postępuj zgodnie z instrukcjami.
-                                    </div>
-<div style="
-                                        margin-top: 8px;
-                                        font-size: 12px;
-                                        line-height: 1.5;
-                                        color: #795A20;
-                                        font-weight: 700;
-                                    ">
-                                        Warto zrobić to już teraz, aby uniknąć
-                                        opóźnień w otrzymaniu wypłaty po sprzedaży.
-                                    </div>
-
-
-
-
-<div style="
-                            margin-top: 28px;
-                            padding-top: 24px;
-                            border-top: 1px solid #E8EBE5;
-                        ">
-<div style="
-                                font-size: 13px;
-                                font-weight: 800;
-                                color: #182016;
-                                margin-bottom: 14px;
-                            ">
-                                Co dalej?
-                            </div>
-<table border="0" cellpadding="0" cellspacing="0" width="100%%">
-<tr>
-<td style="padding-bottom: 12px;" valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            1
-                                        </div>
-</td>
-<td style="
-                                            padding: 3px 0 12px 8px;
-                                            font-size: 13px;
-                                            line-height: 1.6;
-                                            color: #667066;
-                                        " valign="top">
-                                        Poczekaj na zainteresowanego kupującego.
-                                    </td>
-</tr>
-<tr>
-<td style="padding-bottom: 12px;" valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            2
-                                        </div>
-</td>
-<td style="
-                                            padding: 3px 0 12px 8px;
-                                            font-size: 13px;
-                                            line-height: 1.6;
-                                            color: #667066;
-                                        " valign="top">
-                                        Po sprzedaży otrzymasz od nas
-                                        wszystkie informacje dotyczące wysyłki.
-                                    </td>
-</tr>
-<tr>
-<td valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">
-                                            3
-                                        </div>
-</td>
-<td style="
-                                            padding: 3px 0 0 8px;
-                                            font-size: 13px;
-                                            line-height: 1.6;
-                                            color: #667066;
-                                        " valign="top">
-                                        Przygotuj przedmiot i wyślij go
-                                        do nowego właściciela.
-                                    </td>
-</tr>
-</table>
-</div>
-
-<div style="
-                            margin-top: 30px;
-                            text-align: center;
-                        ">
-<a href="https://www.kasoa.pl" style="
-                                    display: inline-block;
-                                    padding: 14px 28px;
-                                    background-color: #68764B;
-                                    color: #FFFFFF;
-                                    text-decoration: none;
-                                    border-radius: 9px;
-                                    font-size: 13px;
-                                    font-weight: 700;
-                                ">
-                                Przejdź do kasoa.pl →
-                            </a>
-</div>
-        """.formatted(
-                safeSellerName,
-                safeProductName,
-                formattedPrice
-        );
-
-        // Send the email asynchronously.
         sendHtmlEmail(sellerEmail, subject, buildEmailLayout(htmlContent));
     }
 
 
-    /**
-     * Compiles a beautiful brand confirmation email when a product goes live.
-     */
     @Async
     public void sendDac7RolloverUpdate(
             String sellerEmail,
@@ -1774,39 +897,17 @@ ZAMÓWIENIE ANULOWANE
         String subject =
                 "Twój roczny licznik sprzedaży kasoa.pl został zresetowany! #" + currentYear;
 
-        String htmlContent = """
-<h2 style="margin-top:0; color:#68764B;">
-                    Cześć %s!
-                </h2>
-<p>
-                    Rozpoczął się nowy rok rozliczeniowy na <strong>kasoa.pl</strong>.
-                    Twój roczny licznik sprzedaży został zresetowany.
-                </p>
-<p>
-                    Dane z poprzedniego okresu zostały zachowane:
-                </p>
+        String htmlContent =
+                h1("Cześć " + escapeHtml(firstName) + "!")
+                        + p("Rozpoczął się nowy rok rozliczeniowy na " + strong("kasoa.pl")
+                        + ". Twój roczny licznik sprzedaży został zresetowany.")
+                        + p("Dane z poprzedniego okresu zostały zachowane:")
+                        + panel(Tone.NEUTRAL, table(
+                        kvRow("Sprzedaż", String.valueOf(archivedSalesCount))
+                                + kvRow("Łączna wartość sprzedaży", escapeHtml(archivedGrossVolume.toPlainString()) + " PLN")))
+                        + p("Licznik dla roku " + strong(String.valueOf(currentYear)) + " rozpoczyna się od zera.")
+                        + p("Dziękujemy, że korzystasz z kasoa.pl.");
 
-<p style="margin:0 0 10px;">
-<strong>Sprzedaż:</strong> %d
-                    </p>
-<p style="margin:0;">
-<strong>Łączna wartość sprzedaży:</strong> %s PLN
-                    </p>
-
-<p style="margin-top:24px;">
-                    Licznik dla roku <strong>%d</strong> rozpoczyna się od zera.
-                </p>
-<p>
-                    Dziękujemy, że korzystasz z kasoa.pl.
-                </p>
-        """.formatted(
-                firstName,
-                archivedSalesCount,
-                archivedGrossVolume.toPlainString(),
-                currentYear
-        );
-
-        // Executes using the background async thread pool
         sendHtmlEmail(sellerEmail, subject, buildEmailLayout(htmlContent));
     }
 
@@ -1823,42 +924,18 @@ ZAMÓWIENIE ANULOWANE
                 ? exception.getMessage()
                 : exception.getClass().getName();
 
-        String htmlContent = """
-<h2 style="margin-top:0; color:#b91c1c;">
-                    🚨 Niepowodzenie rocznego resetu DAC7 (DAC7 annual reset failed)
-                </h2>
-<p>
-                    Roczny reset roku podatkowego DAC7 dla
-                    <strong>kasoa.pl</strong> zakończył się niepowodzeniem.
-                </p>
-
-<p style="margin:0 0 12px;">
-<strong>Rok podatkowy (Tax year):</strong> %d
-                    </p>
-<p style="margin:0 0 12px;">
-<strong>Status:</strong>
-<span style="color:#b91c1c; font-weight:bold;">
-                            KRYTYCZNY BŁĄD (Critical failure)
-                        </span>
-</p>
-<p style="margin:0;">
-<strong>Błąd (Error):</strong><br/>
-                        %s
-                    </p>
-
-<p>
-                    Liczniki DAC7 mogły nie zostać zresetowane.
-                    Prosimy o natychmiastowe sprawdzenie aplikacji i bazy danych.
-
-                </p>
-<p style="margin-top:30px; font-size:13px; color:#777;">
-                    To automatyczne powiadomienie krytyczne wygenerowane
-                    przez system podatkowy kasoa.pl.
-                </p>
-        """.formatted(
-                currentYear,
-                escapeHtml(errorMessage)
-        );
+        String htmlContent =
+                badge("🚨 KRYTYCZNY BŁĄD (Critical failure)", Tone.ALERT)
+                        + h1("Niepowodzenie rocznego resetu DAC7", "(DAC7 annual reset failed)")
+                        + p("Roczny reset roku podatkowego DAC7 dla " + strong("kasoa.pl") + " zakończył się niepowodzeniem.")
+                        + panel(Tone.ALERT,
+                        table(kvRow("Rok podatkowy (Tax year)", String.valueOf(currentYear)))
+                                + divider()
+                                + label("Błąd (Error)")
+                                + el("div", "font-family:" + MONO + ";font-size:13px;line-height:20px;color:" + Tone.ALERT.fg
+                                + ";overflow-wrap:anywhere;", escapeHtml(errorMessage)))
+                        + p("Liczniki DAC7 mogły nie zostać zresetowane. Prosimy o natychmiastowe sprawdzenie aplikacji i bazy danych.")
+                        + muted("To automatyczne powiadomienie krytyczne wygenerowane przez system podatkowy kasoa.pl.");
 
         sendHtmlEmail(adminEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -1872,44 +949,24 @@ ZAMÓWIENIE ANULOWANE
         String subject =
                 "KASOA.PL — Roczny reset roku podatkowego DAC7 zakończony (DAC7 annual tax year reset completed) #" + currentYear;
 
-        String htmlContent = """
-<h2 style="margin-top:0; color:#68764B;">
-                    Roczny reset roku podatkowego DAC7 (DAC7 annual tax year reset)
-                </h2>
-<p>
-                    Roczne przejście do nowego roku podatkowego DAC7 dla
-                    <strong>kasoa.pl</strong> zostało pomyślnie zakończone.
-                </p>
-
-<p style="margin:0 0 12px;">
-<strong>Rok podatkowy (Tax year):</strong> %d
-                    </p>
-<p style="margin:0 0 12px;">
-<strong>Zaktualizowane profile sprzedawców (Seller profiles updated):</strong> %d
-                    </p>
-<p style="margin:0;">
-<strong>Status:</strong>
-<span style="color:#4d7c0f; font-weight:bold;">
-                            POWODZENIE (Success)
-                        </span>
-</p>
-
-<p>
-                    Liczniki podatkowe DAC7 zostały zresetowane i od teraz
-                    rejestrują aktywność w nowym roku kalendarzowym.
-                </p>
-<p style="margin-top:30px; font-size:13px; color:#777;">
-                    To automatyczne powiadomienie administracyjne wygenerowane
-                    przez system podatkowy kasoa.pl.
-                </p>
-        """.formatted(
-                currentYear,
-                modifiedRowsCount
-        );
+        String htmlContent =
+                badge("✓ POWODZENIE (Success)", Tone.NEUTRAL)
+                        + h1("Roczny reset roku podatkowego DAC7", "(DAC7 annual tax year reset)")
+                        + p("Roczne przejście do nowego roku podatkowego DAC7 dla " + strong("kasoa.pl")
+                        + " zostało pomyślnie zakończone.")
+                        + panel(Tone.NEUTRAL, table(
+                        kvRow("Rok podatkowy (Tax year)", String.valueOf(currentYear))
+                                + kvRow("Zaktualizowane profile sprzedawców (Seller profiles updated)", String.valueOf(modifiedRowsCount))))
+                        + p("Liczniki podatkowe DAC7 zostały zresetowane i od teraz rejestrują aktywność w nowym roku kalendarzowym.")
+                        + muted("To automatyczne powiadomienie administracyjne wygenerowane przez system podatkowy kasoa.pl.");
 
         sendHtmlEmail(adminEmail, subject, buildEmailLayout(htmlContent));
     }
 
+
+    // =====================================================================
+    //  LEGACY SINGLE-PRODUCT ORDER EMAILS
+    // =====================================================================
 
     /**
      * Sends a transactional confirmation email to the Buyer with Escrow protection updates.
@@ -1931,95 +988,30 @@ ZAMÓWIENIE ANULOWANE
 
         String formattedAmount = currencyFormat.format(totalAmount);
 
-        String htmlContent = """
-<div style="padding: 20px 0;">
-<h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px 0;">
-                Dziękujemy za zakupy, %s!
-            </h2>
-<p style="font-size: 14px; line-height: 1.6; color: #42504F;
-                      margin: 0 0 20px 0;">
-                Twoja płatność za zamówienie
-                <strong>#%s</strong> została pomyślnie przetworzona.
-                Poniżej znajdziesz podsumowanie zakupu oraz informacje
-                o sprzedawcy i obsłudze transakcji.
-            </p>
-
-<div style="background-color: #F4F7F6; border-radius: 8px;
-                        padding: 15px; margin-bottom: 20px;">
-<span style="font-size: 11px; font-weight: 700;
-                             color: #5E6C6A; display: block;
-                             text-transform: uppercase; letter-spacing: 0.5px;">
-                    Podsumowanie zamówienia
-                </span>
-<p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
-<strong>Numer zamówienia:</strong> #%s
-                </p>
-<p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
-<strong>Produkt:</strong> %s
-                </p>
-<p style="font-size: 14px; color: #0D1313; margin: 8px 0;">
-<strong>Sprzedawca:</strong> %s
-                </p>
-<p style="font-size: 13px; color: #5E6C6A; margin: 8px 0;">
-<strong>Status sprzedawcy (Seller status):</strong> Osoba prywatna (Private seller)
-                </p>
-<div style="border-top: 1px solid #DCE5E2; margin-top: 12px;
-                            padding-top: 12px;">
-<span style="font-size: 16px; font-weight: 700;
-                                 color: #1E3A3A;">
-                        Łączna kwota: %s
-                    </span>
-</div>
-</div>
-
-<div style="border: 1px solid #E0E7E6; border-radius: 8px;
-                        padding: 15px; margin-bottom: 20px;">
-<h3 style="font-size: 14px; color: #1E3A3A;
-                           margin: 0 0 10px 0;">
-                    Informacje o sprzedawcy
-                </h3>
-<p style="font-size: 13px; line-height: 1.6; color: #42504F;
-                          margin: 0;">
-                    Produkt jest sprzedawany przez wskazanego powyżej
-                    sprzedawcę będącego osobą prywatną. Jest to sprzedaż
-                    pomiędzy kupującym a prywatnym sprzedawcą.
-                    Kasoa.pl nie jest sprzedawcą tego produktu.
-                </p>
-</div>
-
-
-
-<div style="background-color: #EDF7F3; border-radius: 8px;
-                        padding: 15px; margin-bottom: 20px;">
-<strong style="font-size: 13px; color: #2A6B4E;
-                               display: block; margin-bottom: 6px;">
-                    Status płatności
-                </strong>
-<p style="font-size: 13px; line-height: 1.6; color: #2A6B4E;
-                          margin: 0;">
-                    Twoja płatność została przetworzona.
-                    Sprzedawca został powiadomiony o zamówieniu
-                    i może przygotować przesyłkę.
-                    O kolejnych etapach realizacji zamówienia
-                    poinformujemy Cię w osobnej wiadomości.
-                </p>
-</div>
-<p style="font-size: 13px; line-height: 1.6; color: #5E6C6A;
-                      margin: 0;">
-                W razie pytań dotyczących zamówienia skontaktuj się z nami:
-                <a href="mailto:kasawa.corp@gmail.com" style="color: #1E3A3A;">
-                    kasawa.corp@gmail.com
-                </a>.
-            </p>
-</div>
-        """.formatted(
-                escapeHtml(buyerName),
-                escapeHtml(orderNumber),
-                escapeHtml(orderNumber),
-                escapeHtml(productName),
-                escapeHtml(sellerName),
-                escapeHtml(formattedAmount)
-        );
+        String htmlContent =
+                badge("✓ Płatność potwierdzona", Tone.NEUTRAL)
+                        + h1("Dziękujemy za zakupy, " + escapeHtml(buyerName) + "!")
+                        + lead("Twoja płatność za zamówienie " + strong("#" + escapeHtml(orderNumber))
+                        + " została pomyślnie przetworzona. Poniżej znajdziesz podsumowanie zakupu oraz informacje "
+                        + "o sprzedawcy i obsłudze transakcji.")
+                        + panel(Tone.NEUTRAL,
+                        label("Podsumowanie zamówienia")
+                                + table(kvRow("Numer zamówienia", "#" + escapeHtml(orderNumber))
+                                + kvRow("Produkt", escapeHtml(productName))
+                                + kvRow("Sprzedawca", escapeHtml(sellerName))
+                                + kvRow("Status sprzedawcy (Seller status)", "Osoba prywatna (Private seller)")
+                                + kvTotal("Łączna kwota", escapeHtml(formattedAmount))))
+                        + section("Informacje o sprzedawcy",
+                        muted("Produkt jest sprzedawany przez wskazanego powyżej sprzedawcę będącego osobą prywatną. "
+                                + "Jest to sprzedaż pomiędzy kupującym a prywatnym sprzedawcą. "
+                                + "Kasoa.pl nie jest sprzedawcą tego produktu."))
+                        + section("Status płatności",
+                        muted("Twoja płatność została przetworzona. Sprzedawca został powiadomiony o zamówieniu i może "
+                                + "przygotować przesyłkę. O kolejnych etapach realizacji zamówienia poinformujemy Cię "
+                                + "w osobnej wiadomości."))
+                        + spacer(24)
+                        + muted("W razie pytań dotyczących zamówienia skontaktuj się z nami: "
+                        + textLink("mailto:kasawa.corp@gmail.com", "kasawa.corp@gmail.com") + ".");
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -2033,30 +1025,26 @@ ZAMÓWIENIE ANULOWANE
     public void sendOrderActionToSeller(String sellerEmail, String sellerName, String orderNumber, String productName, java.math.BigDecimal payoutAmount) {
         String subject = "Twój przedmiot został sprzedany! 🚀 Przygotuj wysyłkę zamówienia #" + orderNumber;
 
-        String htmlContent = """
-<div style="padding: 20px 0;">
-<h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px 0;">Świetne wieści, %s!</h2>
-<p style="font-size: 14px; line-height: 1.6; color: #42504F; margin: 0 0 20px 0;">
-                    Kupujący pomyślnie opłacił Twój produkt w zamówieniu <strong>#%s</strong>. Środki zostały w pełni zabezpieczone.
-                </p>
-<div style="background-color: #F4F7F6; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-<span style="font-size: 11px; font-weight: 700; color: #5E6C6A; display: block; text-transform: uppercase; letter-spacing: 0.5px;">Sprzedany produkt</span>
-<strong style="font-size: 14px; color: #0D1313; display: block; margin-top: 4px;">%s</strong>
-<strong style="font-size: 16px; color: #2A6B4E; display: block; margin-top: 4px;">Twój przewidywany zysk: %s zł</strong>
-</div>
-<div style="background-color: #FEF3C7; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-<strong style="font-size: 13px; color: #D97706; display: block; margin-bottom: 4px;">📦 Co musisz teraz zrobić?</strong>
-<ol style="font-size: 13px; line-height: 1.5; color: #D97706; margin: 0; padding-left: 20px;">
-<li>Zaloguj się do swojego panelu i przejdź do sekcji <strong>'Wysyłki'</strong>.</li>
-<li>Pobierz wygenerowaną, opłaconą etykietę przewozową.</li>
-<li>Bezpiecznie zapakuj produkt i nadaj paczkę w ciągu najbliższych 3 dni roboczych.</li>
-</ol>
-</div>
-<p style="font-size: 13px; color: #5E6C6A; margin: 0;">
-                    Pamiętaj, że środki zostaną automatycznie uwolnione do Twojego salda wypłat (Payouts) niezwłocznie po tym, jak kupujący potwierdzi bezpieczny odbiór paczki.
-                </p>
-</div>
-        """.formatted(sellerName, orderNumber, productName, payoutAmount.toString());
+        String htmlContent =
+                badge("🚀 SPRZEDANE", Tone.NEUTRAL)
+                        + h1("Świetne wieści, " + escapeHtml(sellerName) + "!")
+                        + lead("Kupujący pomyślnie opłacił Twój produkt w zamówieniu " + strong("#" + escapeHtml(orderNumber))
+                        + ". Środki zostały w pełni zabezpieczone.")
+                        + panel(Tone.NEUTRAL,
+                        label("Sprzedany produkt")
+                                + el("div", "font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", escapeHtml(productName))
+                                + el("div", "margin-top:10px;font-size:14px;line-height:22px;color:" + MUTED + ";",
+                                "Twój przewidywany zysk: " + el("span", "font-size:18px;font-weight:800;color:" + INK + ";",
+                                        escapeHtml(payoutAmount.toString()) + " zł")))
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 10px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "📦 Co musisz teraz zrobić?")
+                                + steps(
+                                "Zaloguj się do swojego panelu i przejdź do sekcji " + strong("„Wysyłki”") + ".",
+                                "Pobierz wygenerowaną, opłaconą etykietę przewozową.",
+                                "Bezpiecznie zapakuj produkt i nadaj paczkę w ciągu najbliższych 3 dni roboczych."))
+                        + muted("Pamiętaj, że środki zostaną automatycznie uwolnione do Twojego salda wypłat (Payouts) "
+                        + "niezwłocznie po tym, jak kupujący potwierdzi bezpieczny odbiór paczki.");
 
         sendHtmlEmail(sellerEmail, subject, buildEmailLayout(htmlContent));
     }
@@ -2074,6 +1062,10 @@ ZAMÓWIENIE ANULOWANE
                 .replace("'", "&#39;");
     }
 
+
+    // =====================================================================
+    //  SELLER: NEW ORDER (3 VARIANTS)
+    // =====================================================================
 
     /**
      * Sends a single consolidated notification email to a Seller listing all products
@@ -2130,70 +1122,13 @@ ZAMÓWIENIE ANULOWANE
                 productsTotal = productsTotal.add(productTotal);
                 shippingTotal = shippingTotal.add(shippingCost);
 
-                productsHtml.append("""
-                <tr>
-                    <td style="
-                        padding:16px 0;
-                        border-bottom:1px solid #E4E7DE;
-                        vertical-align:top;
-                    ">
-                        <div style="
-                            font-size:15px;
-                            line-height:22px;
-                            font-weight:700;
-                            color:#182016;
-                        ">
-                            %s
-                        </div>
-
-                        <div style="
-                            margin-top:4px;
-                            font-size:13px;
-                            line-height:20px;
-                            color:#687064;
-                        ">
-                            Quantity: %s
-                        </div>
-                    </td>
-
-                    <td style="
-                        padding:16px 0;
-                        border-bottom:1px solid #E4E7DE;
-                        text-align:right;
-                        vertical-align:top;
-                        white-space:nowrap;
-                    ">
-                        <div style="
-                            font-size:15px;
-                            line-height:22px;
-                            font-weight:700;
-                            color:#182016;
-                        ">
-                            %s PLN
-                        </div>
-                    </td>
-                </tr>
-                """.formatted(
-                        productName,
-                        quantity,
-                        productTotal.toPlainString()
-                ));
+                productsHtml.append(productRow(productName, "Quantity: " + quantity,
+                        productTotal.toPlainString() + " PLN"));
             }
 
         } else {
-
-            productsHtml.append("""
-            <tr>
-                <td colspan="2"
-                    style="
-                        padding:16px 0;
-                        color:#687064;
-                        font-size:14px;
-                    ">
-                    No products available.
-                </td>
-            </tr>
-            """);
+            productsHtml.append("<tr><td colspan=\"2\" style=\"padding:16px 0;font-size:14px;color:" + MUTED
+                    + ";\">No products available.</td></tr>");
         }
 
         BigDecimal orderTotal = productsTotal.add(shippingTotal);
@@ -2228,224 +1163,32 @@ ZAMÓWIENIE ANULOWANE
         String subject =
                 "Kasoa.pl — Nowe zamówienie #" + orderNumber;
 
-        String html = """
-<div style="
-                                    font-size:14px;
-                                    font-weight:700;
-                                    color:#68764B;
-                                    margin-bottom:8px;
-                                ">
-                                    NOWE ZAMÓWIENIE
-                                </div>
-<div style="
-                                    font-size:25px;
-                                    line-height:32px;
-                                    font-weight:800;
-                                    color:#182016;
-                                ">
-                                    Cześć %s! 👋
-                                </div>
-<div style="
-                                    margin-top:12px;
-                                    font-size:15px;
-                                    line-height:24px;
-                                    color:#5E6658;
-                                ">
-                                    Otrzymałeś nowe zamówienie. Przygotuj
-                                    produkty do wysyłki zgodnie z poniższymi
-                                    danymi.
-                                </div>
-
-
-
-
-<div style="
-                                                font-size:12px;
-                                                font-weight:700;
-                                                color:#68764B;
-                                                text-transform:uppercase;
-                                            ">
-                                                Numer zamówienia
-                                            </div>
-<div style="
-                                                margin-top:4px;
-                                                font-size:18px;
-                                                font-weight:800;
-                                                color:#182016;
-                                            ">
-                                                #%s
-                                            </div>
-
-
-
-
-<div style="
-                                    margin-top:30px;
-                                    font-size:18px;
-                                    line-height:24px;
-                                    font-weight:800;
-                                    color:#182016;
-                                ">
-                                    Produkty
-                                </div>
-
-
-                                    %s
-
-                                
-
-
-
-
-                                            Produkty
-                                        
-
-                                            %s PLN
-                                        
-
-
-
-                                            Dostawa
-                                        
-
-                                            %s PLN
-                                        
-
-
-
-
-
-
-
-                                            Razem
-                                        
-
-                                            %s PLN
-                                        
-
-
-
-<div style="
-                                    margin-top:32px;
-                                    font-size:18px;
-                                    line-height:24px;
-                                    font-weight:800;
-                                    color:#182016;
-                                ">
-                                    Dane do przesyłki
-                                </div>
-
-
-
-
-
-                                                %s
-
-                                            
-<div style="
-                                                margin:16px 0;
-                                                border-top:1px solid #E0E4DB;
-                                                height:1px;
-                                                line-height:1px;
-                                            ">
-                                                 
-                                            </div>
-
-
-                                                %s
-
-                                            
-
-
-
-
-
-
-
-<div style="
-                                                font-size:16px;
-                                                font-weight:800;
-                                                color:#182016;
-                                            ">
-                                                📦 Co teraz?
-                                            </div>
-<div style="
-                                                margin-top:10px;
-                                                font-size:14px;
-                                                line-height:22px;
-                                                color:#5E6658;
-                                            ">
-                                                1. Przygotuj wszystkie produkty
-                                                z zamówienia.
-                                                <br/><br/>
-                                                2. Zapakuj je bezpiecznie,
-                                                aby dotarły w dobrym stanie.
-                                                <br/><br/>
-                                                3. Wyślij przesyłkę na podany
-                                                adres odbiorcy.
-                                                <br/><br/>
-                                                4. Po nadaniu przesyłki
-                                                zaktualizuj status wysyłki
-                                                w Kasoa.pl.
-                                                <br/><br/>
-                                                5. Zachowaj potwierdzenie
-                                                nadania przesyłki.
-                                            </div>
-
-
-
-
-
-
-
-<div style="
-                                                font-size:16px;
-                                                font-weight:800;
-                                                color:#182016;
-                                            ">
-                                                💰 Płatność
-                                            </div>
-<div style="
-                                                margin-top:8px;
-                                                font-size:14px;
-                                                line-height:22px;
-                                                color:#5E6658;
-                                            ">
-                                                Środki zostaną rozliczone
-                                                zgodnie z zasadami Kasoa
-                                                po zakończeniu procesu
-                                                dostawy i potwierdzeniu
-                                                odbioru przez kupującego.
-                                            </div>
-
-
-
-
-
-
-
-<a href="https://www.kasoa.pl" style="
-                                                   display:inline-block;
-                                                   background:#68764B;
-                                                   color:#FFFFFF;
-                                                   text-decoration:none;
-                                                   font-size:15px;
-                                                   font-weight:700;
-                                                   padding:14px 26px;
-                                                   border-radius:10px;
-                                               ">
-                                                Przejdź do Kasoa.pl
-                                            </a>
-        """.formatted(
-                safeSellerName,
-                safeOrderNumber,
-                productsHtml.toString(),
-                productsTotal.toPlainString(),
-                shippingTotal.toPlainString(),
-                orderTotal.toPlainString(),
-                recipientAddressHtml,
-                senderAddressHtml
-        );
+        String html =
+                badge("NOWE ZAMÓWIENIE", Tone.NEUTRAL)
+                        + h1("Cześć " + safeSellerName + "! 👋")
+                        + lead("Otrzymałeś nowe zamówienie. Przygotuj produkty do wysyłki zgodnie z poniższymi danymi.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrderNumber))
+                        + h2("Produkty")
+                        + table(productsHtml.toString()
+                        + kvRow("Produkty", escapeHtml(productsTotal.toPlainString()) + " PLN")
+                        + kvRow("Dostawa", escapeHtml(shippingTotal.toPlainString()) + " PLN")
+                        + kvTotal("Razem", escapeHtml(orderTotal.toPlainString()) + " PLN"))
+                        + section("Dane do przesyłki",
+                        panel(Tone.NEUTRAL, table(recipientAddressHtml) + divider() + table(senderAddressHtml)))
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 10px;font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";", "📦 Co teraz?")
+                                + steps(
+                                "Przygotuj wszystkie produkty z zamówienia.",
+                                "Zapakuj je bezpiecznie, aby dotarły w dobrym stanie.",
+                                "Wyślij przesyłkę na podany adres odbiorcy.",
+                                "Po nadaniu przesyłki zaktualizuj status wysyłki w Kasoa.pl.",
+                                "Zachowaj potwierdzenie nadania przesyłki."))
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 6px;font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";", "💰 Płatność")
+                                + el("div", "font-size:14px;line-height:22px;color:" + MUTED + ";",
+                                "Środki zostaną rozliczone zgodnie z zasadami Kasoa po zakończeniu procesu dostawy "
+                                        + "i potwierdzeniu odbioru przez kupującego."))
+                        + button(HOME_URL, "Przejdź do Kasoa.pl");
 
         sendHtmlEmail(
                 sellerEmail,
@@ -2513,69 +1256,13 @@ ZAMÓWIENIE ANULOWANE
 
                 productsTotal = productsTotal.add(productTotal);
 
-                productsHtml.append("""
-                <tr>
-                    <td style="
-                        padding:16px 0;
-                        border-bottom:1px solid #E4E7DE;
-                        vertical-align:top;
-                    ">
-                        <div style="
-                            font-size:15px;
-                            line-height:22px;
-                            font-weight:700;
-                            color:#182016;
-                        ">
-                            %s
-                        </div>
-
-                        <div style="
-                            margin-top:4px;
-                            font-size:13px;
-                            line-height:20px;
-                            color:#687064;
-                        ">
-                            Ilość: %s
-                        </div>
-                    </td>
-
-                    <td style="
-                        padding:16px 0;
-                        border-bottom:1px solid #E4E7DE;
-                        text-align:right;
-                        vertical-align:top;
-                        white-space:nowrap;
-                    ">
-                        <div style="
-                            font-size:15px;
-                            line-height:22px;
-                            font-weight:700;
-                            color:#182016;
-                        ">
-                            %s PLN
-                        </div>
-                    </td>
-                </tr>
-                """.formatted(
-                        productName,
-                        quantity,
-                        productTotal.toPlainString()
-                ));
+                productsHtml.append(productRow(productName, "Ilość: " + quantity,
+                        productTotal.toPlainString() + " PLN"));
             }
 
         } else {
-
-            productsHtml.append("""
-            <tr>
-                <td colspan="2" style="
-                    padding:16px 0;
-                    color:#687064;
-                    font-size:14px;
-                ">
-                    Brak dostępnych produktów.
-                </td>
-            </tr>
-            """);
+            productsHtml.append("<tr><td colspan=\"2\" style=\"padding:16px 0;font-size:14px;color:" + MUTED
+                    + ";\">Brak dostępnych produktów.</td></tr>");
         }
 
         // Personal collection has no courier shipping charge.
@@ -2588,252 +1275,40 @@ ZAMÓWIENIE ANULOWANE
                 StandardCharsets.UTF_8
         );
 
-        String safeShipmentUrl = escapeHtml(shipmentUrl);
-
         String subject =
                 "Kasoa.pl — Nowe zamówienie #" + safeOrderNumber;
 
-        String html = """
-<div style="
-                                        font-size:14px;
-                                        font-weight:700;
-                                        color:#68764B;
-                                        margin-bottom:8px;
-                                    ">
-                                        NOWE ZAMÓWIENIE
-                                    </div>
-<div style="
-                                        font-size:25px;
-                                        line-height:32px;
-                                        font-weight:800;
-                                        color:#182016;
-                                    ">
-                                        Cześć %s! 👋
-                                    </div>
-<div style="
-                                        margin-top:12px;
-                                        font-size:15px;
-                                        line-height:24px;
-                                        color:#5E6658;
-                                    ">
-                                        Otrzymałeś nowe zamówienie.
-                                        Kupujący wybrał
-                                        <strong>odbiór osobisty</strong>
-                                        zamiast dostawy kurierskiej.
-                                    </div>
-
-
-
-
-<div style="
-                                                    font-size:12px;
-                                                    font-weight:700;
-                                                    color:#68764B;
-                                                    text-transform:uppercase;
-                                                ">
-                                                    Numer zamówienia
-                                                </div>
-<div style="
-                                                    margin-top:4px;
-                                                    font-size:18px;
-                                                    font-weight:800;
-                                                    color:#182016;
-                                                ">
-                                                    #%s
-                                                </div>
-
-
-
-
-<div style="
-                                        margin-top:30px;
-                                        font-size:18px;
-                                        line-height:24px;
-                                        font-weight:800;
-                                        color:#182016;
-                                    ">
-                                        Produkty
-                                    </div>
-
-                                        %s
-                                    
-
-
-
-
-                                                Produkty
-                                            
-
-                                                %s PLN
-                                            
-
-
-
-
-
-
-                                                Razem
-                                            
-
-                                                %s PLN
-                                            
-
-
-
-
-
-
-<div style="
-                                                    font-size:18px;
-                                                    line-height:24px;
-                                                    font-weight:800;
-                                                    color:#182016;
-                                                ">
-                                                    📍 Potwierdź odbiór osobisty
-                                                </div>
-<div style="
-                                                    margin-top:10px;
-                                                    font-size:14px;
-                                                    line-height:22px;
-                                                    color:#5E6658;
-                                                ">
-                                                    Masz <strong>24 godziny</strong>
-                                                    na potwierdzenie zamówienia
-                                                    i podanie szczegółów odbioru.
-                                                    <br/><br/>
-
-                                                    1. Otwórz szczegóły zamówienia
-                                                    za pomocą przycisku poniżej.
-                                                    <br/><br/>
-
-                                                    2. Potwierdź zamówienie,
-                                                    podaj dokładny adres odbioru
-                                                    oraz określ dostępne dni
-                                                    i godziny, w których kupujący
-                                                    może odebrać produkty.
-                                                    <br/><br/>
-
-                                                    3. Po Twoim potwierdzeniu
-                                                    Kasoa wyśle kupującemu
-                                                    wiadomość e-mail ze szczegółami
-                                                    odbioru.
-                                                    <br/><br/>
-
-                                                    4. Kupujący będzie miał
-                                                    <strong>48 godzin od momentu
-                                                    Twojego potwierdzenia</strong>,
-                                                    aby odebrać zamówienie.
-                                                    <br/><br/>
-
-                                                    5. Po fizycznym odebraniu
-                                                    produktów kupujący potwierdzi
-                                                    ich otrzymanie, klikając
-                                                    bezpieczny link w wiadomości
-                                                    e-mail od Kasoa.pl.
-                                                </div>
-
-
-
-
-<a href="%s" style="
-                                                                   display:inline-block;
-                                                                   background:#68764B;
-                                                                   color:#FFFFFF;
-                                                                   text-decoration:none;
-                                                                   font-size:15px;
-                                                                   font-weight:700;
-                                                                   padding:14px 26px;
-                                                                   border-radius:10px;
-                                                               ">
-                                                                Potwierdź zamówienie
-                                                                i podaj szczegóły odbioru
-                                                            </a>
-
-
-
-<div style="
-                                                    margin-top:16px;
-                                                    font-size:12px;
-                                                    line-height:18px;
-                                                    color:#8A9184;
-                                                    text-align:center;
-                                                ">
-                                                    Adres odbioru i dostępne terminy
-                                                    podasz po otwarciu szczegółów
-                                                    zamówienia.
-                                                </div>
-
-
-
-
-
-
-
-<div style="
-                                                    font-size:16px;
-                                                    font-weight:800;
-                                                    color:#182016;
-                                                ">
-                                                    💰 Płatność
-                                                </div>
-<div style="
-                                                    margin-top:8px;
-                                                    font-size:14px;
-                                                    line-height:22px;
-                                                    color:#5E6658;
-                                                ">
-                                                    Środki zostaną rozliczone
-                                                    zgodnie z zasadami Kasoa
-                                                    po potwierdzeniu odbioru
-                                                    produktów przez kupującego.
-                                                </div>
-<div style="
-                                                    margin-top:20px;
-                                                    padding-top:18px;
-                                                    border-top:1px solid #E0E4DB;
-                                                ">
-<div style="
-                                                        font-size:15px;
-                                                        line-height:22px;
-                                                        font-weight:800;
-                                                        color:#182016;
-                                                    ">
-                                                        Dokończ konfigurację płatności
-                                                    </div>
-<div style="
-                                                        margin-top:8px;
-                                                        font-size:14px;
-                                                        line-height:22px;
-                                                        color:#5E6658;
-                                                    ">
-                                                        Aby otrzymywać wypłaty
-                                                        za sprzedane produkty,
-                                                        skonfiguruj konto Stripe
-                                                        i zweryfikuj swoją tożsamość,
-                                                        jeśli jeszcze tego nie zrobiłeś.
-                                                    </div>
-<div style="
-                                                        margin-top:10px;
-                                                        font-size:14px;
-                                                        line-height:22px;
-                                                        color:#5E6658;
-                                                    ">
-                                                        Zaloguj się na Kasoa.pl,
-                                                        przejdź do
-                                                        <strong>Konto &gt; Profil</strong>
-                                                        i rozpocznij konfigurację Stripe.
-                                                        Następnie wykonaj wymagane kroki
-                                                        weryfikacji tożsamości.
-                                                    </div>
-</div>
-        """.formatted(
-                safeSellerName,
-                safeOrderNumber,
-                productsHtml.toString(),
-                productsTotal.toPlainString(),
-                orderTotal.toPlainString(),
-                safeShipmentUrl
-        );
+        String html =
+                badge("NOWE ZAMÓWIENIE", Tone.NEUTRAL)
+                        + h1("Cześć " + safeSellerName + "! 👋")
+                        + lead("Otrzymałeś nowe zamówienie. Kupujący wybrał " + strong("odbiór osobisty")
+                        + " zamiast dostawy kurierskiej.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrderNumber))
+                        + h2("Produkty")
+                        + table(productsHtml.toString()
+                        + kvRow("Produkty", escapeHtml(productsTotal.toPlainString()) + " PLN")
+                        + kvTotal("Razem", escapeHtml(orderTotal.toPlainString()) + " PLN"))
+                        + section("📍 Potwierdź odbiór osobisty",
+                        p("Masz " + strong("24 godziny") + " na potwierdzenie zamówienia i podanie szczegółów odbioru.")
+                                + steps(
+                                "Otwórz szczegóły zamówienia za pomocą przycisku poniżej.",
+                                "Potwierdź zamówienie, podaj dokładny adres odbioru oraz określ dostępne dni i godziny, "
+                                        + "w których kupujący może odebrać produkty.",
+                                "Po Twoim potwierdzeniu Kasoa wyśle kupującemu wiadomość e-mail ze szczegółami odbioru.",
+                                "Kupujący będzie miał " + strong("48 godzin od momentu Twojego potwierdzenia")
+                                        + ", aby odebrać zamówienie.",
+                                "Po fizycznym odebraniu produktów kupujący potwierdzi ich otrzymanie, klikając bezpieczny link "
+                                        + "w wiadomości e-mail od Kasoa.pl."))
+                        + button(shipmentUrl, "Potwierdź zamówienie i podaj szczegóły odbioru")
+                        + caption("Adres odbioru i dostępne terminy podasz po otwarciu szczegółów zamówienia.")
+                        + section("💰 Płatność",
+                        muted("Środki zostaną rozliczone zgodnie z zasadami Kasoa po potwierdzeniu odbioru produktów przez kupującego."))
+                        + section("Dokończ konfigurację płatności",
+                        muted("Aby otrzymywać wypłaty za sprzedane produkty, skonfiguruj konto Stripe i zweryfikuj swoją "
+                                + "tożsamość, jeśli jeszcze tego nie zrobiłeś.")
+                                + spacer(10)
+                                + muted("Zaloguj się na Kasoa.pl, przejdź do " + strong("Konto &gt; Profil")
+                                + " i rozpocznij konfigurację Stripe. Następnie wykonaj wymagane kroki weryfikacji tożsamości."));
 
         sendHtmlEmail(
                 sellerEmail,
@@ -2841,286 +1316,6 @@ ZAMÓWIENIE ANULOWANE
                 buildEmailLayout(html)
         );
     }
-
-
-
-
-
-
-    /**
-     *
-     * @param sellerEmail
-     * @param reason
-     * @param orderNumber
-     */
-
-    @Async
-    public void notifySellerOfBuyerReturnComplaint(
-            String sellerEmail,
-            String orderNumber,
-            String reason
-    ) {
-        String safeOrderNumber = escapeHtml(
-                orderNumber != null ? orderNumber : ""
-        );
-
-        String safeReason = escapeHtml(
-                reason != null && !reason.isBlank()
-                        ? reason
-                        : "Nie podano powodu reklamacji."
-        );
-
-        String complaintUrl = escapeHtml(
-                frontEndUrl + "/account/orders"
-        );
-
-        String subject =
-                "Kasoa.pl — Zgłoszenie reklamacji zwrotu #" + safeOrderNumber;
-
-        String htmlContent = """
-⚠ Wymagana odpowiedź
-                        
-<h1 style="
-                            margin: 20px 0 10px 0;
-                            font-size: 26px;
-                            line-height: 1.2;
-                            color: #182016;
-                            font-weight: 800;
-                            letter-spacing: -0.6px;
-                        ">
-                            Otrzymano reklamację zwrotu
-                        </h1>
-<p style="
-                            margin: 0 0 28px 0;
-                            font-size: 15px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-                            Kupujący zgłosił reklamację dotyczącą przedmiotu
-                            z zamówienia
-                            <strong style="color: #68764B;">#%s</strong>.
-                            Zaloguj się na swoje konto Kasoa.pl, zapoznaj się
-                            ze zgłoszeniem i zdjęciami kupującego, a następnie
-                            zaakceptuj reklamację lub ją odrzuć, podając uzasadnienie.
-                        </p>
-
-
-
-
-<div style="
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Numer zamówienia
-                                    </div>
-<div style="
-                                        font-size: 20px;
-                                        line-height: 1.4;
-                                        font-weight: 800;
-                                        color: #182016;
-                                    ">
-                                        #%s
-                                    </div>
-
-
-
-
-<div style="
-                            margin-top: 28px;
-                            font-size: 18px;
-                            line-height: 24px;
-                            font-weight: 800;
-                            color: #182016;
-                        ">
-                            Powód reklamacji
-                        </div>
-
-
-
-                                    %s
-                                
-
-
-
-<div style="
-                            margin-top: 30px;
-                            padding-top: 24px;
-                            border-top: 1px solid #E8EBE5;
-                        ">
-<div style="
-                                font-size: 18px;
-                                line-height: 24px;
-                                font-weight: 800;
-                                color: #182016;
-                                margin-bottom: 16px;
-                            ">
-                                Co należy zrobić?
-                            </div>
-<table border="0" cellpadding="0" cellspacing="0" width="100%%">
-<tr>
-<td style="padding-bottom: 12px;" valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">1</div>
-</td>
-<td style="
-                                        padding: 3px 0 12px 8px;
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #667066;
-                                    " valign="top">
-                                        Zaloguj się na swoje konto Kasoa.pl
-                                        i otwórz szczegóły zamówienia.
-                                    </td>
-</tr>
-<tr>
-<td style="padding-bottom: 12px;" valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">2</div>
-</td>
-<td style="
-                                        padding: 3px 0 12px 8px;
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #667066;
-                                    " valign="top">
-                                        Dokładnie sprawdź opis reklamacji
-                                        oraz zdjęcia załączone przez kupującego.
-                                    </td>
-</tr>
-<tr>
-<td valign="top" width="32">
-<div style="
-                                            width: 24px;
-                                            height: 24px;
-                                            line-height: 24px;
-                                            text-align: center;
-                                            background-color: #68764B;
-                                            color: #FFFFFF;
-                                            border-radius: 50%%;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        ">3</div>
-</td>
-<td style="
-                                        padding: 3px 0 0 8px;
-                                        font-size: 13px;
-                                        line-height: 1.6;
-                                        color: #667066;
-                                    " valign="top">
-                                        Zaakceptuj reklamację, jeśli uznajesz
-                                        ją za zasadną. Jeśli się nie zgadzasz,
-                                        odrzuć ją i podaj uzasadnienie.
-                                        Sprawa zostanie wówczas przekazana
-                                        do oceny administracji Kasoa.pl.
-                                    </td>
-</tr>
-</table>
-</div>
-
-
-
-
-                                    ⚖️
-                                
-
-<div style="
-                                        font-size: 15px;
-                                        line-height: 22px;
-                                        font-weight: 800;
-                                        color: #795A20;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Co się stanie po odrzuceniu reklamacji?
-                                    </div>
-<div style="
-                                        font-size: 13px;
-                                        line-height: 1.7;
-                                        color: #6B5A3C;
-                                    ">
-                                        Jeśli odrzucisz reklamację, administracja
-                                        Kasoa.pl przeanalizuje zgłoszenie oraz
-                                        Twoje uzasadnienie i podejmie decyzję.
-                                    </div>
-<div style="
-                                        margin-top: 12px;
-                                        font-size: 13px;
-                                        line-height: 1.7;
-                                        color: #6B5A3C;
-                                    ">
-                                        Jeśli administracja uzna, że reklamacja
-                                        jest zasadna, otrzymasz informację
-                                        o konieczności opłacenia przesyłki
-                                        kurierskiej w celu odebrania przedmiotu
-                                        od kupującego i zwrócenia go Tobie.
-                                    </div>
-<div style="
-                                        margin-top: 12px;
-                                        font-size: 13px;
-                                        line-height: 1.7;
-                                        color: #6B5A3C;
-                                    ">
-                                        Kupujący otrzyma pełny zwrot ceny zakupu
-                                        przedmiotu. Koszt przesyłki zwrotnej
-                                        od kupującego do Ciebie poniesiesz Ty
-                                        jako sprzedający.
-                                    </div>
-
-
-
-
-<div style="
-                            margin-top: 30px;
-                            text-align: center;
-                        ">
-<a href="%s" style="
-                                    display: inline-block;
-                                    padding: 14px 28px;
-                                    background-color: #68764B;
-                                    color: #FFFFFF;
-                                    text-decoration: none;
-                                    border-radius: 9px;
-                                    font-size: 13px;
-                                    font-weight: 700;
-                                ">
-                                Otwórz swoje zamówienia →
-                            </a>
-</div>
-        """.formatted(
-                safeOrderNumber,
-                safeOrderNumber,
-                safeReason,
-                complaintUrl
-        );
-
-        sendHtmlEmail(
-                sellerEmail,
-                subject,
-                buildEmailLayout(htmlContent)
-        );
-    }
-
 
 
 
@@ -3184,65 +1379,12 @@ ZAMÓWIENIE ANULOWANE
                 productsTotal = productsTotal.add(productTotal);
                 shippingTotal = shippingTotal.add(shippingCost);
 
-                productsHtml.append("""
-                    <tr>
-                        <td style="
-                            padding:16px 0;
-                            border-bottom:1px solid #E4E7DE;
-                            vertical-align:top;
-                        ">
-                            <div style="
-                                font-size:15px;
-                                line-height:22px;
-                                font-weight:700;
-                                color:#182016;
-                            ">
-                                %s
-                            </div>
-                            <div style="
-                                margin-top:4px;
-                                font-size:13px;
-                                line-height:20px;
-                                color:#687064;
-                            ">
-                                Ilość: %s
-                            </div>
-                        </td>
-                        <td style="
-                            padding:16px 0;
-                            border-bottom:1px solid #E4E7DE;
-                            text-align:right;
-                            vertical-align:top;
-                            white-space:nowrap;
-                        ">
-                            <div style="
-                                font-size:15px;
-                                line-height:22px;
-                                font-weight:700;
-                                color:#182016;
-                            ">
-                                %s PLN
-                            </div>
-                        </td>
-                    </tr>
-                    """.formatted(
-                        productName,
-                        quantity,
-                        productTotal.toPlainString()
-                ));
+                productsHtml.append(productRow(productName, "Ilość: " + quantity,
+                        productTotal.toPlainString() + " PLN"));
             }
         } else {
-            productsHtml.append("""
-                <tr>
-                    <td colspan="2" style="
-                        padding:16px 0;
-                        color:#687064;
-                        font-size:14px;
-                    ">
-                        Brak dostępnych produktów.
-                    </td>
-                </tr>
-                """);
+            productsHtml.append("<tr><td colspan=\"2\" style=\"padding:16px 0;font-size:14px;color:" + MUTED
+                    + ";\">Brak dostępnych produktów.</td></tr>");
         }
 
         BigDecimal orderTotal = productsTotal.add(shippingTotal);
@@ -3257,225 +1399,30 @@ ZAMÓWIENIE ANULOWANE
         String subject =
                 "Kasoa.pl — Nowe zamówienie #" + safeOrderNumber;
 
-        String html = """
-<div style="
-                                            font-size:14px;
-                                            font-weight:700;
-                                            color:#68764B;
-                                            margin-bottom:8px;
-                                        ">
-                                            NOWE ZAMÓWIENIE
-                                        </div>
-<div style="
-                                            font-size:25px;
-                                            line-height:32px;
-                                            font-weight:800;
-                                            color:#182016;
-                                        ">
-                                            Cześć %s! 👋
-                                        </div>
-<div style="
-                                            margin-top:12px;
-                                            font-size:15px;
-                                            line-height:24px;
-                                            color:#5E6658;
-                                        ">
-                                            Otrzymałeś nowe zamówienie.
-                                            Przygotuj produkty do wysyłki,
-                                            a następnie utwórz przesyłkę InPost
-                                            za pomocą przycisku poniżej.
-                                        </div>
-
-
-
-
-<div style="
-                                                        font-size:12px;
-                                                        font-weight:700;
-                                                        color:#68764B;
-                                                        text-transform:uppercase;
-                                                    ">
-                                                        Numer zamówienia
-                                                    </div>
-<div style="
-                                                        margin-top:4px;
-                                                        font-size:18px;
-                                                        font-weight:800;
-                                                        color:#182016;
-                                                    ">
-                                                        #%s
-                                                    </div>
-
-
-
-
-<div style="
-                                            margin-top:30px;
-                                            font-size:18px;
-                                            line-height:24px;
-                                            font-weight:800;
-                                            color:#182016;
-                                        ">
-                                            Produkty
-                                        </div>
-
-                                            %s
-                                        
-
-
-
-
-                                                    Produkty
-                                                
-
-                                                    %s PLN
-                                                
-
-
-
-                                                    Dostawa
-                                                
-
-                                                    %s PLN
-                                                
-
-
-
-
-
-
-                                                    Razem
-                                                
-
-                                                    %s PLN
-                                                
-
-
-
-
-
-
-<div style="
-                                                        font-size:18px;
-                                                        line-height:24px;
-                                                        font-weight:800;
-                                                        color:#182016;
-                                                    ">
-                                                        📦 Przygotuj wysyłkę
-                                                    </div>
-<div style="
-                                                        margin-top:10px;
-                                                        font-size:14px;
-                                                        line-height:22px;
-                                                        color:#5E6658;
-                                                    ">
-                                                        Przygotuj bezpiecznie zapakowany
-                                                        produkt. Następnie utwórz przesyłkę
-                                                        za pomocą przycisku poniżej.
-                                                    </div>
-
-
-
-<a href="%s" style="
-                                                                       display:inline-block;
-                                                                       background:#68764B;
-                                                                       color:#FFFFFF;
-                                                                       text-decoration:none;
-                                                                       font-size:15px;
-                                                                       font-weight:700;
-                                                                       padding:14px 26px;
-                                                                       border-radius:10px;
-                                                                   ">
-                                                                Utwórz zlecenie wysyłki
-                                                                </a>
-
-
-
-<div style="
-                                                        margin-top:16px;
-                                                        font-size:12px;
-                                                        line-height:18px;
-                                                        color:#8A9184;
-                                                        text-align:center;
-                                                    ">
-                                                        Dane odbiorcy, nadawcy oraz
-                                                        szczegóły przesyłki zostaną
-                                                        automatycznie uzupełnione przez Kasoa.
-                                                    </div>
-
-
-
-
-
-
-
-<div style="
-                                                        font-size:16px;
-                                                        font-weight:800;
-                                                        color:#182016;
-                                                    ">
-                                                        💰 Płatność
-                                                    </div>
-<div style="
-                                                        margin-top:8px;
-                                                        font-size:14px;
-                                                        line-height:22px;
-                                                        color:#5E6658;
-                                                    ">
-                                                        Środki zostaną rozliczone
-                                                        zgodnie z zasadami Kasoa
-                                                        po zakończeniu procesu dostawy
-                                                        i potwierdzeniu odbioru
-                                                        przez kupującego.
-                                                    </div>
-<div style="
-                                                        margin-top:20px;
-                                                        padding-top:18px;
-                                                        border-top:1px solid #E0E4DB;
-                                                    ">
-<div style="
-                                                            font-size:15px;
-                                                            line-height:22px;
-                                                            font-weight:800;
-                                                            color:#182016;
-                                                        ">
-                                                            Dokończ konfigurację płatności
-                                                        </div>
-<div style="
-                                                            margin-top:8px;
-                                                            font-size:14px;
-                                                            line-height:22px;
-                                                            color:#5E6658;
-                                                        ">
-                                                            Aby otrzymywać wypłaty za
-                                                            sprzedane produkty, skonfiguruj
-                                                            konto Stripe i zweryfikuj swoją
-                                                            tożsamość, jeśli jeszcze tego
-                                                            nie zrobiłeś.
-                                                        </div>
-<div style="
-                                                            margin-top:10px;
-                                                            font-size:14px;
-                                                            line-height:22px;
-                                                            color:#5E6658;
-                                                        ">
-                                                            Zaloguj się na Kasoa.pl,
-                                                            przejdź do
-                                                            <strong>Konto &gt; Profil</strong>
-                                                            i rozpocznij konfigurację Stripe.
-                                                            Następnie wykonaj wymagane kroki
-                                                            weryfikacji tożsamości.
-                                                        </div>
-</div>
-        """.formatted(
-                safeSellerName,
-                safeOrderNumber,
-                productsHtml.toString(),
-                productsTotal.toPlainString(),
-                shippingTotal.toPlainString(),
-                orderTotal.toPlainString(),
-                shipmentUrl
-        );
+        String html =
+                badge("NOWE ZAMÓWIENIE", Tone.NEUTRAL)
+                        + h1("Cześć " + safeSellerName + "! 👋")
+                        + lead("Otrzymałeś nowe zamówienie. Przygotuj produkty do wysyłki, a następnie utwórz przesyłkę "
+                        + "InPost za pomocą przycisku poniżej.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrderNumber))
+                        + h2("Produkty")
+                        + table(productsHtml.toString()
+                        + kvRow("Produkty", escapeHtml(productsTotal.toPlainString()) + " PLN")
+                        + kvRow("Dostawa", escapeHtml(shippingTotal.toPlainString()) + " PLN")
+                        + kvTotal("Razem", escapeHtml(orderTotal.toPlainString()) + " PLN"))
+                        + section("📦 Przygotuj wysyłkę",
+                        muted("Przygotuj bezpiecznie zapakowany produkt. Następnie utwórz przesyłkę za pomocą przycisku poniżej."))
+                        + button(shipmentUrl, "Utwórz zlecenie wysyłki")
+                        + caption("Dane odbiorcy, nadawcy oraz szczegóły przesyłki zostaną automatycznie uzupełnione przez Kasoa.")
+                        + section("💰 Płatność",
+                        muted("Środki zostaną rozliczone zgodnie z zasadami Kasoa po zakończeniu procesu dostawy "
+                                + "i potwierdzeniu odbioru przez kupującego."))
+                        + section("Dokończ konfigurację płatności",
+                        muted("Aby otrzymywać wypłaty za sprzedane produkty, skonfiguruj konto Stripe i zweryfikuj swoją "
+                                + "tożsamość, jeśli jeszcze tego nie zrobiłeś.")
+                                + spacer(10)
+                                + muted("Zaloguj się na Kasoa.pl, przejdź do " + strong("Konto &gt; Profil")
+                                + " i rozpocznij konfigurację Stripe. Następnie wykonaj wymagane kroki weryfikacji tożsamości."));
 
         sendHtmlEmail(
                 sellerEmail,
@@ -3483,6 +1430,75 @@ ZAMÓWIENIE ANULOWANE
                 buildEmailLayout(html)
         );
     }
+
+
+    // =====================================================================
+    //  RETURNS & COMPLAINTS
+    // =====================================================================
+
+    /**
+     *
+     * @param sellerEmail
+     * @param reason
+     * @param orderNumber
+     */
+
+    @Async
+    public void notifySellerOfBuyerReturnComplaint(
+            String sellerEmail,
+            String orderNumber,
+            String reason
+    ) {
+        String safeOrderNumber = escapeHtml(
+                orderNumber != null ? orderNumber : ""
+        );
+
+        String safeReason = escapeHtml(
+                reason != null && !reason.isBlank()
+                        ? reason
+                        : "Nie podano powodu reklamacji."
+        );
+
+        String complaintUrl = frontEndUrl + "/account/orders";
+
+        String subject =
+                "Kasoa.pl — Zgłoszenie reklamacji zwrotu #" + safeOrderNumber;
+
+        String htmlContent =
+                badge("⚠ Wymagana odpowiedź", Tone.ALERT)
+                        + h1("Otrzymano reklamację zwrotu")
+                        + lead("Kupujący zgłosił reklamację dotyczącą przedmiotu z zamówienia " + strong("#" + safeOrderNumber)
+                        + ". Zaloguj się na swoje konto Kasoa.pl, zapoznaj się ze zgłoszeniem i zdjęciami kupującego, "
+                        + "a następnie zaakceptuj reklamację lub ją odrzuć, podając uzasadnienie.")
+                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrderNumber))
+                        + quotePanel("Powód reklamacji", safeReason)
+                        + section("Co należy zrobić?", steps(
+                        "Zaloguj się na swoje konto Kasoa.pl i otwórz szczegóły zamówienia.",
+                        "Dokładnie sprawdź opis reklamacji oraz zdjęcia załączone przez kupującego.",
+                        "Zaakceptuj reklamację, jeśli uznajesz ją za zasadną. Jeśli się nie zgadzasz, odrzuć ją i podaj "
+                                + "uzasadnienie. Sprawa zostanie wówczas przekazana do oceny administracji Kasoa.pl."))
+                        + spacer(24)
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 8px;font-size:15px;line-height:22px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "⚖️ Co się stanie po odrzuceniu reklamacji?")
+                                + el("div", "margin:0 0 10px;font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Jeśli odrzucisz reklamację, administracja Kasoa.pl przeanalizuje zgłoszenie oraz Twoje "
+                                        + "uzasadnienie i podejmie decyzję.")
+                                + el("div", "margin:0 0 10px;font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Jeśli administracja uzna, że reklamacja jest zasadna, otrzymasz informację o konieczności "
+                                        + "opłacenia przesyłki kurierskiej w celu odebrania przedmiotu od kupującego i zwrócenia go Tobie.")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Kupujący otrzyma pełny zwrot ceny zakupu przedmiotu. Koszt przesyłki zwrotnej od kupującego "
+                                        + "do Ciebie poniesiesz Ty jako sprzedający."))
+                        + button(complaintUrl, "Otwórz swoje zamówienia →");
+
+        sendHtmlEmail(
+                sellerEmail,
+                subject,
+                buildEmailLayout(htmlContent)
+        );
+    }
+
 
     /**
      * Notify buyer of seller response
@@ -3514,102 +1530,29 @@ ZAMÓWIENIE ANULOWANE
                         : reason
         );
 
-        String html = """
-<h1 style="margin:0 0 18px;font-size:23px;
-                             line-height:1.35;font-weight:700;color:#182016;">
-                    Aktualizacja dotycząca zwrotu lub reklamacji
-                  </h1>
-<p style="margin:0 0 22px;font-size:15px;
-                            line-height:1.7;color:#39433A;">
-                    Sprzedający rozpatrzył Twój wniosek dotyczący zwrotu
-                    lub reklamacji i go odrzucił. Poniżej znajdziesz
-                    odpowiedź sprzedającego.
-                  </p>
-
-
-
-
-<p style="margin:0 0 6px;font-size:12px;
-                                  line-height:1.5;font-weight:600;
-                                  color:#68764B;text-transform:uppercase;
-                                  letter-spacing:0.5px;">
-                          Numer zamówienia
-                        </p>
-<p style="margin:0 0 20px;font-size:16px;
-                                  line-height:1.5;font-weight:700;
-                                  color:#182016;">
-                          #%s
-                        </p>
-<p style="margin:0 0 6px;font-size:12px;
-                                  line-height:1.5;font-weight:600;
-                                  color:#68764B;text-transform:uppercase;
-                                  letter-spacing:0.5px;">
-                          Decyzja sprzedającego
-                        </p>
-<p style="margin:0 0 20px;font-size:15px;
-                                  line-height:1.6;font-weight:700;
-                                  color:#9B2C2C;">
-                          %s
-                        </p>
-<p style="margin:0 0 6px;font-size:12px;
-                                  line-height:1.5;font-weight:600;
-                                  color:#68764B;text-transform:uppercase;
-                                  letter-spacing:0.5px;">
-                          Uzasadnienie sprzedającego
-                        </p>
-<p style="margin:0;font-size:14px;
-                                  line-height:1.7;color:#39433A;
-                                  white-space:pre-line;overflow-wrap:anywhere;">
-                          %s
-                        </p>
-
-
-
-
-
-
-
-<h2 style="margin:0 0 12px;font-size:17px;
-                                   line-height:1.4;font-weight:700;
-                                   color:#1E3A3A;">
-                          Sprawa jest w trakcie weryfikacji
-                        </h2>
-<p style="margin:0 0 12px;font-size:14px;
-                                  line-height:1.7;color:#39433A;">
-                          Twoja sprawa została przekazana administratorowi
-                          Kasoa.pl do dalszego rozpatrzenia.
-                        </p>
-<p style="margin:0 0 12px;font-size:14px;
-                                  line-height:1.7;color:#39433A;">
-                          Administrator przeanalizuje uzasadnienie
-                          sprzedającego, przesłane przez Ciebie zdjęcia
-                          dowodowe oraz pierwotne ogłoszenie produktu
-                          przed podjęciem ostatecznej decyzji.
-                        </p>
-<p style="margin:0;font-size:14px;
-                                  line-height:1.7;color:#39433A;">
-                          Powiadomimy Cię po zakończeniu weryfikacji.
-                          Odrzucenie wniosku przez sprzedającego nie oznacza,
-                          że Kasoa.pl podjęło już ostateczną decyzję
-                          w Twojej sprawie.
-                        </p>
-
-
-
-<p style="margin:25px 0 0;font-size:14px;
-                            line-height:1.7;color:#39433A;">
-                    Dziękujemy za cierpliwość podczas rozpatrywania sprawy.
-                  </p>
-<p style="margin:22px 0 0;font-size:14px;
-                            line-height:1.7;color:#39433A;">
-                    Pozdrawiamy,<br/>
-<strong style="color:#182016;">Zespół Kasoa.pl</strong>
-</p>
-        """.formatted(
-                safeOrderNumber,
-                safeDecision,
-                safeReason
-        );
+        String html =
+                h1("Aktualizacja dotycząca zwrotu lub reklamacji")
+                        + lead("Sprzedający rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go odrzucił. "
+                        + "Poniżej znajdziesz odpowiedź sprzedającego.")
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + orderNumber(safeOrderNumber)
+                                + divider()
+                                + label("Decyzja sprzedającego")
+                                + el("div", "font-size:15px;line-height:23px;font-weight:700;color:" + Tone.ALERT.fg + ";", safeDecision)
+                                + divider()
+                                + label("Uzasadnienie sprzedającego")
+                                + el("div", "font-size:14px;line-height:23px;color:" + BODY + ";white-space:pre-line;overflow-wrap:anywhere;", safeReason))
+                        + section("Sprawa jest w trakcie weryfikacji",
+                        p("Twoja sprawa została przekazana administratorowi Kasoa.pl do dalszego rozpatrzenia.")
+                                + p("Administrator przeanalizuje uzasadnienie sprzedającego, przesłane przez Ciebie zdjęcia "
+                                + "dowodowe oraz pierwotne ogłoszenie produktu przed podjęciem ostatecznej decyzji.")
+                                + muted("Powiadomimy Cię po zakończeniu weryfikacji. Odrzucenie wniosku przez sprzedającego "
+                                + "nie oznacza, że Kasoa.pl podjęło już ostateczną decyzję w Twojej sprawie."))
+                        + spacer(24)
+                        + p("Dziękujemy za cierpliwość podczas rozpatrywania sprawy.")
+                        + el("p", "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
+                        "Pozdrawiamy,<br>" + strong("Zespół Kasoa.pl"));
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -3647,99 +1590,41 @@ ZAMÓWIENIE ANULOWANE
         );
 
         String decisionMessage = approved
-                ? """
-              Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu
-              lub reklamacji i go zatwierdził.
-              """
-                : """
-              Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu
-              lub reklamacji i go odrzucił.
-              """;
+                ? "Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go zatwierdził."
+                : "Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go odrzucił.";
 
         String nextSteps = approved
-                ? """
-              <h3 style="margin:24px 0 12px;font-size:18px;color:#1E3A3A;">
-                Co dalej?
-              </h3>
+                ? section("Co dalej?",
+                p("Przygotuj produkt do zwrotu i zapakuj go w sposób zapewniający odpowiednią ochronę podczas transportu.")
+                        + p("Kurier odbierze przesyłkę spod tego samego adresu, na który produkt został pierwotnie dostarczony. "
+                        + "Koszt odbioru przesyłki przez kuriera pokrywa sprzedający.")
+                        + el("p", "margin:0;font-size:15px;line-height:24px;color:" + BODY + ";",
+                        "Poczekaj na dalsze instrukcje od Kasoa.pl dotyczące odbioru. Nie wysyłaj produktu samodzielnie, "
+                                + "chyba że otrzymasz takie polecenie."))
+                : el("p", "margin:20px 0 0;font-size:15px;line-height:24px;color:" + BODY + ";",
+                "Jeśli masz pytania dotyczące tej decyzji, skontaktuj się z obsługą Kasoa.pl, podając numer zamówienia.");
 
-              <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                Przygotuj produkt do zwrotu i zapakuj go w sposób zapewniający
-                odpowiednią ochronę podczas transportu.
-              </p>
-
-              <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                Kurier odbierze przesyłkę spod tego samego adresu, na który
-                produkt został pierwotnie dostarczony. Koszt odbioru przesyłki
-                przez kuriera pokrywa sprzedający.
-              </p>
-
-              <p style="margin:0;font-size:15px;line-height:1.6;">
-                Poczekaj na dalsze instrukcje od Kasoa.pl dotyczące odbioru.
-                Nie wysyłaj produktu samodzielnie, chyba że otrzymasz takie
-                polecenie.
-              </p>
-              """
-                : """
-              <p style="margin:20px 0 0;font-size:15px;line-height:1.6;">
-                Jeśli masz pytania dotyczące tej decyzji, skontaktuj się
-                z obsługą Kasoa.pl, podając numer zamówienia.
-              </p>
-              """;
-
-        String html = """
-<h2 style="margin:0 0 16px;font-size:22px;color:#0D1313;">
-                        Decyzja dotycząca zwrotu lub reklamacji
-                      </h2>
-<p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-                        %s
-                      </p>
-
-
-
-<p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Numer zamówienia
-                            </p>
-<p style="margin:0 0 16px;font-size:16px;font-weight:700;">
-                              #%s
-                            </p>
-<p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Decyzja administratora
-                            </p>
-<p style="margin:0 0 16px;font-size:15px;font-weight:700;
-                                      color:%s;">
-                              %s
-                            </p>
-<p style="margin:0 0 8px;font-size:13px;color:#5E6C6A;">
-                              Uzasadnienie decyzji
-                            </p>
-<p style="margin:0;font-size:15px;line-height:1.6;
-                                      white-space:pre-line;overflow-wrap:anywhere;">
-                              %s
-                            </p>
-
-
-
-
-                      %s
-
-                      <p style="margin:24px 0 0;font-size:15px;line-height:1.6;">
-                        Pozdrawiamy,<br/>
-<strong>Zespół Kasoa.pl</strong>
-</p>
-
-
-
-
-                      Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.<br/>
-                      To automatyczne powiadomienie dotyczące Twojego zamówienia.
-        """.formatted(
-                escapeHtml(decisionMessage),
-                safeOrderNumber,
-                approved ? "#2A6B4E" : "#9B2C2C",
-                safeDecision,
-                safeReason,
-                nextSteps
-        );
+        String html =
+                badge(approved ? "✓ ZATWIERDZONO" : "ODRZUCONO", approved ? Tone.NEUTRAL : Tone.ALERT)
+                        + h1("Decyzja dotycząca zwrotu lub reklamacji")
+                        + lead(escapeHtml(decisionMessage))
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + orderNumber(safeOrderNumber)
+                                + divider()
+                                + label("Decyzja administratora")
+                                + el("div", "font-size:15px;line-height:23px;font-weight:700;color:"
+                                + (approved ? BRAND : Tone.ALERT.fg) + ";", safeDecision)
+                                + divider()
+                                + label("Uzasadnienie decyzji")
+                                + el("div", "font-size:14px;line-height:23px;color:" + BODY + ";white-space:pre-line;overflow-wrap:anywhere;", safeReason))
+                        + nextSteps
+                        + spacer(24)
+                        + el("p", "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
+                        "Pozdrawiamy,<br>" + strong("Zespół Kasoa.pl"))
+                        + divider()
+                        + muted("Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.<br>"
+                        + "To automatyczne powiadomienie dotyczące Twojego zamówienia.");
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -3769,170 +1654,36 @@ ZAMÓWIENIE ANULOWANE
                 complaintId != null ? complaintId : ""
         );
 
-        String safePaymentUrl = escapeHtml(
-                stripePaymentUrl != null ? stripePaymentUrl : ""
-        );
+        String paymentUrl = stripePaymentUrl != null ? stripePaymentUrl : "";
 
         String subject = "Kasoa.pl — Opłać przesyłkę zwrotną dla zamówienia #"
                 + safeOrderNumber;
 
-        String htmlContent = """
-Wymagana płatność
-                        
-<h1 style="
-                            margin: 20px 0 10px;
-                            font-size: 26px;
-                            line-height: 1.2;
-                            color: #182016;
-                            font-weight: 800;
-                            letter-spacing: -0.6px;
-                        ">
-                            Opłać przesyłkę zwrotną
-                        </h1>
-<p style="
-                            margin: 0 0 24px;
-                            font-size: 15px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-                            Zwrot przedmiotu z zamówienia
-                            <strong style="color: #68764B;">#%s</strong>
-                            został zaakceptowany. Aby zorganizować odbiór
-                            przedmiotu od kupującego i jego dostarczenie
-                            do Ciebie, opłać przesyłkę zwrotną za pomocą
-                            bezpiecznej strony płatności Stripe.
-                        </p>
-
-
-
-
-<div style="
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Numer zamówienia
-                                    </div>
-<div style="
-                                        font-size: 20px;
-                                        line-height: 1.4;
-                                        font-weight: 800;
-                                        color: #182016;
-                                    ">
-                                        #%s
-                                    </div>
-<div style="
-                                        margin-top: 16px;
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        color: #8A9288;
-                                        text-transform: uppercase;
-                                        letter-spacing: 1px;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Numer zgłoszenia
-                                    </div>
-<div style="
-                                        font-size: 14px;
-                                        font-weight: 700;
-                                        color: #182016;
-                                    ">
-                                        %s
-                                    </div>
-
-
-
-
-
-
-
-<div style="
-                                        font-size: 15px;
-                                        line-height: 22px;
-                                        font-weight: 800;
-                                        color: #182016;
-                                        margin-bottom: 8px;
-                                    ">
-                                        Co należy zrobić?
-                                    </div>
-<div style="
-                                        font-size: 13px;
-                                        line-height: 1.7;
-                                        color: #5E6658;
-                                    ">
-                                        1. Kliknij przycisk poniżej i opłać
-                                        przesyłkę zwrotną.
-                                        <br/><br/>
-                                        2. Po potwierdzeniu płatności
-                                        Kasoa.pl zorganizuje odbiór przedmiotu
-                                        od kupującego i jego zwrot do Ciebie.
-                                    </div>
-
-
-
-
-<p style="
-                            margin: 24px 0 0;
-                            font-size: 13px;
-                            line-height: 1.7;
-                            color: #667066;
-                        ">
-                            Zwrot środków kupującemu zostanie obsłużony
-                            zgodnie z zasadami obowiązującymi dla tego zwrotu.
-                            Koszt przesyłki zwrotnej ponosisz jako sprzedający,
-                            zgodnie z ustaleniami dotyczącymi tej sprawy.
-                        </p>
-
-<div style="
-                            margin-top: 30px;
-                            text-align: center;
-                        ">
-<a href="%s" style="
-                                   display: inline-block;
-                                   padding: 14px 28px;
-                                   background-color: #68764B;
-                                   color: #FFFFFF;
-                                   text-decoration: none;
-                                   border-radius: 9px;
-                                   font-size: 13px;
-                                   font-weight: 700;
-                               ">
-                                Opłać przesyłkę zwrotną →
-                            </a>
-</div>
-<p style="
-                            margin: 20px 0 0;
-                            font-size: 11px;
-                            line-height: 1.6;
-                            color: #8A9288;
-                            text-align: center;
-                        ">
-                            Jeśli przycisk nie działa, skopiuj poniższy link
-                            i otwórz go w przeglądarce:
-                        </p>
-<p style="
-                            margin: 8px 0 0;
-                            font-size: 11px;
-                            line-height: 1.6;
-                            text-align: center;
-                            word-break: break-all;
-                        ">
-<a href="%s" style="
-                                color: #68764B;
-                                text-decoration: underline;
-                            ">%s</a>
-</p>
-        """.formatted(
-                safeOrderNumber,
-                safeOrderNumber,
-                safeComplaintId,
-                safePaymentUrl,
-                safePaymentUrl,
-                safePaymentUrl
-        );
+        String htmlContent =
+                badge("Wymagana płatność", Tone.ALERT)
+                        + h1("Opłać przesyłkę zwrotną")
+                        + lead("Zwrot przedmiotu z zamówienia " + strong("#" + safeOrderNumber)
+                        + " został zaakceptowany. Aby zorganizować odbiór przedmiotu od kupującego i jego dostarczenie do Ciebie, "
+                        + "opłać przesyłkę zwrotną za pomocą bezpiecznej strony płatności Stripe.")
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + orderNumber(safeOrderNumber)
+                                + divider()
+                                + label("Numer zgłoszenia")
+                                + el("div", "font-family:" + MONO + ";font-size:14px;line-height:22px;font-weight:700;color:" + INK
+                                + ";overflow-wrap:anywhere;", safeComplaintId))
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 8px;font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";", "Co należy zrobić?")
+                                + steps(
+                                "Kliknij przycisk poniżej i opłać przesyłkę zwrotną.",
+                                "Po potwierdzeniu płatności Kasoa.pl zorganizuje odbiór przedmiotu od kupującego i jego zwrot do Ciebie."))
+                        + muted("Zwrot środków kupującemu zostanie obsłużony zgodnie z zasadami obowiązującymi dla tego zwrotu. "
+                        + "Koszt przesyłki zwrotnej ponosisz jako sprzedający, zgodnie z ustaleniami dotyczącymi tej sprawy.")
+                        + button(paymentUrl, "Opłać przesyłkę zwrotną →")
+                        + caption("Jeśli przycisk nie działa, skopiuj poniższy link i otwórz go w przeglądarce:")
+                        + el("p", "margin:8px 0 0;font-size:11px;line-height:17px;text-align:center;overflow-wrap:anywhere;word-break:break-all;",
+                        "<a href=\"" + escapeHtml(paymentUrl) + "\" style=\"color:" + BRAND + ";text-decoration:underline;\">"
+                                + escapeHtml(paymentUrl) + "</a>");
 
         sendHtmlEmail(
                 sellerEmail,
@@ -3942,22 +1693,123 @@ Wymagana płatność
     }
 
 
+    // =====================================================================
+    //  SHIPMENT STATUS (shared body for the three variants below)
+    // =====================================================================
 
     /**
-     * Sends a dynamic shipment tracking notification to the Buyer for the Kasoa MVP.
-     * Automatically adapts the subject and message header box to match any lifecycle status.
+     * Receipt-confirmation card shown once an item is shipped / delivered.
+     * extraHtml is optional, already-escaped content rendered between the intro and the button.
      */
-    @Async
-    private record ShipmentStatusContent(
-            String label,
-            String subject,
-            String description
-    ) {}
+    private String receiptCard(String title, String intro, String extraHtml, String url, String footnote) {
+        return "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+                + " style=\"width:100%;margin:0 0 24px;border-collapse:separate;\"><tr>"
+                + "<td align=\"center\" style=\"padding:28px 24px;background-color:#F7F7F4;border:1px solid " + LINE
+                + ";border-radius:14px;text-align:center;font-family:" + FONT + ";\">"
+                + el("div", "margin:0 0 8px;font-size:30px;line-height:36px;", "📦")
+                + el("div", "margin:0 0 8px;font-size:19px;line-height:27px;font-weight:700;color:" + INK + ";", title)
+                + el("div", "margin:0 0 18px;font-size:14px;line-height:22px;color:" + MUTED + ";", intro)
+                + extraHtml
+                + buttonHtml(url, "✓ Potwierdź odbiór przedmiotu", Variant.PRIMARY, false, "0 auto")
+                + el("div", "margin-top:14px;font-size:12px;line-height:18px;color:" + FAINT + ";", footnote)
+                + "</td></tr></table>";
+    }
 
+    private String buildShipmentStatusHtml(
+            String safeBuyerName,
+            String safeShipmentStatus,
+            String safeOrderNumber,
+            String safeProductName,
+            String safeTrackingNumber,
+            String safeShippingMethod,
+            String receiptConfirmationHtml,
+            String safeNextStepText
+    ) {
+        boolean hasTracking = safeTrackingNumber != null && !safeTrackingNumber.isBlank();
+        boolean hasMethod = safeShippingMethod != null && !safeShippingMethod.isBlank();
 
+        String shipmentInfo = (hasTracking || hasMethod)
+                ? section("📦 Informacje o przesyłce",
+                (hasTracking ? infoBlock("Numer przesyłki", safeTrackingNumber) : "")
+                        + (hasMethod ? infoBlock("Sposób dostawy", safeShippingMethod) : ""))
+                : "";
 
+        return h1("Cześć " + safeBuyerName + "! 👋")
+                + lead("Mamy aktualizację dotyczącą Twojego zamówienia.")
+                + badge(safeShipmentStatus, Tone.NEUTRAL)
+                + panel(Tone.NEUTRAL,
+                label("Zamówienie")
+                        + el("div", "margin:0 0 16px;font-family:" + MONO + ";font-size:18px;line-height:26px;font-weight:700;color:" + INK
+                        + ";overflow-wrap:anywhere;", "#" + safeOrderNumber)
+                        + label("Przedmiot")
+                        + el("div", "font-size:16px;line-height:23px;font-weight:600;color:" + INK + ";overflow-wrap:anywhere;", safeProductName))
+                + receiptConfirmationHtml
+                + shipmentInfo
+                + section("🔒 Bezpieczna transakcja",
+                muted("Płatność jest zabezpieczona w systemie kasoa.pl. Środki zostaną rozliczone zgodnie z zasadami "
+                        + "transakcji po zakończeniu procesu."))
+                + section("Co dalej?", muted(safeNextStepText))
+                + button(HOME_URL, "Przejdź do kasoa.pl →");
+    }
 
+    private static final String RECEIPT_HINT =
+            "Potwierdź odbiór dopiero po otrzymaniu i sprawdzeniu przesyłki.";
 
+    private String legacyReceiptCard(String shipmentStatus, String confirmationBaseUrl, String receiptConfirmationToken) {
+        boolean confirmationStatus =
+                "SHIPPED".equalsIgnoreCase(shipmentStatus)
+                        || "DELIVERED".equalsIgnoreCase(shipmentStatus);
+
+        boolean hasConfirmationToken =
+                receiptConfirmationToken != null
+                        && !receiptConfirmationToken.isBlank();
+
+        if (!confirmationStatus || !hasConfirmationToken) {
+            return "";
+        }
+
+        /*
+         * The URL does NOT directly confirm the order.
+         * It opens a confirmation page where the buyer must explicitly
+         * confirm receipt.
+         */
+        String receiptConfirmationUrl =
+                confirmationBaseUrl
+                        + "/confirm-receipt?token="
+                        + URLEncoder.encode(
+                        receiptConfirmationToken,
+                        StandardCharsets.UTF_8
+                );
+
+        String confirmationTitle = "DELIVERED".equalsIgnoreCase(shipmentStatus)
+                ? "Przesyłka została dostarczona"
+                : "Otrzymałeś przesyłkę?";
+
+        return receiptCard(
+                escapeHtml(confirmationTitle),
+                "Otrzymałeś przesyłkę? Sprawdź przedmiot i jeśli wszystko jest zgodne z zamówieniem, potwierdź odbiór.",
+                "",
+                receiptConfirmationUrl,
+                RECEIPT_HINT
+        );
+    }
+
+    private String shipmentSubject(String shipmentStatus, String orderNumber) {
+        switch (shipmentStatus.toUpperCase()) {
+            case "SHIPPED":
+                return "Twoje zamówienie #" + orderNumber + " zostało wysłane 📦";
+            case "DELIVERED":
+                return "Twoje zamówienie #" + orderNumber + " zostało dostarczone ✓";
+            case "RECEIVED":
+                return "Odbiór zamówienia #" + orderNumber + " został potwierdzony ✓";
+            default:
+                return "Aktualizacja zamówienia #" + orderNumber;
+        }
+    }
+
+    /**
+     * Legacy variant kept for existing callers. Prefer {@link #sendShipmentStatusToBuyer}.
+     */
     public void sendShipmentStatusToBuyerx(
             String buyerEmail,
             String buyerName,
@@ -3968,468 +1820,21 @@ Wymagana płatność
             String shippingMethod,
             String receiptConfirmationToken
     ) {
-
-        String safeBuyerName = escapeHtml(buyerName);
-        String safeOrderNumber = escapeHtml(orderNumber);
-        String safeProductName = escapeHtml(productName);
-        String safeShipmentStatus = escapeHtml(formatShipmentStatus(shipmentStatus));
-        String safeTrackingNumber = escapeHtml(trackingNumber);
-        String safeShippingMethod = escapeHtml(shippingMethod);
-
-        String subject;
-
-        switch (shipmentStatus.toUpperCase()) {
-
-            case "SHIPPED" ->
-                    subject = "Twoje zamówienie #" + orderNumber
-                            + " zostało wysłane 📦";
-
-            case "DELIVERED" ->
-                    subject = "Twoje zamówienie #" + orderNumber
-                            + " zostało dostarczone ✓";
-
-            case "RECEIVED" ->
-                    subject = "Odbiór zamówienia #" + orderNumber
-                            + " został potwierdzony ✓";
-
-            default ->
-                    subject = "Aktualizacja zamówienia #" + orderNumber;
-        }
-
-
-        /*
-         * ============================================================
-         * RECEIPT CONFIRMATION
-         * ============================================================
-         *
-         * The confirmation button is displayed for:
-         *
-         * SHIPPED
-         * DELIVERED
-         *
-         * The URL does NOT directly confirm the order.
-         * It opens a confirmation page where the buyer must explicitly
-         * confirm receipt.
-         */
-
-        String receiptConfirmationHtml = "";
-
-        boolean confirmationStatus =
-                "SHIPPED".equalsIgnoreCase(shipmentStatus)
-                        || "DELIVERED".equalsIgnoreCase(shipmentStatus);
-
-        boolean hasConfirmationToken =
-                receiptConfirmationToken != null
-                        && !receiptConfirmationToken.isBlank();
-
-        if (confirmationStatus && hasConfirmationToken) {
-
-            String receiptConfirmationUrl =
-                    deliveryConfirmationUrl
-                            + "/confirm-receipt?token="
-                            + URLEncoder.encode(
-                            receiptConfirmationToken,
-                            StandardCharsets.UTF_8
-                    );
-
-            String confirmationTitle;
-
-            if ("DELIVERED".equalsIgnoreCase(shipmentStatus)) {
-                confirmationTitle = "Przesyłka została dostarczona";
-            } else {
-                confirmationTitle = "Otrzymałeś przesyłkę?";
-            }
-
-            receiptConfirmationHtml = """
-            <table width="100%%"
-                   cellpadding="0"
-                   cellspacing="0"
-                   border="0"
-                   style="
-                       width:100%%;
-                       background:#EEF1E8;
-                       border:1px solid #DDE4D1;
-                       border-radius:14px;
-                       margin:0 0 24px 0;
-                   ">
-
-                <tr>
-                    <td style="
-                        padding:26px 24px;
-                        text-align:center;
-                    ">
-
-                        <div style="
-                            font-size:30px;
-                            line-height:36px;
-                            margin-bottom:10px;
-                        ">
-                            📦
-                        </div>
-
-                        <div style="
-                            font-size:18px;
-                            line-height:26px;
-                            font-weight:700;
-                            color:#182016;
-                            margin-bottom:10px;
-                        ">
-                            %s
-                        </div>
-
-                        <div style="
-                            font-size:14px;
-                            line-height:22px;
-                            color:#596052;
-                            margin-bottom:20px;
-                        ">
-                            Otrzymałeś przesyłkę?
-                            Sprawdź przedmiot i jeśli wszystko
-                            jest zgodne z zamówieniem, potwierdź
-                            odbiór.
-                        </div>
-
-                        <a href="%s"
-                           style="
-                               display:inline-block;
-                               background:#68764B;
-                               color:#FFFFFF;
-                               text-decoration:none;
-                               font-size:15px;
-                               line-height:20px;
-                               font-weight:700;
-                               padding:14px 24px;
-                               border-radius:10px;
-                           ">
-                            ✓ Potwierdź odbiór przedmiotu
-                        </a>
-
-                        <div style="
-                            font-size:11px;
-                            line-height:18px;
-                            color:#7A8172;
-                            margin-top:16px;
-                        ">
-                            Potwierdź odbiór dopiero po otrzymaniu
-                            i sprawdzeniu przesyłki.
-                        </div>
-
-                    </td>
-                </tr>
-
-            </table>
-            """.formatted(
-                    escapeHtml(confirmationTitle),
-                    escapeHtml(receiptConfirmationUrl)
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * TRACKING INFORMATION
-         * ============================================================
-         */
-
-        String trackingHtml = "";
-
-        if (trackingNumber != null && !trackingNumber.isBlank()) {
-
-            trackingHtml = """
-            <tr>
-                <td style="
-                    padding:0 0 18px 0;
-                ">
-
-                    <div style="
-                        font-size:12px;
-                        line-height:18px;
-                        color:#7A8172;
-                        margin-bottom:4px;
-                    ">
-                        NUMER PRZESYŁKI
-                    </div>
-
-                    <div style="
-                        font-size:15px;
-                        line-height:22px;
-                        font-weight:600;
-                        color:#182016;
-                    ">
-                        %s
-                    </div>
-
-                </td>
-            </tr>
-            """.formatted(
-                    safeTrackingNumber
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * SHIPPING METHOD
-         * ============================================================
-         */
-
-        String shippingMethodHtml = "";
-
-        if (shippingMethod != null && !shippingMethod.isBlank()) {
-
-            shippingMethodHtml = """
-            <tr>
-                <td style="
-                    padding:0 0 18px 0;
-                ">
-
-                    <div style="
-                        font-size:12px;
-                        line-height:18px;
-                        color:#7A8172;
-                        margin-bottom:4px;
-                    ">
-                        SPOSÓB DOSTAWY
-                    </div>
-
-                    <div style="
-                        font-size:15px;
-                        line-height:22px;
-                        font-weight:600;
-                        color:#182016;
-                    ">
-                        %s
-                    </div>
-
-                </td>
-            </tr>
-            """.formatted(
-                    safeShippingMethod
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * NEXT STEP
-         * ============================================================
-         */
-
-        String nextStepText = getNextStepText(shipmentStatus);
-
-
-        /*
-         * ============================================================
-         * MAIN EMAIL
-         * ============================================================
-         */
-
-        String html = """
-<div style="
-                                    font-size:24px;
-                                    line-height:32px;
-                                    font-weight:700;
-                                    color:#182016;
-                                    margin-bottom:8px;
-                                ">
-                                    Cześć %s! 👋
-                                </div>
-<div style="
-                                    font-size:15px;
-                                    line-height:24px;
-                                    color:#596052;
-                                    margin-bottom:24px;
-                                ">
-                                    Mamy aktualizację dotyczącą Twojego
-                                    zamówienia.
-                                </div>
-
-
-
-<table border="0" cellpadding="0" cellspacing="0" style="
-                                           margin:0 0 24px 0;
-                                       ">
-<tr>
-<td style="
-                                            background:#EEF1E8;
-                                            border-radius:20px;
-                                            padding:8px 14px;
-                                            font-size:13px;
-                                            line-height:18px;
-                                            font-weight:700;
-                                            color:#68764B;
-                                        ">
-                                            %s
-                                        </td>
-</tr>
-</table>
-
-
-
-
-
-
-<div style="
-                                                font-size:12px;
-                                                line-height:18px;
-                                                color:#7A8172;
-                                                margin-bottom:5px;
-                                            ">
-                                                ZAMÓWIENIE
-                                            </div>
-<div style="
-                                                font-size:20px;
-                                                line-height:27px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:20px;
-                                            ">
-                                                #%s
-                                            </div>
-<div style="
-                                                font-size:12px;
-                                                line-height:18px;
-                                                color:#7A8172;
-                                                margin-bottom:5px;
-                                            ">
-                                                PRZEDMIOT
-                                            </div>
-<div style="
-                                                font-size:16px;
-                                                line-height:23px;
-                                                font-weight:600;
-                                                color:#182016;
-                                            ">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:20px;
-                                            ">
-                                                📦 Informacje o przesyłce
-                                            </div>
-
-
-                                                %s
-                                                %s
-
-                                            
-
-
-
-
-
-
-
-                                %s
-
-
-                                
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:10px;
-                                            ">
-                                                🔒 Bezpieczna transakcja
-                                            </div>
-<div style="
-                                                font-size:14px;
-                                                line-height:22px;
-                                                color:#596052;
-                                            ">
-                                                Płatność jest zabezpieczona
-                                                w systemie kasoa.pl.
-                                                Środki zostaną rozliczone
-                                                zgodnie z zasadami transakcji
-                                                po zakończeniu procesu.
-                                            </div>
-
-
-
-
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:12px;
-                                            ">
-                                                Co dalej?
-                                            </div>
-<div style="
-                                                font-size:14px;
-                                                line-height:23px;
-                                                color:#4F5849;
-                                            ">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-
-
-<a href="https://www.kasoa.pl" style="
-                                                   display:inline-block;
-                                                   background:#68764B;
-                                                   color:#FFFFFF;
-                                                   text-decoration:none;
-                                                   font-size:15px;
-                                                   line-height:20px;
-                                                   font-weight:700;
-                                                   padding:14px 28px;
-                                                   border-radius:10px;
-                                               ">
-                                                Przejdź do kasoa.pl →
-                                            </a>
-        """.formatted(
-                safeBuyerName,
-                safeShipmentStatus,
-                safeOrderNumber,
-                safeProductName,
-                trackingHtml,
-                shippingMethodHtml,
-                receiptConfirmationHtml,
-                nextStepText
+        String subject = shipmentSubject(shipmentStatus, orderNumber);
+
+        String html = buildShipmentStatusHtml(
+                escapeHtml(buyerName),
+                escapeHtml(formatShipmentStatus(shipmentStatus)),
+                escapeHtml(orderNumber),
+                escapeHtml(productName),
+                escapeHtml(trackingNumber),
+                escapeHtml(shippingMethod),
+                legacyReceiptCard(shipmentStatus, deliveryConfirmationUrl, receiptConfirmationToken),
+                escapeHtml(getNextStepText(shipmentStatus))
         );
 
-
-        sendHtmlEmail(
-                buyerEmail,
-                subject,
-                buildEmailLayout(html)
-        );
+        sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
     }
-
-
-
 
 
     @Async
@@ -4447,228 +1852,35 @@ Wymagana płatność
         String availableUrl = baseURL + "/confirm?token=" + encodedToken;
         String soldUrl = baseURL + "/sold?token=" + encodedToken;
 
-        String html = """
-<h1 style="
-                                        margin: 0 0 18px 0;
-                                        font-size: 22px;
-                                        line-height: 29px;
-                                        font-weight: bold;
-                                        color: #182016;
-                                        text-align: left;
-                                    ">
-                                        Cześć!
-                                    </h1>
-<p style="
-                                        margin: 0 0 16px 0;
-                                        font-size: 15px;
-                                        line-height: 24px;
-                                        color: #394235;
-                                        text-align: left;
-                                    ">
-                                        Zauważyliśmy zainteresowanie Twoim produktem.
-                                        Zanim kupujący złoży zamówienie, chcemy upewnić się,
-                                        że oferta jest nadal aktualna.
-                                    </p>
-
-
-
-
-<div style="
-                                                    margin-bottom: 8px;
-                                                    color: #68764B;
-                                                    font-size: 11px;
-                                                    line-height: 16px;
-                                                    font-weight: bold;
-                                                    letter-spacing: 1px;
-                                                ">
-                                                    TWOJA OFERTA
-                                                </div>
-<div style="
-                                                    color: #182016;
-                                                    font-size: 17px;
-                                                    line-height: 24px;
-                                                    font-weight: bold;
-                                                    word-break: break-word;
-                                                ">
-                                                    %s
-                                                </div>
-
-
-
-<p style="
-                                        margin: 0 0 16px 0;
-                                        font-size: 15px;
-                                        line-height: 24px;
-                                        color: #394235;
-                                        text-align: left;
-                                    ">
-                                        Wybierz jedną z poniższych opcji:
-                                    </p>
-<ul style="
-                                        margin: 0 0 22px 0;
-                                        padding-left: 21px;
-                                        color: #394235;
-                                        font-size: 14px;
-                                        line-height: 23px;
-                                    ">
-<li style="padding-bottom: 8px;">
-                                            Potwierdź, jeśli produkt jest nadal dostępny.
-                                        </li>
-<li>
-                                            Zaznacz, że został sprzedany poza Kasoa lub nie
-                                            jest już dostępny, jeśli nie możesz go wysłać.
-                                        </li>
-</ul>
-
-
-
-
-<div style="
-                                                    margin-bottom: 6px;
-                                                    color: #70551C;
-                                                    font-size: 14px;
-                                                    line-height: 20px;
-                                                    font-weight: bold;
-                                                ">
-                                                    Ważne – uniknij anulowania zamówienia
-                                                </div>
-<p style="
-                                                    margin: 0;
-                                                    color: #70551C;
-                                                    font-size: 13px;
-                                                    line-height: 21px;
-                                                ">
-                                                    Aktualizowanie dostępności pomaga uniknąć
-                                                    zamówień na produkty, których nie możesz
-                                                    już sprzedać. Anulowanie opłaconego
-                                                    zamówienia może wiązać się z dodatkowymi
-                                                    konsekwencjami.
-                                                </p>
-
-
-
-
-
-
-
-<h2 style="
-                                                    margin: 0 0 17px 0;
-                                                    color: #182016;
-                                                    font-size: 17px;
-                                                    line-height: 24px;
-                                                    text-align: left;
-                                                ">
-                                                    Potwierdź dostępność produktu
-                                                </h2>
-
-
-
-<a href="%s" style="
-                                                                   display: block;
-                                                                   padding: 15px 12px;
-                                                                   color: #FFFFFF;
-                                                                   font-size: 14px;
-                                                                   line-height: 20px;
-                                                                   font-weight: bold;
-                                                                   text-decoration: none;
-                                                                   text-align: center;
-                                                                   border-radius: 7px;
-                                                               ">
-                                                                ✓ Produkt jest nadal dostępny
-                                                            </a>
-
-
-
-
-                                                             
-                                                        
-
-
-
-
-<a href="%s" style="
-                                                                   display: block;
-                                                                   padding: 14px 12px;
-                                                                   color: #A8423B;
-                                                                   font-size: 14px;
-                                                                   line-height: 20px;
-                                                                   font-weight: bold;
-                                                                   text-decoration: none;
-                                                                   text-align: center;
-                                                                   border-radius: 7px;
-                                                               ">
-                                                                ✕ Produkt został sprzedany
-                                                            </a>
-
-
-
-<p style="
-                                                    margin: 16px 0 0 0;
-                                                    color: #59634F;
-                                                    font-size: 12px;
-                                                    line-height: 19px;
-                                                    text-align: left;
-                                                ">
-                                                    Możesz zmienić swoją decyzję, korzystając
-                                                    z tego samego linku, dopóki pozostaje
-                                                    aktywny.
-                                                </p>
-
-
-
-
-<p style="
-                                        margin: 22px 0 12px 0;
-                                        color: #394235;
-                                        font-size: 14px;
-                                        line-height: 23px;
-                                        text-align: left;
-                                    ">
-<strong>Co się stanie, jeśli nie odpowiesz?</strong>
-</p>
-<p style="
-                                        margin: 0 0 16px 0;
-                                        color: #394235;
-                                        font-size: 14px;
-                                        line-height: 23px;
-                                        text-align: left;
-                                    ">
-                                        Jeśli nie potwierdzisz dostępności w ciągu 24 godzin,
-                                        Twoja oferta zostanie przeniesiona do wersji roboczych
-                                        i przestanie być widoczna dla kupujących.
-                                    </p>
-<p style="
-                                        margin: 0 0 24px 0;
-                                        color: #394235;
-                                        font-size: 14px;
-                                        line-height: 23px;
-                                        text-align: left;
-                                    ">
-                                        W każdej chwili możesz ponownie opublikować produkt
-                                        w sekcji <strong>Moje konto → Moje produkty</strong>,
-                                        zmieniając jego status z
-                                        <strong>Wersja robocza</strong> na
-                                        <strong>Opublikowane</strong>.
-                                    </p>
-
-
-
-
-<a href="%s" style="
-                                                       color: #68764B;
-                                                       font-size: 14px;
-                                                       line-height: 22px;
-                                                       font-weight: bold;
-                                                       text-decoration: none;
-                                                   ">
-                                                    Przejdź do kasoa.pl →
-                                                </a>
-        """.formatted(
-                safeProduct,
-                escapeHtml(availableUrl),
-                escapeHtml(soldUrl),
-                escapeHtml(baseURL)
-        );
+        String html =
+                h1("Cześć!")
+                        + lead("Zauważyliśmy zainteresowanie Twoim produktem. Zanim kupujący złoży zamówienie, chcemy upewnić się, "
+                        + "że oferta jest nadal aktualna.")
+                        + panel(Tone.NEUTRAL, label("Twoja oferta")
+                        + el("div", "font-size:17px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProduct))
+                        + p("Wybierz jedną z poniższych opcji:")
+                        + "<ul style=\"margin:0 0 22px;padding-left:20px;font-size:14px;line-height:23px;color:" + BODY + ";\">"
+                        + "<li style=\"padding-bottom:8px;\">Potwierdź, jeśli produkt jest nadal dostępny.</li>"
+                        + "<li>Zaznacz, że został sprzedany poza Kasoa lub nie jest już dostępny, jeśli nie możesz go wysłać.</li>"
+                        + "</ul>"
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 6px;font-size:14px;line-height:20px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "Ważne – uniknij anulowania zamówienia")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Aktualizowanie dostępności pomaga uniknąć zamówień na produkty, których nie możesz już sprzedać. "
+                                        + "Anulowanie opłaconego zamówienia może wiązać się z dodatkowymi konsekwencjami."))
+                        + h2("Potwierdź dostępność produktu")
+                        + buttonFull(availableUrl, "✓ Produkt jest nadal dostępny", Variant.PRIMARY)
+                        + buttonFull(soldUrl, "Produkt został sprzedany", Variant.DANGER)
+                        + muted("Możesz zmienić swoją decyzję, korzystając z tego samego linku, dopóki pozostaje aktywny.")
+                        + section("Co się stanie, jeśli nie odpowiesz?",
+                        p("Jeśli nie potwierdzisz dostępności w ciągu 24 godzin, Twoja oferta zostanie przeniesiona do wersji "
+                                + "roboczych i przestanie być widoczna dla kupujących.")
+                                + el("p", "margin:0;font-size:14px;line-height:23px;color:" + BODY + ";",
+                                "W każdej chwili możesz ponownie opublikować produkt w sekcji " + strong("Moje konto → Moje produkty")
+                                        + ", zmieniając jego status z " + strong("Wersja robocza") + " na " + strong("Opublikowane") + "."))
+                        + spacer(24)
+                        + textLink(baseURL, "Przejdź do kasoa.pl →");
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -4699,66 +1911,24 @@ Wymagana płatność
         String updateUrl = baseURL + "/update-listing?token=" + encodedToken;
         String soldUrl = baseURL + "/sold?token=" + encodedToken;
 
-        String html = """
-<h2 style="font-size:22px;margin-top:0;">
-                                        Kupujący ma pytanie dotyczące Twojego produktu
-                                    </h2>
-<p style="font-size:15px;line-height:1.6;">
-                                        Kupujący potrzebuje dodatkowych informacji dotyczących
-                                        wystawionego przez Ciebie produktu.
-                                    </p>
-
-<strong>%s</strong>
-
-
-<strong>Pytanie kupującego:</strong>
-<p style="margin-bottom:0;line-height:1.6;">%s</p>
-
-<p style="font-size:15px;line-height:1.6;">
-                                        Kliknij poniższy przycisk, aby uzupełnić informacje
-                                        w ogłoszeniu. Dodane informacje będą widoczne dla
-                                        wszystkich kupujących.
-                                    </p>
-
-<a href="%s" style="display:inline-block;background:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:6px;font-weight:bold;">
-                                            Uzupełnij informacje
-                                        </a>
-
-<p style="font-size:14px;line-height:1.6;">
-                                        Po zaktualizowaniu ogłoszenia kupujący, którzy
-                                        poprosili o dodatkowe informacje, otrzymają powiadomienie.
-                                    </p>
-<hr style="border:none;border-top:1px solid #E0E7E6;margin:28px 0;"/>
-<h3 style="font-size:17px;">
-                                        Produkt został już sprzedany?
-                                    </h3>
-<p style="font-size:14px;line-height:1.6;">
-                                        Jeśli produkt nie jest już dostępny, możesz oznaczyć
-                                        go jako sprzedany, korzystając z poniższego linku.
-                                    </p>
-
-<a href="%s" style="display:inline-block;background:#1E3A3A;color:#ffffff;text-decoration:none;padding:13px 25px;border-radius:6px;font-weight:bold;">
-                                            Oznacz jako sprzedany
-                                        </a>
-
-<p style="font-size:12px;color:#68736B;line-height:1.5;">
-                                        Linki są przeznaczone wyłącznie dla Ciebie.
-                                        Nie udostępniaj ich innym osobom.
-                                    </p>
-
-
-
-
-<p style="margin:0;font-size:13px;">
-                                        Dziękujemy za korzystanie z Kasoa!
-                                    </p>
-        """.formatted(
-                safeProduct,
-                safeEnquiry,
-                escapeHtml(updateUrl),
-                escapeHtml(soldUrl),
-                escapeHtml(baseURL)
-        );
+        String html =
+                h1("Kupujący ma pytanie dotyczące Twojego produktu")
+                        + lead("Kupujący potrzebuje dodatkowych informacji dotyczących wystawionego przez Ciebie produktu.")
+                        + panel(Tone.NEUTRAL, label("Twoja oferta")
+                        + el("div", "font-size:17px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProduct))
+                        + quotePanel("Pytanie kupującego", safeEnquiry)
+                        + p("Uzupełnij brakujące informacje w ogłoszeniu. Po zapisaniu zmian kupujący, którzy poprosili "
+                        + "o dodatkowe informacje, otrzymają powiadomienie.")
+                        + buttonFull(updateUrl, "Uzupełnij informacje o produkcie →", Variant.PRIMARY)
+                        + muted("Link prowadzi bezpośrednio do formularza aktualizacji ogłoszenia.")
+                        + section("Produkt został już sprzedany?",
+                        muted("Jeśli produkt nie jest już dostępny, oznacz go jako sprzedany, aby kupujący nie składali "
+                                + "zamówienia na niedostępny przedmiot.")
+                                + spacer(14)
+                                + buttonFull(soldUrl, "Oznacz produkt jako sprzedany", Variant.DANGER))
+                        + panel(Tone.NEUTRAL, el("div", "font-size:12px;line-height:19px;color:" + MUTED + ";",
+                        "Linki w tej wiadomości są przeznaczone wyłącznie dla Ciebie. Nie udostępniaj ich innym osobom."))
+                        + muted("Dziękujemy za korzystanie z Kasoa!");
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -4782,40 +1952,16 @@ Wymagana płatność
         String fullProductUrl = frontEndUrl.replaceAll("/+$", "")
                 + "/" + productUrl.replaceAll("^/+", "");
 
-        String html = """
-<h2 style="margin:0 0 20px;font-size:22px;color:#182016;">
-                                    Sprzedający zaktualizował informacje o produkcie
-                                </h2>
-<p style="font-size:15px;line-height:1.7;margin:0 0 20px;">
-                                    Produkt, o który pytałeś, został zaktualizowany.
-                                    Sprzedający uzupełnił ogłoszenie o dodatkowe informacje,
-                                    których potrzebowałeś.
-                                </p>
-
-<p style="margin:0 0 8px;font-size:13px;color:#68764B;">
-                                        Produkt
-                                    </p>
-<p style="margin:0;font-size:17px;font-weight:bold;color:#182016;">
-                                        %s
-                                    </p>
-
-<p style="font-size:15px;line-height:1.7;margin:20px 0;">
-                                    Możesz teraz przejść do ogłoszenia i zapoznać się
-                                    z uzupełnionymi informacjami.
-                                </p>
-
-<a href="%s" style="display:inline-block;background-color:#68764B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:5px;font-size:15px;font-weight:bold;">
-                                        Zobacz produkt
-                                    </a>
-
-<p style="font-size:14px;line-height:1.7;color:#555555;margin:25px 0 0;">
-                                    Dziękujemy za korzystanie z Kasoa!
-                                </p>
-        """.formatted(
-                safeProduct,
-                escapeHtml(fullProductUrl),
-                escapeHtml(frontEndUrl)
-        );
+        String html =
+                h1("Sprzedający zaktualizował informacje o produkcie")
+                        + lead("Produkt, o który pytałeś, został zaktualizowany. Sprzedający uzupełnił ogłoszenie o dodatkowe "
+                        + "informacje, których potrzebowałeś.")
+                        + panel(Tone.NEUTRAL, label("Produkt")
+                        + el("div", "font-size:17px;line-height:24px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProduct))
+                        + p("Możesz teraz przejść do ogłoszenia i zapoznać się z uzupełnionymi informacjami.")
+                        + button(fullProductUrl, "Zobacz produkt")
+                        + spacer(24)
+                        + muted("Dziękujemy za korzystanie z Kasoa!");
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -4877,9 +2023,6 @@ Wymagana płatność
         String safeBuyerName = escapeHtml(
                 buyerName == null || buyerName.isBlank() ? "Kliencie" : buyerName
         );
-        String safeOrderNumber = escapeHtml(orderNumber);
-        String safeProductName = escapeHtml(productName);
-        String safeShipmentStatus = escapeHtml(statusLabel);
 
         // Receipt confirmation is available only after delivery.
         String receiptConfirmationHtml = "";
@@ -4900,320 +2043,47 @@ Wymagana płatność
                             StandardCharsets.UTF_8
                     );
 
-            receiptConfirmationHtml = """
-            <table role="presentation" width="100%%"
-                   cellpadding="0" cellspacing="0" border="0"
-                   style="width:100%%;table-layout:fixed;
-                          border-collapse:collapse;
-                          background:#EEF1E8;
-                          border:1px solid #DDE4D1;
-                          border-radius:14px;
-                          margin:0 0 24px 0;">
-                <tr>
-                    <td align="center"
-                        style="padding:26px 20px;text-align:center;
-                               overflow-wrap:anywhere;">
+            String deadlineBox = panel(Tone.ALERT,
+                    el("div", "margin:0 0 8px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";text-align:left;",
+                            "⏰ Masz 24 godziny od dostawy")
+                            + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";text-align:left;overflow-wrap:anywhere;",
+                            strong("Jeśli wszystko jest w porządku:") + "<br>"
+                                    + "Kliknij przycisk poniżej, aby potwierdzić odbiór przedmiotu. Nie musisz logować się na swoje konto."
+                                    + "<br><br>"
+                                    + strong("Jeśli zauważysz istotne rozbieżności:") + "<br>"
+                                    + "Nie potwierdzaj odbioru. Zaloguj się na swoje konto Kasoa.pl, przejdź do "
+                                    + strong("Konto → Zamówienia") + ", wybierz konkretne zamówienie i złóż wniosek o zwrot, "
+                                    + "dołączając zdjęcia lub inne dowody."
+                                    + "<br><br>"
+                                    + "Drobne różnice wynikające na przykład z oświetlenia lub sposobu wykonania zdjęć nie stanowią "
+                                    + "same w sobie podstawy do zwrotu. Zgłoszenie powinno dotyczyć istotnych rozbieżności między "
+                                    + "ofertą a otrzymanym przedmiotem."
+                                    + "<br><br>"
+                                    + strong("Jak rozpatrywany jest wniosek?") + "<br>"
+                                    + "Wniosek nie oznacza automatycznej akceptacji zwrotu. Sprzedawca przeanalizuje zgłoszenie "
+                                    + "i przedstawione dowody. Jeśli odrzuci wniosek, sprawa zostanie przekazana administratorowi "
+                                    + "Kasoa.pl do ostatecznej oceny oferty i zgromadzonych dowodów."));
 
-                        <div style="font-size:30px;line-height:36px;
-                                    margin-bottom:10px;">
-                            📦
-                        </div>
-
-                        <div style="font-size:19px;line-height:27px;
-                                    font-weight:700;color:#182016;
-                                    margin-bottom:10px;">
-                            Otrzymałeś przesyłkę?
-                        </div>
-
-                        <div style="font-size:14px;line-height:22px;
-                                    color:#596052;margin-bottom:18px;">
-                            Sprawdź otrzymany przedmiot i porównaj go
-                            z zamówieniem oraz opisem sprzedawcy.
-                        </div>
-
-                        <!-- 24-HOUR DEADLINE -->
-                        <table role="presentation" width="100%%"
-                               cellpadding="0" cellspacing="0" border="0"
-                               style="width:100%%;table-layout:fixed;
-                                      border-collapse:collapse;
-                                      background:#FFFFFF;
-                                      border:1px solid #DDE4D1;
-                                      margin:0 0 20px 0;">
-                            <tr>
-                                <td style="padding:16px;text-align:left;
-                                           overflow-wrap:anywhere;
-                                           word-wrap:break-word;">
-
-                                    <div style="font-size:14px;
-                                                line-height:21px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:8px;">
-                                        ⏰ Masz 24 godziny od dostawy
-                                    </div>
-
-                                    <div style="font-size:13px;
-                                                line-height:21px;
-                                                color:#596052;">
-
-                                        <strong>Jeśli wszystko jest w porządku:</strong>
-                                        <br>
-                                        Kliknij przycisk poniżej, aby potwierdzić
-                                        odbiór przedmiotu. Nie musisz logować się
-                                        na swoje konto.
-                                        <br><br>
-
-                                        <strong>Jeśli zauważysz istotne rozbieżności:</strong>
-                                        <br>
-                                        Nie potwierdzaj odbioru. Zaloguj się na
-                                        swoje konto Kasoa.pl, przejdź do
-                                        <strong>Konto → Zamówienia</strong>,
-                                        wybierz konkretne zamówienie i złóż
-                                        wniosek o zwrot, dołączając zdjęcia
-                                        lub inne dowody.
-                                        <br><br>
-
-                                        Drobne różnice wynikające na przykład
-                                        z oświetlenia lub sposobu wykonania zdjęć
-                                        nie stanowią same w sobie podstawy
-                                        do zwrotu. Zgłoszenie powinno dotyczyć
-                                        istotnych rozbieżności między ofertą
-                                        a otrzymanym przedmiotem.
-                                        <br><br>
-
-                                        <strong>Jak rozpatrywany jest wniosek?</strong>
-                                        <br>
-                                        Wniosek nie oznacza automatycznej akceptacji
-                                        zwrotu. Sprzedawca przeanalizuje zgłoszenie
-                                        i przedstawione dowody. Jeśli odrzuci
-                                        wniosek, sprawa zostanie przekazana
-                                        administratorowi Kasoa.pl do ostatecznej
-                                        oceny oferty i zgromadzonych dowodów.
-                                    </div>
-                                </td>
-                            </tr>
-                        </table>
-
-                        <a href="%s"
-                           style="display:inline-block;
-                                  background:#68764B;
-                                  color:#FFFFFF;
-                                  text-decoration:none;
-                                  font-size:15px;
-                                  line-height:20px;
-                                  font-weight:700;
-                                  padding:14px 24px;
-                                  border-radius:10px;">
-                            ✓ Potwierdź odbiór przedmiotu
-                        </a>
-
-                        <div style="font-size:11px;line-height:18px;
-                                    color:#7A8172;margin-top:16px;">
-                            Kliknij przycisk tylko wtedy, gdy otrzymany
-                            przedmiot jest zgodny z zamówieniem i opisem.
-                        </div>
-
-                        <div style="font-size:12px;line-height:20px;
-                                    color:#596052;margin-top:18px;
-                                    text-align:left;">
-                            <strong>Ważne:</strong>
-                            Jeśli w ciągu 24 godzin od dostawy nie potwierdzisz
-                            odbioru ani nie złożysz wniosku o zwrot,
-                            odbiór zostanie automatycznie potwierdzony,
-                            a wypłata środków sprzedawcy zostanie uruchomiona.
-                        </div>
-
-                    </td>
-                </tr>
-            </table>
-            """.formatted(escapeHtml(receiptConfirmationUrl));
+            receiptConfirmationHtml = receiptCard(
+                    "Otrzymałeś przesyłkę?",
+                    "Sprawdź otrzymany przedmiot i porównaj go z zamówieniem oraz opisem sprzedawcy.",
+                    deadlineBox,
+                    receiptConfirmationUrl,
+                    "Kliknij przycisk tylko wtedy, gdy otrzymany przedmiot jest zgodny z zamówieniem i opisem."
+            ) + el("p", "margin:-8px 0 24px;font-size:12px;line-height:20px;color:" + MUTED + ";",
+                    strong("Ważne:") + " Jeśli w ciągu 24 godzin od dostawy nie potwierdzisz odbioru ani nie złożysz wniosku "
+                            + "o zwrot, odbiór zostanie automatycznie potwierdzony, a wypłata środków sprzedawcy zostanie uruchomiona.");
         }
 
-        // Tracking information.
-        String trackingHtml = "";
-
-        if (trackingNumber != null && !trackingNumber.isBlank()) {
-            trackingHtml = """
-            <tr>
-                <td style="padding:0 0 18px 0;overflow-wrap:anywhere;">
-                    <div style="font-size:12px;line-height:18px;
-                                color:#7A8172;margin-bottom:4px;">
-                        NUMER PRZESYŁKI
-                    </div>
-                    <div style="font-size:15px;line-height:22px;
-                                font-weight:600;color:#182016;
-                                overflow-wrap:anywhere;">
-                        %s
-                    </div>
-                </td>
-            </tr>
-            """.formatted(escapeHtml(trackingNumber));
-        }
-
-        // Shipping method.
-        String shippingMethodHtml = "";
-
-        if (shippingMethod != null && !shippingMethod.isBlank()) {
-            shippingMethodHtml = """
-            <tr>
-                <td style="padding:0 0 18px 0;overflow-wrap:anywhere;">
-                    <div style="font-size:12px;line-height:18px;
-                                color:#7A8172;margin-bottom:4px;">
-                        SPOSÓB DOSTAWY
-                    </div>
-                    <div style="font-size:15px;line-height:22px;
-                                font-weight:600;color:#182016;
-                                overflow-wrap:anywhere;">
-                        %s
-                    </div>
-                </td>
-            </tr>
-            """.formatted(escapeHtml(shippingMethod));
-        }
-
-        String nextStepText = escapeHtml(getNextStepText(status));
-
-        // Main email template.
-        String html = """
-<div style="font-size:24px;line-height:32px;
-                                            font-weight:700;color:#182016;
-                                            margin-bottom:8px;">
-                                    Cześć %s! 👋
-                                </div>
-<div style="font-size:15px;line-height:24px;
-                                            color:#596052;margin-bottom:24px;">
-                                    Mamy aktualizację dotyczącą Twojego
-                                    zamówienia.
-                                </div>
-
-
-
-
-                                            %s
-                                        
-
-
-
-
-
-
-<div style="font-size:12px;
-                                                        line-height:18px;
-                                                        color:#7A8172;
-                                                        margin-bottom:5px;">
-                                                ZAMÓWIENIE
-                                            </div>
-<div style="font-size:20px;
-                                                        line-height:27px;
-                                                        font-weight:700;
-                                                        color:#182016;
-                                                        margin-bottom:20px;
-                                                        overflow-wrap:anywhere;">
-                                                #%s
-                                            </div>
-<div style="font-size:12px;
-                                                        line-height:18px;
-                                                        color:#7A8172;
-                                                        margin-bottom:5px;">
-                                                PRZEDMIOT
-                                            </div>
-<div style="font-size:16px;
-                                                        line-height:23px;
-                                                        font-weight:600;
-                                                        color:#182016;
-                                                        overflow-wrap:anywhere;">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-<div style="font-size:17px;
-                                                        line-height:24px;
-                                                        font-weight:700;
-                                                        color:#182016;
-                                                        margin-bottom:20px;">
-                                                📦 Informacje o przesyłce
-                                            </div>
-
-                                                %s
-                                                %s
-                                            
-
-
-
-
-                                %s
-
-                                
-
-
-
-<div style="font-size:17px;
-                                                        line-height:24px;
-                                                        font-weight:700;
-                                                        color:#182016;
-                                                        margin-bottom:10px;">
-                                                🔒 Bezpieczna transakcja
-                                            </div>
-<div style="font-size:14px;
-                                                        line-height:22px;
-                                                        color:#596052;">
-                                                Płatność jest zabezpieczona
-                                                w systemie Kasoa.pl.
-                                                Środki zostaną rozliczone
-                                                zgodnie z zasadami transakcji
-                                                po zakończeniu procesu.
-                                            </div>
-
-
-
-
-
-
-
-<div style="font-size:17px;
-                                                        line-height:24px;
-                                                        font-weight:700;
-                                                        color:#182016;
-                                                        margin-bottom:12px;">
-                                                Co dalej?
-                                            </div>
-<div style="font-size:14px;
-                                                        line-height:23px;
-                                                        color:#4F5849;">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-<a href="https://www.kasoa.pl" style="display:inline-block;
-                                                      background:#68764B;
-                                                      color:#FFFFFF;
-                                                      text-decoration:none;
-                                                      font-size:15px;
-                                                      line-height:20px;
-                                                      font-weight:700;
-                                                      padding:14px 28px;
-                                                      border-radius:10px;">
-                                                Przejdź do kasoa.pl →
-                                            </a>
-        """.formatted(
+        String html = buildShipmentStatusHtml(
                 safeBuyerName,
-                safeShipmentStatus,
-                safeOrderNumber,
-                safeProductName,
-                trackingHtml,
-                shippingMethodHtml,
+                escapeHtml(statusLabel),
+                escapeHtml(orderNumber),
+                escapeHtml(productName),
+                escapeHtml(trackingNumber),
+                escapeHtml(shippingMethod),
                 receiptConfirmationHtml,
-                nextStepText
+                escapeHtml(getNextStepText(status))
         );
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
@@ -5251,97 +2121,45 @@ Wymagana płatność
 
         String ordersUrl = "https://kasoa.pl/account/orders";
 
-        String html = """
-<h2 style="margin-top:0; color:#333333;
-                                                   font-size:21px;">
-                                            Odbiór osobisty nie został zrealizowany
-                                        </h2>
-<p style="font-size:15px; line-height:1.6;">
-                                            Dzień dobry %s,
-                                        </p>
-<p style="font-size:15px; line-height:1.6;">
-                                            Sprzedający poinformował nas, że odbiór
-                                            osobisty przedmiotu nie doszedł do skutku.
-                                        </p>
-
-
-
-<strong>Numer zamówienia:</strong>
-                                                    %s<br/>
-<strong>Przedmiot:</strong>
-                                                    %s
-                                                
-
-
-<h3 style="font-size:17px; color:#333333;">
-                                            Co należy teraz zrobić?
-                                        </h3>
-<p style="font-size:15px; line-height:1.6;">
-                                            Zaloguj się na swoje konto Kasoa i przejdź
-                                            do sekcji <strong>Moje konto → Zamówienia</strong>.
-                                            Następnie zainicjuj zgłoszenie zwrotu dla
-                                            tego zamówienia.
-                                        </p>
-<p style="font-size:15px; line-height:1.6;">
-                                            W zgłoszeniu:
-                                        </p>
-<ul style="font-size:15px; line-height:1.8;
-                                                   padding-left:22px;">
-<li>wybierz odpowiedni powód zgłoszenia,</li>
-<li>opisz, co wydarzyło się podczas próby odbioru,</li>
-<li>dołącz zdjęcia lub inne dostępne dowody,
-                                                jeśli je posiadasz.</li>
-</ul>
-<p style="font-size:15px; line-height:1.6;">
-                                            Sprzedający będzie mógł odnieść się do
-                                            zgłoszenia. Jeżeli nie zgodzi się z jego
-                                            treścią, sprawa zostanie przekazana do
-                                            weryfikacji przez Kasoa.
-                                        </p>
-<p style="font-size:15px; line-height:1.6;">
-                                            Samo zgłoszenie nie oznacza automatycznego
-                                            zatwierdzenia zwrotu. Sprawa zostanie
-                                            rozpatrzona na podstawie przedstawionych
-                                            informacji i dostępnych dowodów.
-                                        </p>
-
-<a href="%s" style="display:inline-block;
-                                                      background-color:#66704A;
-                                                      color:#ffffff;
-                                                      text-decoration:none;
-                                                      padding:14px 28px;
-                                                      border-radius:5px;
-                                                      font-size:15px;
-                                                      font-weight:bold;">
-                                                Przejdź do moich zamówień
-                                            </a>
-
-<p style="font-size:13px; line-height:1.6;
-                                                  color:#777777;">
-                                            Jeśli masz pytania, skontaktuj się z
-                                            naszym zespołem obsługi klienta.
-                                        </p>
-<p style="font-size:15px; line-height:1.6;">
-                                            Pozdrawiamy,<br/>
-<strong>Zespół Kasoa</strong>
-</p>
-        """.formatted(
-                safeBuyerName,
-                safeOrderNumber,
-                safeProductName,
-                ordersUrl
-        );
+        String html =
+                badge("ODBIÓR OSOBISTY", Tone.ALERT)
+                        + h1("Odbiór osobisty nie został zrealizowany")
+                        + p("Dzień dobry " + safeBuyerName + ",")
+                        + p("Sprzedający poinformował nas, że odbiór osobisty przedmiotu nie doszedł do skutku.")
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + el("div", "margin:0 0 14px;font-family:" + MONO + ";font-size:16px;line-height:24px;font-weight:700;color:" + INK + ";", "#" + safeOrderNumber)
+                                + label("Przedmiot")
+                                + el("div", "font-size:15px;line-height:22px;font-weight:700;color:" + INK + ";overflow-wrap:anywhere;", safeProductName))
+                        + section("Co należy teraz zrobić?",
+                        p("Zaloguj się na swoje konto Kasoa i przejdź do sekcji " + strong("Moje konto → Zamówienia")
+                                + ". Następnie zainicjuj zgłoszenie zwrotu dla tego zamówienia.")
+                                + p("W zgłoszeniu:")
+                                + "<ul style=\"margin:0 0 16px;padding-left:20px;font-size:14px;line-height:24px;color:" + BODY + ";\">"
+                                + "<li>wybierz odpowiedni powód zgłoszenia,</li>"
+                                + "<li>opisz, co wydarzyło się podczas próby odbioru,</li>"
+                                + "<li>dołącz zdjęcia lub inne dostępne dowody, jeśli je posiadasz.</li>"
+                                + "</ul>"
+                                + p("Sprzedający będzie mógł odnieść się do zgłoszenia. Jeżeli nie zgodzi się z jego treścią, "
+                                + "sprawa zostanie przekazana do weryfikacji przez Kasoa.")
+                                + el("p", "margin:0;font-size:15px;line-height:24px;color:" + BODY + ";",
+                                "Samo zgłoszenie nie oznacza automatycznego zatwierdzenia zwrotu. Sprawa zostanie rozpatrzona "
+                                        + "na podstawie przedstawionych informacji i dostępnych dowodów."))
+                        + button(ordersUrl, "Przejdź do moich zamówień")
+                        + spacer(28)
+                        + muted("Jeśli masz pytania, skontaktuj się z naszym zespołem obsługi klienta.")
+                        + spacer(16)
+                        + el("p", "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
+                        "Pozdrawiamy,<br>" + strong("Zespół Kasoa"));
 
         sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
     }
 
 
-
-
-
-
-
-
+    /**
+     * Legacy variant kept for existing callers. Note: despite the name it addresses
+     * the buyer and uses the return confirmation URL, exactly as before.
+     */
     public void sendShipmentStatusToSeller(
             String buyerEmail,
             String buyerName,
@@ -5352,468 +2170,24 @@ Wymagana płatność
             String shippingMethod,
             String receiptConfirmationToken
     ) {
-
-        String safeBuyerName = escapeHtml(buyerName);
-        String safeOrderNumber = escapeHtml(orderNumber);
-        String safeProductName = escapeHtml(productName);
-        String safeShipmentStatus = escapeHtml(formatShipmentStatus(shipmentStatus));
-        String safeTrackingNumber = escapeHtml(trackingNumber);
-        String safeShippingMethod = escapeHtml(shippingMethod);
-
-        String subject;
-
-        switch (shipmentStatus.toUpperCase()) {
-
-            case "SHIPPED" ->
-                    subject = "Twoje zamówienie #" + orderNumber
-                            + " zostało wysłane 📦";
-
-            case "DELIVERED" ->
-                    subject = "Twoje zamówienie #" + orderNumber
-                            + " zostało dostarczone ✓";
-
-            case "RECEIVED" ->
-                    subject = "Odbiór zamówienia #" + orderNumber
-                            + " został potwierdzony ✓";
-
-            default ->
-                    subject = "Aktualizacja zamówienia #" + orderNumber;
-        }
-
-
-        /*
-         * ============================================================
-         * RECEIPT CONFIRMATION
-         * ============================================================
-         *
-         * The confirmation button is displayed for:
-         *
-         * SHIPPED
-         * DELIVERED
-         *
-         * The URL does NOT directly confirm the order.
-         * It opens a confirmation page where the buyer must explicitly
-         * confirm receipt.
-         */
-
-        String receiptConfirmationHtml = "";
-
-        boolean confirmationStatus =
-                "SHIPPED".equalsIgnoreCase(shipmentStatus)
-                        || "DELIVERED".equalsIgnoreCase(shipmentStatus);
-
-        boolean hasConfirmationToken =
-                receiptConfirmationToken != null
-                        && !receiptConfirmationToken.isBlank();
-
-        if (confirmationStatus && hasConfirmationToken) {
-
-            String receiptConfirmationUrl =
-                    returnConfirmationUrl
-                            + "/confirm-receipt?token="
-                            + URLEncoder.encode(
-                            receiptConfirmationToken,
-                            StandardCharsets.UTF_8
-                    );
-
-            String confirmationTitle;
-
-            if ("DELIVERED".equalsIgnoreCase(shipmentStatus)) {
-                confirmationTitle = "Przesyłka została dostarczona";
-            } else {
-                confirmationTitle = "Otrzymałeś przesyłkę?";
-            }
-
-            receiptConfirmationHtml = """
-            <table width="100%%"
-                   cellpadding="0"
-                   cellspacing="0"
-                   border="0"
-                   style="
-                       width:100%%;
-                       background:#EEF1E8;
-                       border:1px solid #DDE4D1;
-                       border-radius:14px;
-                       margin:0 0 24px 0;
-                   ">
-
-                <tr>
-                    <td style="
-                        padding:26px 24px;
-                        text-align:center;
-                    ">
-
-                        <div style="
-                            font-size:30px;
-                            line-height:36px;
-                            margin-bottom:10px;
-                        ">
-                            📦
-                        </div>
-
-                        <div style="
-                            font-size:18px;
-                            line-height:26px;
-                            font-weight:700;
-                            color:#182016;
-                            margin-bottom:10px;
-                        ">
-                            %s
-                        </div>
-
-                        <div style="
-                            font-size:14px;
-                            line-height:22px;
-                            color:#596052;
-                            margin-bottom:20px;
-                        ">
-                            Otrzymałeś przesyłkę?
-                            Sprawdź przedmiot i jeśli wszystko
-                            jest zgodne z zamówieniem, potwierdź
-                            odbiór.
-                        </div>
-
-                        <a href="%s"
-                           style="
-                               display:inline-block;
-                               background:#68764B;
-                               color:#FFFFFF;
-                               text-decoration:none;
-                               font-size:15px;
-                               line-height:20px;
-                               font-weight:700;
-                               padding:14px 24px;
-                               border-radius:10px;
-                           ">
-                            ✓ Potwierdź odbiór przedmiotu
-                        </a>
-
-                        <div style="
-                            font-size:11px;
-                            line-height:18px;
-                            color:#7A8172;
-                            margin-top:16px;
-                        ">
-                            Potwierdź odbiór dopiero po otrzymaniu
-                            i sprawdzeniu przesyłki.
-                        </div>
-
-                    </td>
-                </tr>
-
-            </table>
-            """.formatted(
-                    escapeHtml(confirmationTitle),
-                    escapeHtml(receiptConfirmationUrl)
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * TRACKING INFORMATION
-         * ============================================================
-         */
-
-        String trackingHtml = "";
-
-        if (trackingNumber != null && !trackingNumber.isBlank()) {
-
-            trackingHtml = """
-            <tr>
-                <td style="
-                    padding:0 0 18px 0;
-                ">
-
-                    <div style="
-                        font-size:12px;
-                        line-height:18px;
-                        color:#7A8172;
-                        margin-bottom:4px;
-                    ">
-                        NUMER PRZESYŁKI
-                    </div>
-
-                    <div style="
-                        font-size:15px;
-                        line-height:22px;
-                        font-weight:600;
-                        color:#182016;
-                    ">
-                        %s
-                    </div>
-
-                </td>
-            </tr>
-            """.formatted(
-                    safeTrackingNumber
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * SHIPPING METHOD
-         * ============================================================
-         */
-
-        String shippingMethodHtml = "";
-
-        if (shippingMethod != null && !shippingMethod.isBlank()) {
-
-            shippingMethodHtml = """
-            <tr>
-                <td style="
-                    padding:0 0 18px 0;
-                ">
-
-                    <div style="
-                        font-size:12px;
-                        line-height:18px;
-                        color:#7A8172;
-                        margin-bottom:4px;
-                    ">
-                        SPOSÓB DOSTAWY
-                    </div>
-
-                    <div style="
-                        font-size:15px;
-                        line-height:22px;
-                        font-weight:600;
-                        color:#182016;
-                    ">
-                        %s
-                    </div>
-
-                </td>
-            </tr>
-            """.formatted(
-                    safeShippingMethod
-            );
-        }
-
-
-        /*
-         * ============================================================
-         * NEXT STEP
-         * ============================================================
-         */
-
-        String nextStepText = getNextStepText(shipmentStatus);
-
-
-        /*
-         * ============================================================
-         * MAIN EMAIL
-         * ============================================================
-         */
-
-        String html = """
-<div style="
-                                    font-size:24px;
-                                    line-height:32px;
-                                    font-weight:700;
-                                    color:#182016;
-                                    margin-bottom:8px;
-                                ">
-                                    Cześć %s! 👋
-                                </div>
-<div style="
-                                    font-size:15px;
-                                    line-height:24px;
-                                    color:#596052;
-                                    margin-bottom:24px;
-                                ">
-                                    Mamy aktualizację dotyczącą Twojego
-                                    zamówienia.
-                                </div>
-
-
-
-<table border="0" cellpadding="0" cellspacing="0" style="
-                                           margin:0 0 24px 0;
-                                       ">
-<tr>
-<td style="
-                                            background:#EEF1E8;
-                                            border-radius:20px;
-                                            padding:8px 14px;
-                                            font-size:13px;
-                                            line-height:18px;
-                                            font-weight:700;
-                                            color:#68764B;
-                                        ">
-                                            %s
-                                        </td>
-</tr>
-</table>
-
-
-
-
-
-
-<div style="
-                                                font-size:12px;
-                                                line-height:18px;
-                                                color:#7A8172;
-                                                margin-bottom:5px;
-                                            ">
-                                                ZAMÓWIENIE
-                                            </div>
-<div style="
-                                                font-size:20px;
-                                                line-height:27px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:20px;
-                                            ">
-                                                #%s
-                                            </div>
-<div style="
-                                                font-size:12px;
-                                                line-height:18px;
-                                                color:#7A8172;
-                                                margin-bottom:5px;
-                                            ">
-                                                PRZEDMIOT
-                                            </div>
-<div style="
-                                                font-size:16px;
-                                                line-height:23px;
-                                                font-weight:600;
-                                                color:#182016;
-                                            ">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:20px;
-                                            ">
-                                                📦 Informacje o przesyłce
-                                            </div>
-
-
-                                                %s
-                                                %s
-
-                                            
-
-
-
-
-
-
-
-                                %s
-
-
-                                
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:10px;
-                                            ">
-                                                🔒 Bezpieczna transakcja
-                                            </div>
-<div style="
-                                                font-size:14px;
-                                                line-height:22px;
-                                                color:#596052;
-                                            ">
-                                                Płatność jest zabezpieczona
-                                                w systemie kasoa.pl.
-                                                Środki zostaną rozliczone
-                                                zgodnie z zasadami transakcji
-                                                po zakończeniu procesu.
-                                            </div>
-
-
-
-
-
-
-
-
-
-<div style="
-                                                font-size:17px;
-                                                line-height:24px;
-                                                font-weight:700;
-                                                color:#182016;
-                                                margin-bottom:12px;
-                                            ">
-                                                Co dalej?
-                                            </div>
-<div style="
-                                                font-size:14px;
-                                                line-height:23px;
-                                                color:#4F5849;
-                                            ">
-                                                %s
-                                            </div>
-
-
-
-
-
-
-
-
-
-<a href="https://www.kasoa.pl" style="
-                                                   display:inline-block;
-                                                   background:#68764B;
-                                                   color:#FFFFFF;
-                                                   text-decoration:none;
-                                                   font-size:15px;
-                                                   line-height:20px;
-                                                   font-weight:700;
-                                                   padding:14px 28px;
-                                                   border-radius:10px;
-                                               ">
-                                                Przejdź do kasoa.pl →
-                                            </a>
-        """.formatted(
-                safeBuyerName,
-                safeShipmentStatus,
-                safeOrderNumber,
-                safeProductName,
-                trackingHtml,
-                shippingMethodHtml,
-                receiptConfirmationHtml,
-                nextStepText
+        String subject = shipmentSubject(shipmentStatus, orderNumber);
+
+        String html = buildShipmentStatusHtml(
+                escapeHtml(buyerName),
+                escapeHtml(formatShipmentStatus(shipmentStatus)),
+                escapeHtml(orderNumber),
+                escapeHtml(productName),
+                escapeHtml(trackingNumber),
+                escapeHtml(shippingMethod),
+                legacyReceiptCard(shipmentStatus, returnConfirmationUrl, receiptConfirmationToken),
+                escapeHtml(getNextStepText(shipmentStatus))
         );
 
-
-        sendHtmlEmail(
-                buyerEmail,
-                subject,
-                buildEmailLayout(html)
-        );
+        sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
     }
 
 
-    public void notifySellerToStartVerification(String email, String name,String accountUrl) {
+    public void notifySellerToStartVerification(String email, String name, String accountUrl) {
 
         String safeName = escapeHtml(
                 name != null && !name.isBlank() ? name : "Sprzedawco"
@@ -5822,109 +2196,30 @@ Wymagana płatność
         String subject =
                 "Dokończ weryfikację, aby otrzymywać wypłaty – kasoa.pl";
 
-
-        String html = """
-<div style="font-size:24px;line-height:32px;
-                                        font-weight:700;color:#182016;
-                                        margin-bottom:12px;">
-                                Cześć %s! 👋
-                            </div>
-<div style="font-size:15px;line-height:24px;
-                                        color:#596052;margin-bottom:24px;">
-                                Aby móc otrzymywać wypłaty ze sprzedaży
-                                na kasoa.pl, musisz rozpocząć proces
-                                weryfikacji tożsamości sprzedawcy.
-                            </div>
-
-
-
-
-<div style="font-size:18px;line-height:26px;
-                                                    font-weight:700;color:#182016;
-                                                    margin-bottom:12px;">
-                                            🔐 Weryfikacja tożsamości sprzedawcy
-                                        </div>
-<div style="font-size:14px;line-height:23px;
-                                                    color:#596052;">
-                                            Weryfikacja jest wymagana, aby umożliwić
-                                            realizację wypłat. Rozpocznij onboarding
-                                            i wykonaj wymagane kroki zgodnie
-                                            z wyświetlanymi instrukcjami.
-                                        </div>
-
-
-
-
-
-
-
-<div style="font-size:17px;line-height:24px;
-                                                    font-weight:700;color:#182016;
-                                                    margin-bottom:12px;">
-                                            Jak rozpocząć weryfikację?
-                                        </div>
-<div style="font-size:14px;line-height:24px;
-                                                    color:#4F5849;">
-<strong>1.</strong> Zaloguj się na swoje
-                                            konto kasoa.pl.<br/><br/>
-<strong>2.</strong> Przejdź do sekcji
-                                            <strong>Konto → Profil</strong>.<br/><br/>
-<strong>3.</strong> Otwórz sekcję
-                                            <strong>Weryfikacja tożsamości
-                                            sprzedawcy</strong>.<br/><br/>
-<strong>4.</strong> Kliknij przycisk
-                                            rozpoczynający onboarding i postępuj
-                                            zgodnie z instrukcjami.
-                                        </div>
-
-
-
-
-
-
-
-<div style="font-size:15px;line-height:22px;
-                                                    font-weight:700;color:#182016;
-                                                    margin-bottom:8px;">
-                                            Ważne informacje o wypłatach
-                                        </div>
-<div style="font-size:14px;line-height:23px;
-                                                    color:#596052;">
-                                            Do czasu ukończenia wymaganej weryfikacji
-                                            i uzyskania odpowiedniego statusu
-                                            zatwierdzenia możliwość otrzymywania
-                                            wypłat może być niedostępna.
-                                        </div>
-
-
-
-
-
-
-
-<a href="%s" style="display:inline-block;
-                                                  background:#68764B;
-                                                  color:#FFFFFF;
-                                                  text-decoration:none;
-                                                  font-size:15px;line-height:20px;
-                                                  font-weight:700;
-                                                  padding:14px 28px;
-                                                  border-radius:10px;">
-                                            Przejdź do swojego konta →
-                                        </a>
-
-
-
-<div style="font-size:13px;line-height:21px;
-                                        color:#7A8172;text-align:center;
-                                        margin-top:18px;">
-                                Jeśli rozpocząłeś już weryfikację,
-                                dokończ proces, aby umożliwić realizację wypłat.
-                            </div>
-        """.formatted(
-                safeName,
-                escapeHtml(accountUrl)
-        );
+        String html =
+                h1("Cześć " + safeName + "! 👋")
+                        + lead("Aby móc otrzymywać wypłaty ze sprzedaży na kasoa.pl, musisz rozpocząć proces weryfikacji "
+                        + "tożsamości sprzedawcy.")
+                        + panel(Tone.NEUTRAL,
+                        el("div", "margin:0 0 8px;font-size:17px;line-height:25px;font-weight:700;color:" + INK + ";",
+                                "🔐 Weryfikacja tożsamości sprzedawcy")
+                                + el("div", "font-size:14px;line-height:23px;color:" + MUTED + ";",
+                                "Weryfikacja jest wymagana, aby umożliwić realizację wypłat. Rozpocznij onboarding i wykonaj "
+                                        + "wymagane kroki zgodnie z wyświetlanymi instrukcjami."))
+                        + section("Jak rozpocząć weryfikację?", steps(
+                        "Zaloguj się na swoje konto kasoa.pl.",
+                        "Przejdź do sekcji " + strong("Konto → Profil") + ".",
+                        "Otwórz sekcję " + strong("Weryfikacja tożsamości sprzedawcy") + ".",
+                        "Kliknij przycisk rozpoczynający onboarding i postępuj zgodnie z instrukcjami."))
+                        + spacer(24)
+                        + panel(Tone.ALERT,
+                        el("div", "margin:0 0 6px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";",
+                                "Ważne informacje o wypłatach")
+                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
+                                "Do czasu ukończenia wymaganej weryfikacji i uzyskania odpowiedniego statusu zatwierdzenia "
+                                        + "możliwość otrzymywania wypłat może być niedostępna."))
+                        + button(accountUrl, "Przejdź do swojego konta →")
+                        + caption("Jeśli rozpocząłeś już weryfikację, dokończ proces, aby umożliwić realizację wypłat.");
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
@@ -5943,38 +2238,11 @@ Wymagana płatność
 
         StringBuilder html = new StringBuilder();
 
-        html.append("""
-        <tr>
-            <td colspan="2"
-                style="
-                    padding:4px 0 10px 0;
-                    font-size:14px;
-                    font-weight:800;
-                    color:#68764B;
-                ">
-                %s
-            </td>
-        </tr>
-        """.formatted(
-                escapeHtml(label)
-        ));
+        html.append("<tr><td colspan=\"2\" style=\"padding:0 0 8px;font-family:").append(FONT)
+                .append(";font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:")
+                .append(BRAND).append(";\">").append(escapeHtml(label)).append("</td></tr>");
 
-        html.append("""
-        <tr>
-            <td colspan="2"
-                style="
-                    padding:2px 0;
-                    font-size:15px;
-                    line-height:22px;
-                    font-weight:700;
-                    color:#182016;
-                ">
-                %s
-            </td>
-        </tr>
-        """.formatted(
-                escapeHtml(name)
-        ));
+        html.append(addressLine(escapeHtml(name), true));
 
         for (String line : lines) {
 
@@ -5982,43 +2250,20 @@ Wymagana płatność
                 continue;
             }
 
-            html.append("""
-            <tr>
-                <td colspan="2"
-                    style="
-                        padding:2px 0;
-                        font-size:15px;
-                        line-height:22px;
-                        color:#182016;
-                    ">
-                    %s
-                </td>
-            </tr>
-            """.formatted(
-                    escapeHtml(line.trim())
-            ));
+            html.append(addressLine(escapeHtml(line.trim()), false));
         }
 
         if (phone != null && !phone.isBlank()) {
-
-            html.append("""
-            <tr>
-                <td colspan="2"
-                    style="
-                        padding:2px 0;
-                        font-size:15px;
-                        line-height:22px;
-                        color:#182016;
-                    ">
-                    %s
-                </td>
-            </tr>
-            """.formatted(
-                    escapeHtml(phone)
-            ));
+            html.append(addressLine(escapeHtml(phone), false));
         }
 
         return html.toString();
+    }
+
+    private String addressLine(String safeText, boolean bold) {
+        return "<tr><td colspan=\"2\" style=\"padding:1px 0;font-family:" + FONT
+                + ";font-size:14px;line-height:22px;" + (bold ? "font-weight:700;" : "") + "color:" + INK + ";\">"
+                + safeText + "</td></tr>";
     }
 
 
@@ -6133,75 +2378,21 @@ Wymagana płatność
                     transferId != null ? transferId : "—"
             );
 
-            String html = """
-<h2 style="margin:0 0 20px; font-size:22px; color:#182016;">
-                                                Przekazaliśmy środki ze sprzedaży
-                                            </h2>
-<p style="margin:0 0 16px; font-size:15px; line-height:1.6; color:#596052;">
-                                                Środki należne Ci za zamówienie zostały przekazane na Twoje konto Stripe.
-                                            </p>
-<p style="margin:0 0 24px; font-size:15px; line-height:1.6; color:#596052;">
-                                                Poniżej znajdziesz szczegółowe rozliczenie:
-                                            </p>
-
-
-
-                                                        Numer zamówienia
-                                                    
-
-                                                        %s
-                                                    
-
-
-
-                                                        Kwota brutto sprzedającego
-                                                    
-
-                                                        %s
-                                                    
-
-
-
-                                                        Opłata Stripe za bieżące zamówienie
-                                                    
-
-                                                        − %s
-                                                    
-
-
-
-                                                        Nieodzyskane opłaty Stripe z anulowanych zamówień
-                                                    
-
-                                                        − %s
-                                                    
-
-
-
-                                                        Kwota netto przekazana
-                                                    
-
-                                                        %s
-                                                    
-
-
-<p style="margin:24px 0 8px; font-size:13px; color:#596052;">
-                                                Identyfikator transferu Stripe:
-                                            </p>
-<p style="margin:0; font-size:12px; color:#596052; word-break:break-all;">
-                                                %s
-                                            </p>
-<p style="margin:28px 0 0; font-size:14px; line-height:1.6; color:#596052;">
-                                                Możesz sprawdzić szczegóły przekazania środków na swoim koncie Stripe.
-                                            </p>
-        """.formatted(
-                    safeOrderNumber,
-                    safeSellerPrice,
-                    safeStripeFee,
-                    safeAmountToRecover,
-                    safeNetAmount,
-                    safeTransferId
-            );
+            String html =
+                    badge("✓ Wypłata zrealizowana", Tone.NEUTRAL)
+                            + h1("Przekazaliśmy środki ze sprzedaży")
+                            + lead("Środki należne Ci za zamówienie zostały przekazane na Twoje konto Stripe. "
+                            + "Poniżej znajdziesz szczegółowe rozliczenie:")
+                            + panel(Tone.NEUTRAL, table(
+                            kvRow("Numer zamówienia", safeOrderNumber)
+                                    + kvRow("Kwota brutto sprzedającego", safeSellerPrice)
+                                    + kvRow("Opłata Stripe za bieżące zamówienie", "− " + safeStripeFee)
+                                    + kvRow("Nieodzyskane opłaty Stripe z anulowanych zamówień", "− " + safeAmountToRecover)
+                                    + kvTotal("Kwota netto przekazana", safeNetAmount)))
+                            + label("Identyfikator transferu Stripe")
+                            + el("div", "margin:0 0 24px;font-family:" + MONO + ";font-size:12px;line-height:19px;color:" + MUTED
+                            + ";overflow-wrap:anywhere;word-break:break-all;", safeTransferId)
+                            + muted("Możesz sprawdzić szczegóły przekazania środków na swoim koncie Stripe.");
 
             sendHtmlEmail(
                     email,
@@ -6213,8 +2404,5 @@ Wymagana płatność
             log.error("Failed to send transfer notification to {}", email, e);
         }
     }
-
-
-
 
 }

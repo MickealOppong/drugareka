@@ -398,6 +398,11 @@ public class CategoryService {
                 .toList();
     }
 
+    public Long totalCategories(){
+        return categoryRepo.count();
+    }
+
+
     public List<CategoryResponse> allCategories(){
         return  categoryRepo.findAllByAndIsActiveIsTrue().stream().map(category -> {
             String image= mediaService.getCategoryImage(category).getImage();

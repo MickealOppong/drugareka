@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,5 +19,6 @@ public interface AppUserRepo extends JpaRepository<AppUser,Long> {
     Optional<AppUser> findByUsername(String username);
     Optional<AppUser> findByPasswordResetToken(String token);
     boolean existsByUsername(String username);
-
+    long countByCreatedAtBefore(Instant date);
+    List<AppUser> findAllByCreatedAtBetween(Instant start, Instant end);
 }

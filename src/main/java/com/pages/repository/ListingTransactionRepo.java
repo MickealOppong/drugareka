@@ -2,6 +2,7 @@ package com.pages.repository;
 
 import com.pages.enums.InventoryStatus;
 import com.pages.enums.ListingStatus;
+import com.pages.model.AppUser;
 import com.pages.model.ListingTransaction;
 import com.pages.model.SellerProfile;
 import jdk.jfr.Registered;
@@ -103,4 +104,7 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
             @Param("inventoryStatus") InventoryStatus inventoryStatus,
             Pageable pageable
     );
+    long countByCreatedAtBefore(Instant date);
+    long countByListingStatusAndCreatedAtBefore(ListingStatus status,Instant date);
+    List<ListingTransaction> findAllByCreatedAtBetween(Instant start, Instant end);
 }

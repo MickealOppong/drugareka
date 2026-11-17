@@ -1,5 +1,6 @@
 package com.pages.repository;
 
+import com.pages.enums.OrderItemStatus;
 import com.pages.enums.OrderStatus;
 import com.pages.model.ListingOrder;
 import com.pages.model.ListingOrderItem;
@@ -11,9 +12,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +24,17 @@ import java.util.Optional;
 @Repository
 public interface ListingOrderRepo extends JpaRepository<ListingOrder,Long>, JpaSpecificationExecutor<ListingOrder> {
 
+
+ @Query("""
+    SELECT COALESCE(SUM(o.orderTotal), 0)
+    FROM ListingOrder o
+    WHERE o.createdAt < :date
+      AND o.orderStatus = :status
+""")
+ BigDecimal sumOrderTotalByCreatedAtBeforeAndOrderStatus(
+         @Param("date") Instant date,
+         @Param("status") OrderStatus status
+ );
 
    Page<ListingOrder> findByBuyerId(Long buyerId, Specification<ListingOrder> specification, Pageable pageable);
     List<ListingOrder> findAllById(Long buyerId);
@@ -51,4 +65,5 @@ public interface ListingOrderRepo extends JpaRepository<ListingOrder,Long>, JpaS
          @Param("time") Instant time
  );
 
+ long countByOrderStatusAndCreatedAtBefore(OrderStatus orderStatus,Instant date);
 }

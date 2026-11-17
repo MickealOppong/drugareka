@@ -413,6 +413,14 @@ public class ListingOrderService {
 
     }
 
+    public BigDecimal totalSales(Instant date,OrderStatus status){
+        return listingOrderRepo.sumOrderTotalByCreatedAtBeforeAndOrderStatus(date,status);
+    }
+
+    public Long totalOrders(Instant date){
+        return listingOrderRepo.countByOrderStatusAndCreatedAtBefore(OrderStatus.PAID,date);
+    }
+
     @Transactional
     public void cleanUpAbandonOrders(){
       List<ListingOrderItem> items = listingOrderItemRepo.findAllByOrderStatusForUpdate(OrderItemStatus.PROCESSING);

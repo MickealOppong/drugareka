@@ -218,12 +218,20 @@ public class ListingTransactionService {
             // =====================================================
             SellerProfile sellerProfile = sellerProfileService.getSellerProfile(appUser.getId());
 
-            //prevent listing for problematic sellers
-            boolean isNotEligible =sellerProfile.getStatus()==SellerStatus.BLOCKED
-                    ||sellerProfile.getStatus()==SellerStatus.SUSPENDED
-                    ||sellerProfile.getStatus()==SellerStatus.PENDING;
 
-            if(isNotEligible){
+            if(sellerProfile!=null){
+                //prevent listing for problematic sellers
+                boolean isNotEligible =sellerProfile.getStatus()==SellerStatus.BLOCKED
+                        ||sellerProfile.getStatus()==SellerStatus.SUSPENDED
+                        ||sellerProfile.getStatus()==SellerStatus.PENDING;
+
+                if(isNotEligible){
+                    throw new DuplicateKeyException(
+                            messageSource.getMessage("api.add_listing.seller.forbidden",null,LocaleContextHolder.getLocale())
+                    );
+                }
+            }
+            if(sellerProfile==null && !appUser.isSysAdmin()){
                 throw new DuplicateKeyException(
                         messageSource.getMessage("api.add_listing.seller.forbidden",null,LocaleContextHolder.getLocale())
                 );
@@ -1130,6 +1138,9 @@ public class ListingTransactionService {
         }).toList();
     }
 
+    public List<ListingTransaction> getNewListings(Instant start,Instant end){
+       return listingTransactionRepo.findAllByCreatedAtBetween(start,end);
+    }
     public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){
         // 1. Calculate how many items exist up to the start boundary of the current page
         int itemsBeforeCurrentPage = currentPage * pageSize;
@@ -1148,12 +1159,15 @@ public class ListingTransactionService {
         return accumulatedTotal;
     }
 
-
+    public Long totalListings(Instant date){
+        return listingTransactionRepo.countByCreatedAtBefore(date);
+    }
+    public Long totalActiveListings(ListingStatus status,Instant date){
+        return listingTransactionRepo.countByListingStatusAndCreatedAtBefore(status,date);
+    }
     @Transactional(readOnly = true)
     public ProductListResponse getProductById(Jwt jwt,Long listingId) {
-        if(jwt==null){
-            return ProductListResponse.builder().build();
-        }
+
         ListingTransaction listingTransaction = listingTransactionRepo.findById(listingId).orElse(null);
         if (listingTransaction != null) {
             List<MediaResponse> mediaList = mediaService.getImageList(listingTransaction.getInventory().getId());

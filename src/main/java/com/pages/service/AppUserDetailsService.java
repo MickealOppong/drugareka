@@ -76,6 +76,9 @@ public class AppUserDetailsService implements UserDetailsService {
         this.sellerProfileRepo = sellerProfileRepo;
     }
 
+    public Long totalUsers(Instant date){
+        return appUserRepo.countByCreatedAtBefore(date);
+    }
 
     public ResponseDto<Object> resetPasswordRequest(String email){
        AppUser appUser = appUserRepo.findByUsername(email.trim()).orElse(null);
@@ -236,6 +239,20 @@ public class AppUserDetailsService implements UserDetailsService {
     public AppUser getAppUserByUsername(String username){
         return appUserRepo.findByUsername(username).orElseThrow(()->new UsernameNotFoundException(username+ " "+"does not exist"));
     }
+
+
+    public List<UserDetailsDto> getNewUsersCreated(Instant previous,Instant current){
+        return appUserRepo.findAllByCreatedAtBetween(previous,current).stream().map(user->{
+           return UserDetailsDto.builder()
+                   .firstName(user.getFirstName())
+                   .lastName(user.getLastName())
+                   .roles(user.getUserRoles().stream().map(AppUserRole::getRole).collect(Collectors.toSet()))
+                   .userId(user.getId())
+                   .email(user.getUsername())
+                    .build();
+        }).toList();
+    }
+
 
     public AppUser getAppUserId(Long id){
         return appUserRepo.findById(id).orElseThrow(()->new UsernameNotFoundException(id+ " "+"does not exist"));

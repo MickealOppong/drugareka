@@ -48,10 +48,10 @@ public class BrandService {
                 .build();
     }
 
-    public Brand getBrandByName(String brandName){
-        return brandRepo.findByName(brandName).orElseThrow(()->new EntityNotFoundException(brandName+" does not exist"));
-    }
 
+    public Long totalBrand(){
+        return brandRepo.count();
+    }
 
     public ResponseDto<Object> addBrand(BrandRequest brand){
        try{

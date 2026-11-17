@@ -1,5 +1,6 @@
 package com.pages.controller;
 
+import com.pages.dto.AdminDashboardDto;
 import com.pages.dto.AnalyticsDto;
 import com.pages.dto.SellingActivityResponse;
 import com.pages.service.AnalyticsService;
@@ -7,6 +8,7 @@ import com.pages.service.AppUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +33,11 @@ public class AnalyticsController {
        return analyticsService.dashboardAnalytics(jwt);
     }
 
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @GetMapping("/dashboard-admin")
+    public AdminDashboardDto adminAnalytics(@AuthenticationPrincipal Jwt jwt){
+        return analyticsService.adminDashboard(jwt);
+    }
 
     @GetMapping("/seller-recent")
     public List<SellingActivityResponse> sellingActivity(@AuthenticationPrincipal Jwt jwt){

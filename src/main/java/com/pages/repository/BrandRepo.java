@@ -6,10 +6,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
 public interface BrandRepo extends JpaRepository<Brand,Long>, JpaSpecificationExecutor<Brand> {
     Optional<Brand> findByName(String name);
     boolean existsByName(String name);
+    long countByCreatedAtBefore(Instant date);
 }
