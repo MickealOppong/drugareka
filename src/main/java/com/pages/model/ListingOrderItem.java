@@ -83,6 +83,8 @@ public class ListingOrderItem extends LogEntity {
     @Column(name = "receipt_confirmed_at")
     private Instant receiptConfirmedAt;
 
+    private Instant receiptConfirmationReminderSentAt;
+
 
 
 }

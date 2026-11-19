@@ -35,6 +35,7 @@ public class ListingTransaction extends LogEntity {
 
     @Column(name = "confirmation_token_created_at")
     private Instant confirmationTokenCreatedAt;
+    private Instant confirmationMessageSentAt;
 
     private String confirmationStatus;
 

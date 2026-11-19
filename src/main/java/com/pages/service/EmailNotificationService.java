@@ -100,6 +100,7 @@ public class EmailNotificationService {
     }
 
 
+
     // =====================================================================
     //  LAYOUT SHELL
     // =====================================================================
@@ -1317,7 +1318,98 @@ public class EmailNotificationService {
         );
     }
 
+    /**
+     * AUTOMATIC SELLER ORDER CONFIRMATION
+     * @param sellerEmail
+     * @param sellerName
+     * @param productName
+     * @param orderNumber
+     * @param shipmentToken
+     */
+    @Async
+    public void remindSellerOfPendingConfirmation(
+            String sellerEmail,
+            String sellerName,
+            String productName,
+            String orderNumber,
+            String shipmentToken
+    ) {
+        String subject = "Przypomnienie: potwierdź dostępność produktu – #"
+                + orderNumber;
 
+        String safeOrder = escapeHtml(orderNumber);
+        String safeProduct = escapeHtml(productName);
+        String safeSellerName = escapeHtml(sellerName);
+
+        String shipmentUrl = shipmentConfirmationUrl
+                + "/create?token="
+                + URLEncoder.encode(
+                shipmentToken,
+                StandardCharsets.UTF_8
+        );
+
+        String htmlContent =
+                badge("⏳ Oczekuje na potwierdzenie sprzedawcy", Tone.NEUTRAL)
+
+                        + h1("Potwierdź dostępność sprzedanego produktu")
+
+                        + lead("Cześć, " + safeSellerName + "!")
+
+                        + lead("Kupujący opłacił zamówienie zawierające Twój produkt. "
+                        + "Nadal oczekujemy na potwierdzenie jego dostępności "
+                        + "oraz gotowości do wysyłki.")
+
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + orderNumber(safeOrder))
+
+                        + label("Sprzedany produkt")
+
+                        + table(
+                        kvRowEnd("Produkt", strong(safeProduct)))
+
+                        + panel(Tone.NEUTRAL,
+                        label("Pozostały czas na potwierdzenie")
+                                + el("div",
+                                "font-size:28px;line-height:36px;"
+                                        + "font-weight:700;color:" + INK + ";",
+                                "Około 12 godzin")
+                                + muted("Jeżeli nie potwierdzisz dostępności produktu "
+                                + "przed upływem wyznaczonego terminu, "
+                                + "zamówienie dotyczące tego produktu zostanie "
+                                + "automatycznie anulowane, a kupujący otrzyma "
+                                + "zwrot środków."))
+
+                        + section("Co należy zrobić?", steps(
+                        "Kliknij poniższy przycisk.",
+                        "Potwierdź dostępność sprzedanego produktu.",
+                        "Uzupełnij informacje niezbędne do przygotowania wysyłki."))
+
+                        + button(shipmentUrl, "Potwierdź dostępność produktu →")
+
+                        + section("Produkt nie jest już dostępny?",
+                        muted("Jeżeli produkt został sprzedany poza Kasoa.pl "
+                                + "lub nie możesz zrealizować zamówienia, "
+                                + "skorzystaj z powyższego przycisku, aby "
+                                + "poinformować nas o jego niedostępności. "
+                                + "Nie czekaj na automatyczne anulowanie zamówienia."))
+
+                        + section("Ważna informacja",
+                        muted("Terminowe potwierdzanie zamówień pomaga uniknąć "
+                                + "niepotrzebnych anulowań i zapewnia kupującym "
+                                + "sprawną realizację zakupów."))
+
+                        + muted("Nie musisz logować się na swoje konto, "
+                        + "aby potwierdzić dostępność produktu. "
+                        + "Jeżeli zamówienie zostało już potwierdzone, "
+                        + "zignoruj tę wiadomość.");
+
+        sendHtmlEmail(
+                sellerEmail,
+                subject,
+                buildEmailLayout(htmlContent)
+        );
+    }
 
     /**
      *
@@ -1327,7 +1419,6 @@ public class EmailNotificationService {
      * @param products
      * @param shipmentToken
      */
-
     @Async
     public void sendBulkOrderActionToSeller(
             String sellerEmail,
@@ -1966,6 +2057,104 @@ public class EmailNotificationService {
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
 
+    /**
+     * Order confirmation reminder
+     * @param buyerEmail
+     * @param buyerName
+     * @param productName
+     * @param orderNumber
+     * @param receiptConfirmationToken
+     */
+    @Async
+    public void remindBuyerOfPendingConfirmation(
+            String buyerEmail,
+            String buyerName,
+            String productName,
+            String orderNumber,
+            String receiptConfirmationToken
+    ) {
+        String subject = "Przypomnienie: pozostało 12 godzin na potwierdzenie odbioru – #"
+                + orderNumber;
+
+        String safeOrder = escapeHtml(orderNumber);
+        String safeProduct = escapeHtml(productName);
+        String safeBuyerName = escapeHtml(buyerName);
+
+        String receiptConfirmationUrl =
+                deliveryConfirmationUrl
+                        + "/confirm-receipt?token="
+                        + URLEncoder.encode(
+                        receiptConfirmationToken,
+                        StandardCharsets.UTF_8
+                );
+
+        String htmlContent =
+                badge("⏳ Oczekuje na potwierdzenie odbioru", Tone.NEUTRAL)
+
+                        + h1("Pozostało 12 godzin na potwierdzenie odbioru")
+
+                        + lead("Cześć, " + safeBuyerName + "!")
+
+                        + lead("Produkt z Twojego zamówienia został dostarczony. "
+                        + "Nie otrzymaliśmy jednak jeszcze potwierdzenia odbioru.")
+
+                        + panel(Tone.NEUTRAL,
+                        label("Numer zamówienia")
+                                + orderNumber(safeOrder))
+
+                        + label("Dostarczony produkt")
+
+                        + table(
+                        kvRowEnd("Produkt", strong(safeProduct)))
+
+                        + panel(Tone.NEUTRAL,
+                        label("Pozostały czas na potwierdzenie")
+                                + el("div",
+                                "font-size:28px;line-height:36px;"
+                                        + "font-weight:700;color:" + INK + ";",
+                                "12 godzin")
+                                + muted("Jeżeli w ciągu 12 godzin od otrzymania "
+                                + "tej wiadomości nie potwierdzisz odbioru "
+                                + "ani nie zgłosisz zwrotu z uzasadnieniem, "
+                                + "odbiór produktu zostanie automatycznie potwierdzony."))
+
+                        + section("Wszystko w porządku z produktem?",
+                        muted("Jeżeli otrzymany produkt jest zgodny z opisem "
+                                + "i nie masz żadnych zastrzeżeń, potwierdź jego "
+                                + "odbiór, korzystając z poniższego przycisku. "
+                                + "Nie musisz logować się na swoje konto."))
+
+                        + button(receiptConfirmationUrl, "Potwierdź odbiór →")
+
+                        + section("Masz zastrzeżenia do otrzymanego produktu?",
+                        muted("Jeżeli produkt jest niezgodny z opisem, uszkodzony "
+                                + "lub masz inne uzasadnione zastrzeżenia, "
+                                + "zgłoś zwrot przed upływem wskazanego czasu.")
+                                + steps(
+                                "Zaloguj się na swoje konto na kasoa.pl.",
+                                "Przejdź do zakładki „Zamówienia”.",
+                                "Odszukaj zamówienie #" + safeOrder + ".",
+                                "Wybierz odpowiedni produkt i zgłoś zwrot, "
+                                        + "podając uzasadnienie."))
+
+                        + button(HOME_URL, "Przejdź do swojego konta →")
+
+                        + section("Ważna informacja",
+                        muted("Jeżeli zgłosisz zwrot z uzasadnieniem przed "
+                                + "upływem wskazanego czasu, odbiór produktu "
+                                + "nie zostanie automatycznie potwierdzony "
+                                + "do czasu rozpatrzenia zgłoszenia."))
+
+                        + muted("Jeżeli odbiór został już potwierdzony "
+                        + "lub zwrot został zgłoszony, "
+                        + "zignoruj tę wiadomość.");
+
+        sendHtmlEmail(
+                buyerEmail,
+                subject,
+                buildEmailLayout(htmlContent)
+        );
+    }
 
     @Async
     public void sendShipmentStatusToBuyer(

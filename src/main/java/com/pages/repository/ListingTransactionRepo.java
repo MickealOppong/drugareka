@@ -5,14 +5,12 @@ import com.pages.enums.ListingStatus;
 import com.pages.model.AppUser;
 import com.pages.model.ListingTransaction;
 import com.pages.model.SellerProfile;
+import jakarta.persistence.LockModeType;
 import jdk.jfr.Registered;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
@@ -47,11 +45,21 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
 
 
 
-    List<ListingTransaction>
-    findAllByInventoryStatusAndListingStatusAndCreatedAtBefore(
-            InventoryStatus inventoryStatus,
-            ListingStatus listingStatus,
-            Instant createdAt
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT lt FROM ListingTransaction lt
+    WHERE lt.inventory.status = :inventoryStatus
+    AND lt.listingStatus = :listingStatus
+    AND lt.createdAt <= :cutoff
+    AND (
+        lt.confirmationMessageSentAt IS NULL
+        OR lt.confirmationMessageSentAt <= :cutoff
+    )
+    """)
+    List<ListingTransaction> findListingsForConfirmationForUpdate(
+            @Param("inventoryStatus") InventoryStatus inventoryStatus,
+            @Param("listingStatus") ListingStatus listingStatus,
+            @Param("cutoff") Instant cutoff
     );
 
     List<ListingTransaction>
@@ -62,9 +70,14 @@ public interface ListingTransactionRepo extends JpaRepository<ListingTransaction
 
     Optional<ListingTransaction> findByConfirmationToken(String token);
 
-    List<ListingTransaction>
-    findAllByConfirmationTokenIsNotNullAndConfirmationTokenCreatedAtBefore(
-            Instant createdAt
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT lt FROM ListingTransaction lt
+    WHERE lt.confirmationToken IS NOT NULL
+    AND lt.confirmationTokenCreatedAt <= :expiryTime
+    """)
+    List<ListingTransaction> findExpiredConfirmations(
+            @Param("expiryTime") Instant expiryTime
     );
 
 

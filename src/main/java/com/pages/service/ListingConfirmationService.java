@@ -28,6 +28,7 @@ public class ListingConfirmationService {
 
     private final ListingTransactionRepo listingTransactionRepo;
     private final EmailNotificationService emailNotificationService;
+    private final Instant now = Instant.now();
 
     @Value("${app.frontend-url}")
     private String baseUrl;
@@ -117,7 +118,7 @@ public class ListingConfirmationService {
 
         List<ListingTransaction> listings =
                 listingTransactionRepo
-                        .findAllByInventoryStatusAndListingStatusAndCreatedAtBefore(
+                        .findListingsForConfirmationForUpdate(
                                 InventoryStatus.AVAILABLE,
                                 ListingStatus.PUBLISHED,
                                 cutoff
@@ -129,10 +130,10 @@ public class ListingConfirmationService {
                 String token = UtilService.generateListingConfirmationToken();
 
                 // Hide the listing while waiting for seller confirmation.
-                //listing.setListingStatus(ListingStatus.DRAFT);
+                listing.setConfirmationMessageSentAt(now);
                 listing.setConfirmationToken(token);
                 listing.setConfirmationStatus(null);
-                listing.setConfirmationTokenCreatedAt(Instant.now());
+                listing.setConfirmationTokenCreatedAt(now);
 
             listingTransactionRepo.save(listing);
 
@@ -171,26 +172,25 @@ public class ListingConfirmationService {
     /**
      * Expires confirmation requests that have not received
      * a response within 24 hours.
-     *
-     * The listing remains a draft and is not visible to buyers.
+     * The listing is moved to draft and is no longer
+     * visible to buyers.
      */
+    @Transactional
     public void expirePendingConfirmations() {
 
         Instant expiryTime = Instant.now()
                 .minus(RESPONSE_WINDOW_HOURS, ChronoUnit.HOURS);
 
         List<ListingTransaction> expiredListings =
-                listingTransactionRepo
-                        .findAllByConfirmationTokenIsNotNullAndConfirmationTokenCreatedAtBefore(
-                                expiryTime
-                        );
+                listingTransactionRepo.findExpiredConfirmations(expiryTime);
 
         for (ListingTransaction listing : expiredListings) {
 
-            // Do not republish listings when the seller has not responded.
             listing.setListingStatus(ListingStatus.DRAFT);
 
-            listingTransactionRepo.save(listing);
+            // Invalidate expired confirmation request.
+            listing.setConfirmationToken(null);
+            listing.setConfirmationTokenCreatedAt(null);
 
             log.info(
                     "Availability confirmation expired for listing {}.",

@@ -56,13 +56,31 @@ public interface ListingOrderItemRepo extends JpaRepository<ListingOrderItem,Lon
     Optional<ListingOrderItem> findByReceiptConfirmationTokenForUpdate(String token);
 
     Optional<ListingOrderItem> findByReceiptConfirmationToken(String token);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        SELECT item FROM ListingOrderItem item 
-        WHERE item.orderItemStatus = com.pages.enums.OrderItemStatus.PAID 
-        AND item.receiptConfirmationTokenExpiresAt < :now 
+        SELECT item FROM ListingOrderItem item
+        WHERE item.orderItemStatus = :status
+        AND item.receiptConfirmationTokenExpiresAt < :now
         AND item.receiptConfirmedAt IS NULL
     """)
-    List<ListingOrderItem> findAllPaidAndExpiredReceiptTokens(@Param("now") Instant now);
+    List<ListingOrderItem> findAllPaidAndExpiredReceiptTokensForUpdate(@Param("now") Instant now,@Param("status") OrderItemStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT item FROM ListingOrderItem item
+    WHERE item.orderItemStatus = :status
+    AND item.receiptConfirmationTokenExpiresAt > :now
+    AND item.receiptConfirmationTokenExpiresAt <= :expiresIn12Hours
+    AND item.receiptConfirmedAt IS NULL
+    AND item.receiptConfirmationReminderSentAt IS NULL
+    AND item.receiptConfirmationToken IS NOT NULL
+    """)
+    List<ListingOrderItem> findAllPendingReceiptConfirmationRemindersForUpdate(
+            @Param("now") Instant now,
+            @Param("expiresIn12Hours") Instant expiresIn12Hours,
+            @Param("status") OrderItemStatus status
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("""
        SELECT o

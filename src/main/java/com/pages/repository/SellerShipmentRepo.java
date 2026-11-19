@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -33,12 +34,17 @@ public interface SellerShipmentRepo extends JpaRepository<SellerShipment,Long>, 
 
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("""
+    @Query("""
     SELECT s
     FROM SellerShipment s
     JOIN s.sellerShipmentToken t
     WHERE t.shipmentConfirmationStatus IS NULL
-    AND t.expiresAt <=:now
+    AND t.receiptConfirmationReminderSentAt IS NULL
+    AND t.expiresAt > :now
+    AND t.expiresAt <= :expiresIn12Hours
     """)
-    List<SellerShipment> findAllUnconfirmedShipmentForUpdate(@Param("now") Instant now);
+    List<SellerShipment> findAllUnconfirmedShipmentForUpdate(
+            @Param("now") Instant now,
+            @Param("expiresIn12Hours") Instant expiresIn12Hours
+    );
 }

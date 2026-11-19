@@ -32,4 +32,6 @@ public class SellerShipmentToken extends LogEntity {
     @Column(name = "status",length = 50)
     private ShipmentConfirmationStatus shipmentConfirmationStatus;
 
+    private Instant receiptConfirmationReminderSentAt;
+
 }
