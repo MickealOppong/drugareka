@@ -47,4 +47,16 @@ public interface SellerShipmentRepo extends JpaRepository<SellerShipment,Long>, 
             @Param("now") Instant now,
             @Param("expiresIn12Hours") Instant expiresIn12Hours
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT s
+    FROM SellerShipment s
+    JOIN s.sellerShipmentToken t
+    WHERE t.shipmentConfirmationStatus IS NULL
+    AND t.expiresAt <= :now
+    """)
+    List<SellerShipment> findAllExpiredUnconfirmedShipmentForUpdate(
+            @Param("now") Instant now
+    );
 }

@@ -246,7 +246,7 @@ public class ListingOrderService {
         Instant now = Instant.now();
 
         List<SellerShipment> unconfirmedShipments =
-                sellerShipmentRepo.findAllUnconfirmedShipmentForUpdate(now);
+                sellerShipmentRepo.findAllExpiredUnconfirmedShipmentForUpdate(now);
 
 
         for (SellerShipment shipment : unconfirmedShipments) {
