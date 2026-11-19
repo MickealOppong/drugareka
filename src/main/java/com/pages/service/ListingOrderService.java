@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.parameters.P;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
@@ -422,35 +423,65 @@ public class ListingOrderService {
     }
 
     @Transactional
-    public void cleanUpAbandonOrders(){
-      List<ListingOrderItem> items = listingOrderItemRepo.findAllByOrderStatusForUpdate(OrderItemStatus.PROCESSING);
-      if(items.isEmpty()){
-          return;
-      }
-      for(ListingOrderItem item :items){
-          log.info("Processing listing order item :{}",item.getId());
+    public void cleanUpAbandonOrders() {
 
-        List<Payment> payments = paymentRepo.findByListingOrderId(item.getListingId());
+        Instant now = Instant.now();
 
-        //leave it to payment cleanup service if there exist a payment
-        if(!payments.isEmpty()){
-            continue;
+        List<ListingOrderItem> items =
+                listingOrderItemRepo.findAllByOrderStatusForUpdate(
+                        OrderItemStatus.PROCESSING
+                );
+
+        if (items.isEmpty()) {
+            return;
         }
 
-        //cancel order
-        item.setOrderItemStatus(OrderItemStatus.CANCELLED);
-        listingOrderItemRepo.save(item);
+        for (ListingOrderItem item : items) {
 
-        //release inventory
-        InventoryItem inventoryItem = item.getInventoryItem();
-        if(inventoryItem.getStatus()==InventoryStatus.RESERVED){
-            inventoryItem.setStatus(InventoryStatus.AVAILABLE);
-            inventoryItem.setReservedBy(null);
-            inventoryItem.setReservedUntil(null);
-            inventoryItemRepo.save(inventoryItem);
+            log.info("Processing listing order item: {}", item.getId());
+
+            ListingOrder order = item.getListingOrder();
+            InventoryItem inventoryItem = item.getInventoryItem();
+
+            List<Payment> payments =
+                    paymentRepo.findByListingOrderId(order.getId());
+
+            if (!payments.isEmpty()) {
+
+                boolean allPaymentsRefunded = payments.stream()
+                        .allMatch(payment ->
+                                payment.getStatus() == PaymentStatus.REFUNDED
+                        );
+
+                // Leave other payment states to the payment cleanup service.
+                if (!allPaymentsRefunded) {
+                    continue;
+                }
+
+            } else {
+
+                // Allow the buyer to complete payment before cancelling.
+                if (inventoryItem.getReservedUntil() == null
+                        || inventoryItem.getReservedUntil().isAfter(now)) {
+                    continue;
+                }
+            }
+
+            item.setOrderItemStatus(OrderItemStatus.CANCELLED);
+
+            // Release inventory for both refunded and abandoned orders.
+            if (inventoryItem.getStatus() == InventoryStatus.RESERVED) {
+
+                inventoryItem.setStatus(InventoryStatus.AVAILABLE);
+                inventoryItem.setReservedBy(null);
+                inventoryItem.setReservedUntil(null);
+            }
+
+            log.info(
+                    "Completed cancelling listing order item: {}",
+                    item.getId()
+            );
         }
-          log.info("Completed cancelling listing order item :{}",item.getId());
-      }
     }
 
     public boolean isDeliveryConfirmedAlready(String token) {
