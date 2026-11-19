@@ -128,7 +128,6 @@ public class StripeConnectService {
                                 .build()
                 )
                 .setDashboard(AccountCreateParams.Dashboard.EXPRESS)
-
                 .build();
 
         Account account = client.v2()
@@ -373,14 +372,30 @@ public class StripeConnectService {
                     .findByUserId(appUser.getId())
                     .orElse(null);
 
+            // No seller profile or Stripe account.
             if (sellerProfile == null
-                    || sellerProfile.getStripeAccountId() == null) {
-              StripeAccountStatusResponse accountStatusResponse=  StripeAccountStatusResponse.builder()
-                        .identityVerified(false)
-                        .canReceivePayouts(false)
-                        .actionRequired(false)
-                        .requirementsCurrentlyDue(List.of())
-                        .build();
+                    || !StringUtils.hasText(sellerProfile.getStripeAccountId())) {
+
+                if (sellerProfile != null) {
+                    sellerProfile.setIdentityVerified(false);
+                    sellerProfile.setVerifiedAt(null);
+                    sellerProfile.setStripePayoutsEnabled(false);
+                    sellerProfile.setStripeOnboardingComplete(false);
+                    sellerProfile.setStripeChargesEnabled(false);
+                    sellerProfile.setStripeTransfersEnabled(false);
+                    sellerProfile.setStripeTransfersStatus(null);
+
+                    sellerProfileRepo.save(sellerProfile);
+                }
+
+                StripeAccountStatusResponse accountStatusResponse =
+                        StripeAccountStatusResponse.builder()
+                                .identityVerified(false)
+                                .canReceivePayouts(false)
+                                .actionRequired(false)
+                                .requirementsCurrentlyDue(List.of())
+                                .build();
+
                 return ResponseDto.builder()
                         .data(accountStatusResponse)
                         .httpStatus(HttpStatus.BAD_REQUEST.value())
@@ -416,32 +431,41 @@ public class StripeConnectService {
                                     .getPayouts().getStatus()
                     );
 
+            // Synchronize current payout eligibility.
+            sellerProfile.setStripePayoutsEnabled(canReceivePayouts);
 
+            // Apply the existing identity verification policy.
+            if (canReceivePayouts) {
 
-            // Persist payout status independently from identity verification.
+                if (!sellerProfile.isIdentityVerified()
+                        || sellerProfile.getVerifiedAt() == null) {
 
-            if (canReceivePayouts
-                    && !sellerProfile.isIdentityVerified()) {
-                sellerProfile.setIdentityVerified(true);
-                sellerProfile.setVerifiedAt(Instant.now());
+                    sellerProfile.setIdentityVerified(true);
+                    sellerProfile.setVerifiedAt(Instant.now());
+                }
             }
+
+            sellerProfile.setStripeAccountUpdatedAt(Instant.now());
 
             sellerProfileRepo.save(sellerProfile);
 
-          StripeAccountStatusResponse accountStatusResponse= StripeAccountStatusResponse.builder()
-                    .stripeAccountId(sellerProfile.getStripeAccountId())
-                    .identityVerified(sellerProfile.isIdentityVerified())
-                    .canReceivePayouts(canReceivePayouts)
-                    .build();
-          return ResponseDto.builder()
-                  .httpStatus(HttpStatus.OK.value())
-                  .data(accountStatusResponse)
-                  .build();
+            StripeAccountStatusResponse accountStatusResponse =
+                    StripeAccountStatusResponse.builder()
+                            .stripeAccountId(sellerProfile.getStripeAccountId())
+                            .identityVerified(sellerProfile.isIdentityVerified())
+                            .canReceivePayouts(canReceivePayouts)
+                            .build();
 
-        } catch (StripeException e) {
-            log.error("Failed to retrieve Stripe account status", e);
             return ResponseDto.builder()
                     .httpStatus(HttpStatus.OK.value())
+                    .data(accountStatusResponse)
+                    .build();
+
+        } catch (StripeException e) {
+
+            log.error("Failed to retrieve Stripe account status", e);
+
+            return ResponseDto.builder()
                     .data(null)
                     .message(e.getMessage())
                     .httpStatus(HttpStatus.BAD_REQUEST.value())

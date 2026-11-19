@@ -841,10 +841,12 @@ public class ListingTransactionService {
                     .totalSales(BigDecimal.ZERO)
                     .dateOfBirth(appUser.getDateOfBirth())
                     .fullLegalName(appUser.getFirstName() + " " + appUser.getLastName())
-                    .status(SellerStatus.ACTIVE )
-                    .identityVerified(true)
+                    .status(SellerStatus.ACTIVE)
+                    .identityVerified(false)
                     .build();
-            SellerProfile sellerProfile = sellerProfileService.findOrCreateSellerProfile(sellerProfileDto);
+
+            SellerProfile sellerProfile =
+                    sellerProfileService.findOrCreateSellerProfile(sellerProfileDto);
 
             //prevent listing for problematic sellers
             boolean isNotEligible =sellerProfile.getStatus()==SellerStatus.BLOCKED
