@@ -152,7 +152,7 @@ public class AnalyticsService {
 
         //time marker
         Instant current = Instant.now();
-        Instant previous = Instant.now().minus(1, ChronoUnit.DAYS);
+        Instant previous = Instant.now().minus(30, ChronoUnit.DAYS);
 
         //totalUsers
        long currentUsers= appUserDetailsService.totalUsers(current);
