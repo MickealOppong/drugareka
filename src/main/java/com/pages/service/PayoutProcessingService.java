@@ -420,7 +420,7 @@ public class PayoutProcessingService {
     public void createRefundForReturnedOrderItem(Payment payment,ListingOrderItem item){
 
 
-        BigDecimal amountToRefund = item.getSellerPrice();
+        BigDecimal amountToRefund = item.getSellerPrice().add(item.getServiceCharge());
 
         Payment refund = Payment.builder()
                 .listingOrder(item.getListingOrder())

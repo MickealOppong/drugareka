@@ -526,6 +526,12 @@ public class ShipmentService {
                         getMessage("api_errors.shipment.not_found")
                 ));
 
+        if(shipment.getShipmentStatus()==ShipmentStatus.DELIVERED || shipment.getShipmentStatus()==ShipmentStatus.RETURNED){
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.shipment.already_delivered")
+            );
+        }
         String status = request.getStatus();
 
         boolean isShipped = "SHIPPED".equalsIgnoreCase(status);

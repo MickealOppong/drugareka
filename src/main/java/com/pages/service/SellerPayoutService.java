@@ -281,6 +281,26 @@ public class SellerPayoutService {
                 .message("Record does not exist")
                 .build();
     }
+    @Transactional
+    public void updateStatus(OrderDispute orderDispute) {
+
+        if (orderDispute == null
+                || orderDispute.getListingOrderItem() == null) {
+            return;
+        }
+
+        Long orderItemId = orderDispute.getListingOrderItem().getId();
+
+        sellerPayoutRepo
+                .findByListingOrderItemIdAndPayoutStatusForUpdate(
+                        orderItemId,
+                        PayoutStatus.CHARGE_BACK
+                )
+                .ifPresent(payout -> {
+                    payout.setStatus(PayoutStatus.PAID);
+                    sellerPayoutRepo.save(payout);
+                });
+    }
 
     public PayoutStatus getStatusFromString(String status){
         return switch (status.toLowerCase()){
@@ -316,6 +336,61 @@ public class SellerPayoutService {
             sellerPayoutRepo.save(payout);
         }
 
+    }
+
+    @Transactional
+    public void createServiceChargeDueToBuyerReturn(
+            ListingOrderItem orderItem
+    ) {
+
+        if (orderItem == null) {
+            throw new IllegalArgumentException(
+                    "Order item cannot be null"
+            );
+        }
+
+        BigDecimal serviceCharge = orderItem.getServiceCharge();
+
+        if (serviceCharge == null ||
+                serviceCharge.compareTo(BigDecimal.ZERO) <= 0) {
+            log.info(
+                    "No service charge to recover for order item {}",
+                    orderItem.getId()
+            );
+            return;
+        }
+
+        // Prevent duplicate service charge recovery
+        boolean alreadyCharged =
+                sellerPayoutRepo.existsByListingOrderItemIdAndStatus(
+                        orderItem.getId(),
+                        PayoutStatus.CHARGE_BACK
+                );
+
+        if (alreadyCharged) {
+            log.info(
+                    "Service charge already recovered for order item {}",
+                    orderItem.getId()
+            );
+            return;
+        }
+
+        SellerPayout payout = SellerPayout.builder()
+                .listingOrderItem(orderItem)
+                .seller(orderItem.getSeller())
+                .sellerNameSnapshot(orderItem.getSellerNameSnapshot())
+                .amount(serviceCharge.negate())
+                .currency("PLN")
+                .status(PayoutStatus.CHARGE_BACK)
+                .build();
+
+        sellerPayoutRepo.save(payout);
+
+        log.info(
+                "Service charge recovery of {} PLN recorded for seller {}",
+                serviceCharge,
+                orderItem.getSeller().getId()
+        );
     }
 
     public int getAccumulatedItemsFromPage(int currentPage,int pageSize,long totalElements){

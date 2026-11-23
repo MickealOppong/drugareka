@@ -48,6 +48,7 @@ public class OrderReturnService {
 
 
 
+
     // Dynamic bundle translation shortcut helper method
     private String getMessage(String code) {
         return messageSource.getMessage(code, null, LocaleContextHolder.getLocale());
@@ -95,28 +96,116 @@ public class OrderReturnService {
         }
     }
 
+
+
+    @Transactional(rollbackFor = Exception.class)
+    public void executeBuyerPickupCancellation(
+            Jwt jwt,
+            Long orderItemId
+    ) {
+
+        if (jwt == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    getMessage("api_errors.order_cancellation.unauthorized")
+            );
+        }
+
+        // Verify administrator authorization.
+        boolean isAdmin = jwt.getClaimAsStringList("ROLE") != null
+                && jwt.getClaimAsStringList("ROLE").contains("ROLE_ADMIN");
+
+        if (!isAdmin) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    getMessage("api_errors.order_cancellation.unauthorized")
+            );
+        }
+
+        // Use existing database processing.
+        ListingOrderItem lockedItem =
+                this.processBuyerReturnDbTx(orderItemId);
+
+        if (lockedItem == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Order item not found"
+            );
+        }
+
+        try {
+
+            // Refund item price
+            paymentRefundLedgerService.createRefundFromReturnExcludingServiceCharge(
+                    lockedItem
+            );
+
+
+            // Adjust seller's payout totals.
+            sellerProfileService
+                    .updateSellerTotalPayoutWithRefund(
+                            lockedItem
+                    );
+
+            log.info(
+                    "Admin refund processing completed for order item {}",
+                    orderItemId
+            );
+
+        } catch (ResponseStatusException ex) {
+
+            throw ex;
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Admin refund processing failed for order item {}",
+                    orderItemId,
+                    ex
+            );
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    getMessage("api_errors.order_cancellation.gateway_failure"),
+                    ex
+            );
+        }
+    }
+
+
     @Transactional
-    public void executeBuyerPickupCancellation(Jwt jwt, Long orderItemId) {
+    public void executeReturnApprovalBySeller(Jwt jwt, Long orderItemId) {
         if (jwt == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
         }
 
-        AppUser authenticatedUser = appUserRepo.findByUsername(jwt.getSubject())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_cancellation.user_not_found")));
+        AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
+
+        if(appUser==null){
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
+        }
+        SellerProfile sellerProfile = sellerProfileService.getSellerProfile(appUser.getId());
+
 
         // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
-        ListingOrderItem lockedItem = this.processBuyerCancellationDbTx(authenticatedUser, orderItemId);
+        ListingOrderItem lockedItem = this.processBuyerReturnDbTx( orderItemId);
+
+        if(!lockedItem.getSeller().getId().equals(sellerProfile.getId())){
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
+        }
 
         try {
+
+
             // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
             // Fires an automated refund request to return the escrow funds back to the buyer's account.
             paymentRefundLedgerService.createRefundFromReturn(lockedItem);
 
+            paymentRefundLedgerService.debitServiceChargeToSellerForBuyerRefund(lockedItem);
+
             // Process accounting balance adjustment clawbacks securely inside the database instance lock
             sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
 
-            //reverse service charge
-           // serviceChargeService.reverseCharge(lockedItem);
 
             log.info("Fulfillment System Success: Order Item #{} successfully refunded and archived.", orderItemId);
 
@@ -130,35 +219,84 @@ public class OrderReturnService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void executeReturnApprovalByAdmin(
+            Jwt jwt,
+            Long orderItemId
+    ) {
 
-    @Transactional
-    public void executeReturnApprovalBySeller(Jwt jwt, Long orderItemId) {
         if (jwt == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_cancellation.unauthorized"));
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    getMessage("api_errors.order_cancellation.unauthorized")
+            );
         }
 
-        // 1. DATABASE ISOLATION WORKER BOUNDARY: Verifies security parameters and applies row-level locking writes
-        ListingOrderItem lockedItem = this.processBuyerReturnDbTx( orderItemId);
+        // Verify administrator authorization.
+        // Assumes Spring Security JWT roles are represented as ROLE_ADMIN.
+        boolean isAdmin = jwt.getClaimAsStringList("ROLE") != null
+                && jwt.getClaimAsStringList("ROLE").contains("ROLE_ADMIN");
+
+        if (!isAdmin) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    getMessage("api_errors.order_cancellation.unauthorized")
+            );
+        }
+
+        // Use existing database processing.
+        ListingOrderItem lockedItem =
+                this.processBuyerReturnDbTx(orderItemId);
+
+        if (lockedItem == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Order item not found"
+            );
+        }
 
         try {
-            // 2. THIRD-PARTY DISPATCH WORKFLOW: Executed strictly outside active database connection locks
-            // Fires an automated refund request to return the escrow funds back to the buyer's account.
-            paymentRefundLedgerService.createRefundFromReturn(lockedItem);
 
-            // Process accounting balance adjustment clawbacks securely inside the database instance lock
-            sellerProfileService.updateSellerTotalPayoutWithRefund(lockedItem);
+            // Refund item price and service charge to buyer.
+            // Existing method also records the seller's
+            // item-price reversal and allocated Stripe fee.
+            paymentRefundLedgerService.createRefundFromReturn(
+                    lockedItem
+            );
 
-            //reverse service charge
-            // serviceChargeService.reverseCharge(lockedItem);
+            // Record service-charge liability against seller.
+            paymentRefundLedgerService
+                    .debitServiceChargeToSellerForBuyerRefund(
+                            lockedItem
+                    );
 
-            log.info("Fulfillment System Success: Order Item #{} successfully refunded and archived.", orderItemId);
+            // Adjust seller's payout totals.
+            sellerProfileService
+                    .updateSellerTotalPayoutWithRefund(
+                            lockedItem
+                    );
 
-        } catch (Exception e) {
-            log.error("CRITICAL API FAILURE: Failed to issue external customer refund for item ID: {}. Triggering database recovery rollback sequence.", orderItemId, e);
+            log.info(
+                    "Admin refund processing completed for order item {}",
+                    orderItemId
+            );
+
+        } catch (ResponseStatusException ex) {
+
+            throw ex;
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Admin refund processing failed for order item {}",
+                    orderItemId,
+                    ex
+            );
 
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    getMessage("api_errors.order_cancellation.gateway_failure")
+                    getMessage("api_errors.order_cancellation.gateway_failure"),
+                    ex
             );
         }
     }
@@ -347,6 +485,8 @@ public class OrderReturnService {
         return orderItem;
     }
 
+
+
     @Transactional(rollbackFor = Exception.class)
     protected ListingOrderItem processBuyerReturnDbTx(Long orderItemId) {
 
@@ -398,9 +538,6 @@ public class OrderReturnService {
             listingOrderRepo.save(parent);
         }
 
-
-        //shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
-       // sellerShipmentRepo.save(shipment);
 
         return orderItem;
     }

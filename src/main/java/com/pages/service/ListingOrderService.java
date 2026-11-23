@@ -16,9 +16,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.parameters.P;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -58,107 +60,175 @@ public class ListingOrderService {
     }
 
    @Transactional
-    public ListingOrder createBuyerOrder(Jwt jwt) {
-        if (jwt == null) {
+   public ListingOrder createBuyerOrder(Jwt jwt) {
 
-            throw new IllegalArgumentException(getMessage("error.order.authenticate_failed"));
-        }
+       if (jwt == null) {
+           throw new ResponseStatusException(
+                   HttpStatus.UNAUTHORIZED,
+                   getMessage("error.order.authenticate_failed")
+           );
+       }
 
-        CartResponse cart = cartService.getCart(jwt);
+       CartResponse cart = cartService.getCart(jwt);
 
-        if (cart == null || cart.getCartItemList() == null || cart.getCartItemList().isEmpty()) {
+       if (cart == null ||
+               cart.getCartItemList() == null ||
+               cart.getCartItemList().isEmpty()) {
 
-            throw new IllegalStateException(getMessage("error.order.cart_empty"));
-        }
+           throw new ResponseStatusException(
+                   HttpStatus.BAD_REQUEST,
+                   getMessage("error.order.cart_empty")
+           );
+       }
 
-        if (cart.getAddress() == null) {
+       if (cart.getAddress() == null) {
+           throw new ResponseStatusException(
+                   HttpStatus.BAD_REQUEST,
+                   getMessage("error.order.shipping_address_required")
+           );
+       }
 
-            throw new IllegalStateException(getMessage("error.order.shipping_address_required"));
-        }
+       String permanentShippingAddress = String.join(
+               ", ",
+               cart.getAddress().street().trim(),
+               cart.getAddress().postalCode().trim(),
+               cart.getAddress().city().trim(),
+               cart.getAddress().country().trim(),
+               cart.getAddress().contact()
+       );
 
-        String permanentShippingAddress = String.join(
-                ", ", cart.getAddress().street().trim(),
-                cart.getAddress().postalCode().trim(),cart.getAddress().city().trim(),
-                cart.getAddress().country().trim(),cart.getAddress().contact()
-        );
+       AppUser buyer = appUserDetailsService.getAppUserId(
+               cart.getBuyerId()
+       );
 
-        String orderNumber = "DR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        BigDecimal subTotal = cart.getCartItemList().stream()
-                .map(CartItemDto::getPrice)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+       String orderNumber = "DR-" +
+               UUID.randomUUID().toString()
+                       .substring(0, 8)
+                       .toUpperCase();
 
+       BigDecimal subTotal = cart.getCartItemList().stream()
+               .map(CartItemDto::getPrice)
+               .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal serviceCharge = cart.getCartItemList().stream()
-                .map(CartItemDto::getServiceCharge)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+       BigDecimal serviceCharge = cart.getCartItemList().stream()
+               .map(CartItemDto::getServiceCharge)
+               .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal shippingCharge = cart.getCartItemList().stream()
-                .map(CartItemDto::getShipping)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+       BigDecimal shippingCharge = cart.getCartItemList().stream()
+               .map(CartItemDto::getShipping)
+               .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal orderTotal = serviceCharge.add(subTotal).add(shippingCharge);
+       BigDecimal orderTotal = subTotal
+               .add(serviceCharge)
+               .add(shippingCharge);
 
-        AppUser buyer = appUserDetailsService.getAppUserId(cart.getBuyerId());
+       // Validate and lock inventory before creating order.
+       Map<Long, InventoryItem> lockedInventory = new HashMap<>();
 
-        ListingOrder listingOrder = ListingOrder.builder()
-                .orderNumber(orderNumber)
-                .buyer(buyer)
-                .buyerNameSnapshot(buyer.getFirstName()+" "+buyer.getLastName())
-                .shippingAddress(permanentShippingAddress)
-                .orderTotal(orderTotal)
-                .shippingMethod(cart.getShippingMethod())
-                .currency("PLN")
-                .orderStatus(OrderStatus.PROCESSING)
-                .build();
+       List<Long> inventoryIds = cart.getCartItemList().stream()
+               .map(CartItemDto::getInventoryId)
+               .distinct()
+               .sorted()
+               .toList();
 
-        ListingOrder orderHeader = listingOrderRepo.save(listingOrder);
+       Instant now = Instant.now();
 
+       for (Long inventoryId : inventoryIds) {
 
-        for (CartItemDto cartItem : cart.getCartItemList()) {
-            InventoryItem inventoryItem = inventoryItemRepo.findByIdForUpdate(cartItem.getInventoryId())
-                    .orElseThrow(() -> new IllegalArgumentException(getMessage("error.order.product_not_found")));
+           InventoryItem inventoryItem =
+                   inventoryItemRepo.findByIdForUpdate(inventoryId)
+                           .orElseThrow(() ->
+                                   new ResponseStatusException(
+                                           HttpStatus.CONFLICT,
+                                           getMessage("error.order.product_not_found")
+                                   )
+                           );
 
-            if (inventoryItem.getStatus() != InventoryStatus.AVAILABLE &&
-                    !orderHeader.getBuyer().getId().equals(inventoryItem.getReservedBy())) {
-                //throw new IllegalStateException("error.order.product_unavailable");
-                cartService.deleteCartById(cart.getBuyerId());
-                return null;
-            }
+           boolean available =
+                   inventoryItem.getStatus() == InventoryStatus.AVAILABLE;
 
-            inventoryItem.setStatus(InventoryStatus.RESERVED);
-            inventoryItem.setReservedBy(orderHeader.getBuyer().getId());
-            inventoryItem.setReservedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
-            inventoryItemRepo.save(inventoryItem);
+           boolean reservedByBuyer =
+                   inventoryItem.getStatus() == InventoryStatus.RESERVED
+                           && buyer.getId().equals(inventoryItem.getReservedBy())
+                           && inventoryItem.getReservedUntil() != null
+                           && inventoryItem.getReservedUntil().isAfter(now);
 
+           boolean reservationExpired =
+                   inventoryItem.getStatus() == InventoryStatus.RESERVED
+                           && inventoryItem.getReservedUntil() != null
+                           && !inventoryItem.getReservedUntil().isAfter(now);
 
-            log.info("Compiling order item for seller User ID: {}", inventoryItem.getSeller().getUser().getId());
+           if (!available && !reservedByBuyer && !reservationExpired) {
+               throw new ResponseStatusException(
+                       HttpStatus.CONFLICT,
+                       getMessage("error.order.product_unavailable")
+               );
+           }
 
-            String sellerName = inventoryItem.getSeller().getUser().getFirstName()+" "+inventoryItem.getSeller().getUser().getLastName();
+           lockedInventory.put(inventoryId, inventoryItem);
+       }
 
-            ListingOrderItem orderItem = ListingOrderItem.builder()
-                    .listingOrder(orderHeader)
-                    .listingId(cartItem.getListingId())
-                    .seller(inventoryItem.getSeller())
-                    .serviceCharge(cartItem.getServiceCharge())
-                    .sellerNameSnapshot(sellerName)
-                    .shippingMethod(cart.getShippingMethod())
-                    .quantity(cartItem.getQuantity())
-                    .productBrandSnapshot(inventoryItem.getProductCatalog().getBrand().getName())
-                    .productConditionSnapshot(inventoryItem.getProductCondition().getName())
-                    .productNameSnapshot(inventoryItem.getProductCatalog().getName())
-                    .sellerPrice(cartItem.getPrice())
-                    .inventoryItem(inventoryItem)
-                    .shippingCost(cartItem.getShipping())
-                    .orderItemStatus(OrderItemStatus.PROCESSING)
-                    .build();
+       ListingOrder listingOrder = ListingOrder.builder()
+               .orderNumber(orderNumber)
+               .buyer(buyer)
+               .buyerNameSnapshot(
+                       buyer.getFirstName() + " " + buyer.getLastName()
+               )
+               .shippingAddress(permanentShippingAddress)
+               .orderTotal(orderTotal)
+               .shippingMethod(cart.getShippingMethod())
+               .currency("PLN")
+               .orderStatus(OrderStatus.PROCESSING)
+               .build();
 
-            orderHeader.addItem(orderItem);
-        }
+       ListingOrder orderHeader =
+               listingOrderRepo.save(listingOrder);
 
-        orderHeader.setOrderStatus(OrderStatus.PROCESSING);
+       for (CartItemDto cartItem : cart.getCartItemList()) {
 
-        return listingOrderRepo.save(orderHeader);
-    }
+           InventoryItem inventoryItem =
+                   lockedInventory.get(cartItem.getInventoryId());
+
+           inventoryItem.setStatus(InventoryStatus.RESERVED);
+           inventoryItem.setReservedBy(buyer.getId());
+           inventoryItem.setReservedUntil(
+                   now.plus(15, ChronoUnit.MINUTES)
+           );
+
+           String sellerName =
+                   inventoryItem.getSeller().getUser().getFirstName()
+                           + " "
+                           + inventoryItem.getSeller().getUser().getLastName();
+
+           ListingOrderItem orderItem = ListingOrderItem.builder()
+                   .listingOrder(orderHeader)
+                   .listingId(cartItem.getListingId())
+                   .seller(inventoryItem.getSeller())
+                   .serviceCharge(cartItem.getServiceCharge())
+                   .sellerNameSnapshot(sellerName)
+                   .shippingMethod(cart.getShippingMethod())
+                   .quantity(cartItem.getQuantity())
+                   .productBrandSnapshot(
+                           inventoryItem.getProductCatalog()
+                                   .getBrand().getName()
+                   )
+                   .productConditionSnapshot(
+                           inventoryItem.getProductCondition().getName()
+                   )
+                   .productNameSnapshot(
+                           inventoryItem.getProductCatalog().getName()
+                   )
+                   .sellerPrice(cartItem.getPrice())
+                   .inventoryItem(inventoryItem)
+                   .shippingCost(cartItem.getShipping())
+                   .orderItemStatus(OrderItemStatus.PROCESSING)
+                   .build();
+
+           orderHeader.addItem(orderItem);
+       }
+
+       return listingOrderRepo.save(orderHeader);
+   }
 
     @Transactional
     public boolean validateItemDelivery(String token) {

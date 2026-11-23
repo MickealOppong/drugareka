@@ -113,6 +113,18 @@ public class PaymentService{
 
         }
     }
+
+    public String getSession(Long id){
+       return paymentRepo.findByDisputeId(id).map(Payment::getProviderSessionId)
+               .orElse(null);
+    }
+
+    public void updateSession(Long id,String session){
+        paymentRepo.findByDisputeIdForUpdate(id).ifPresent(payment ->{
+            payment.setProviderSessionId(session);
+            paymentRepo.save(payment);
+        });
+    }
     @Transactional
     public ResponseDto<String> createReturnShippingPayment(Session session, OrderDispute orderDispute) {
 
@@ -131,6 +143,8 @@ public class PaymentService{
                     .build();
 
             paymentRepo.save(payment);
+            //charge service charge to seller for returned item
+            sellerPayoutService.createServiceChargeDueToBuyerReturn(orderDispute.getListingOrderItem());
 
             // -------------------------------------------------
             // 6. Return client secret
@@ -449,10 +463,13 @@ public class PaymentService{
             if(orderDispute.getDisputeStatus()==DisputeStatus.AWAITING_RETURN_PAYMENT){
                 orderDispute.setDisputeStatus(DisputeStatus.APPROVED);
                 orderDisputeRepo.save(orderDispute);
+
             }
             // 4. POST-COMMIT WORKFLOWS: Execute side-effects ONLY if this specific thread did the database writing
             // 5. Downstream internal data distribution updates
             shipmentService.createReturnShipment(orderDispute);
+
+            sellerPayoutService.updateStatus(orderDispute);
            // sendNotifications(finalizedOrder);
             log.info("Payment finalized successfully for order {}", payment.getOrderNumber());
 
@@ -537,6 +554,8 @@ public class PaymentService{
                 if(orderDispute.getDisputeStatus()==DisputeStatus.AWAITING_RETURN_PAYMENT){
                     orderDispute.setDisputeStatus(DisputeStatus.APPROVED);
                     orderDisputeRepo.save(orderDispute);
+
+                    sellerPayoutService.updateStatus(orderDispute);
 
                     //create shipment
                     shipmentService.createReturnShipment(orderDispute);
@@ -1513,113 +1532,271 @@ public class PaymentService{
 
     @Transactional
     public void handleDelayedPaymentIntentSuccess(Event event) throws StripeException {
+
         Object stripeObject = event.getDataObjectDeserializer().deserializeUnsafe();
+
         if (!(stripeObject instanceof PaymentIntent paymentIntent)) {
-            log.warn("Unexpected payload format in payment_intent.succeeded event. Skipping.");
+            log.warn("Unexpected payload in payment_intent.succeeded event.");
             return;
         }
+
+        String paymentIntentId = paymentIntent.getId();
 
         String purpose = paymentIntent.getMetadata() == null
                 ? null
                 : paymentIntent.getMetadata().get("payment_purpose");
 
-        if (purpose == null) {
+        if (purpose == null || purpose.isBlank()) {
             throw new IllegalStateException(
-                    "Missing payment_purpose metadata for session: "
-                            + paymentIntent.getId()
+                    "Missing payment_purpose for PaymentIntent: " + paymentIntentId
             );
         }
 
+        // The webhook does not necessarily contain an expanded Charge object.
+        // Retrieve the Charge ID directly.
+        String chargeId = paymentIntent.getLatestCharge();
 
-        if(purpose.equals("ORDER")){
-            String paymentIntentId = paymentIntent.getId();
-            String trueChargeId = paymentIntent.getLatestCharge();
-            String transferGroup = paymentIntent.getTransferGroup();
+        if (chargeId == null || chargeId.isBlank()) {
+            throw new IllegalStateException(
+                    "Charge ID unavailable for successful PaymentIntent: "
+                            + paymentIntentId
+            );
+        }
 
-            // Trace the target entry using database records natively
-            Payment payment = paymentRepo.findByOrderNumber(transferGroup)
-                    .orElse(null);
+        switch (purpose) {
 
-            if (payment == null) {
-                log.warn("Payment tracking record missing for intent: {}. Skipping cleanly.", paymentIntentId);
-                return;
-            }
+            // ============================================================
+            // STANDARD ORDER PAYMENT
+            // ============================================================
 
-            // Idempotency early check: if already processed, return 200 OK instantly!
-            if (payment.getStatus() == PaymentStatus.PAID) {
-                log.info("Payment intent {} already marked as PAID. Skipping.", paymentIntentId);
-                return;
-            }
+            case "ORDER" -> {
 
-            ListingOrder order = payment.getListingOrder();
-            if (order.getOrderStatus() == OrderStatus.CANCELLED) {
-                // Recovery logic for late payments
-                ListingOrder restoredOrder = this.executeDelayedPaymentSuccessFulfillment(order.getId(), trueChargeId);
-                if (restoredOrder != null) {
-                    serviceChargeService.createCharge(restoredOrder);
-                    sellerPayoutService.createPayouts(restoredOrder);
-                    sellerProfileService.updateSellerTotalSales(restoredOrder.getItems());
-                    shipmentService.createShipment(restoredOrder.getItems());
-                    cartService.deleteCartById(restoredOrder.getBuyer().getId());
-                    sendNotifications(restoredOrder);
-                } else {
-                    RefundCreateParams refundParams = RefundCreateParams.builder()
-                            .setCharge(trueChargeId)
-                            .setReason(RefundCreateParams.Reason.DUPLICATE)
-                            .build();
-                    Refund.create(refundParams);
-                    this.executeCheckoutCancellationTx(payment.getProviderSessionId(), order.getId());
+                String transferGroup = paymentIntent.getTransferGroup();
+
+                if (transferGroup == null || transferGroup.isBlank()) {
+                    throw new IllegalStateException(
+                            "Missing transfer_group for PaymentIntent: "
+                                    + paymentIntentId
+                    );
                 }
-                return;
-            }
 
-            if (order.getOrderStatus() == OrderStatus.PROCESSING) {
-                // Execute database updates directly using parameters provided natively by the webhook payload
-                ListingOrder finalizedOrder = this.executeFinalizationTx(payment.getProviderSessionId(), order.getId(), paymentIntentId, trueChargeId);
-                if (finalizedOrder != null) {
+                Payment payment = paymentRepo.findByOrderNumber(transferGroup)
+                        .orElse(null);
+
+                if (payment == null) {
+                    log.warn(
+                            "Payment record not found for PaymentIntent: {}",
+                            paymentIntentId
+                    );
+                    return;
+                }
+
+                // Prevent duplicate webhook processing.
+                if (payment.getStatus() == PaymentStatus.PAID) {
+                    return;
+                }
+
+                ListingOrder order = payment.getListingOrder();
+
+                if (order == null) {
+                    throw new IllegalStateException(
+                            "Order not found for PaymentIntent: " + paymentIntentId
+                    );
+                }
+
+                // --------------------------------------------------------
+                // ORDER WAS CANCELLED BEFORE PAYMENT CONFIRMATION
+                // --------------------------------------------------------
+
+                if (order.getOrderStatus() == OrderStatus.CANCELLED) {
+
+                    ListingOrder restoredOrder =
+                            executeDelayedPaymentSuccessFulfillment(
+                                    order.getId(),
+                                    chargeId
+                            );
+
+                    if (restoredOrder != null) {
+
+                        serviceChargeService.createCharge(restoredOrder);
+
+                        sellerPayoutService.createPayouts(restoredOrder);
+
+                        sellerProfileService.updateSellerTotalSales(
+                                restoredOrder.getItems()
+                        );
+
+                        shipmentService.createShipment(
+                                restoredOrder.getItems()
+                        );
+
+                        cartService.deleteCartById(
+                                restoredOrder.getBuyer().getId()
+                        );
+
+                        sendNotifications(restoredOrder);
+
+                    } else {
+
+                        // Refund late payment when order cannot be restored.
+                        RefundCreateParams refundParams =
+                                RefundCreateParams.builder()
+                                        .setCharge(chargeId)
+                                        .setReason(
+                                                RefundCreateParams.Reason.DUPLICATE
+                                        )
+                                        .build();
+
+                        Refund.create(refundParams);
+
+                        executeCheckoutCancellationTx(
+                                payment.getProviderSessionId(),
+                                order.getId()
+                        );
+                    }
+
+                    return;
+                }
+
+                // --------------------------------------------------------
+                // NORMAL ORDER PAYMENT
+                // --------------------------------------------------------
+
+                if (order.getOrderStatus() == OrderStatus.PROCESSING) {
+
+                    ListingOrder finalizedOrder =
+                            executeFinalizationTx(
+                                    payment.getProviderSessionId(),
+                                    order.getId(),
+                                    paymentIntentId,
+                                    chargeId
+                            );
+
+                    if (finalizedOrder == null) {
+                        return;
+                    }
+
                     serviceChargeService.createCharge(finalizedOrder);
+
                     sellerPayoutService.createPayouts(finalizedOrder);
-                    sellerProfileService.updateSellerTotalSales(finalizedOrder.getItems());
-                    shipmentService.createShipment(finalizedOrder.getItems());
-                    cartService.deleteCartById(finalizedOrder.getBuyer().getId());
+
+                    sellerProfileService.updateSellerTotalSales(
+                            finalizedOrder.getItems()
+                    );
+
+                    shipmentService.createShipment(
+                            finalizedOrder.getItems()
+                    );
+
+                    cartService.deleteCartById(
+                            finalizedOrder.getBuyer().getId()
+                    );
+
                     sendNotifications(finalizedOrder);
                 }
             }
-        }
-        if(purpose.equals("RETURN_SHIPPING")){
-          Long disputeId= Long.valueOf(paymentIntent.getMetadata().get("dispute_id"));
-         Payment payment=   paymentRepo.findByDisputeIdForUpdate(disputeId)
-                 .orElseThrow(()->new IllegalStateException("No payment initiated: "));
 
-         Charge charge =(Charge) paymentIntent.getLatestChargeObject();
-         if(payment!=null && !payment.getStatus().equals(PaymentStatus.PAID)){
-             payment.setStatus(PaymentStatus.PAID);
-             payment.setStripePaymentIntentId(paymentIntent.getId());
-            payment.setStripeChargeId(charge.getId());
-             paymentRepo.save(payment);
-             //create shipment
-         }
+            // ============================================================
+            // SELLER RETURN SHIPPING PAYMENT
+            // ============================================================
 
+            case "RETURN_SHIPPING" -> {
 
-            //update dispute to approved by seller for return
-            OrderDispute orderDispute = orderDisputeRepo.findByIdForUpdate(disputeId)
-                    .orElseThrow(()-> new IllegalStateException("No return initiated : "));
+                String disputeIdValue =
+                        paymentIntent.getMetadata().get("dispute_id");
 
-            if( orderDispute.getDisputeStatus()==DisputeStatus.AWAITING_RETURN_PAYMENT){
-                orderDispute.setDisputeStatus(DisputeStatus.APPROVED);
-                orderDisputeRepo.save(orderDispute);
+                if (disputeIdValue == null || disputeIdValue.isBlank()) {
+                    throw new IllegalStateException(
+                            "Missing dispute_id for PaymentIntent: "
+                                    + paymentIntentId
+                    );
+                }
 
+                Long disputeId;
 
-                //create shipment
-                shipmentService.createReturnShipment(orderDispute);
+                try {
+                    disputeId = Long.valueOf(disputeIdValue);
+                } catch (NumberFormatException ex) {
+                    throw new IllegalStateException(
+                            "Invalid dispute_id for PaymentIntent: "
+                                    + paymentIntentId,
+                            ex
+                    );
+                }
+
+                Payment payment =
+                        paymentRepo.findByDisputeIdForUpdate(disputeId)
+                                .orElseThrow(() ->
+                                        new IllegalStateException(
+                                                "Return shipping payment not found for dispute: "
+                                                        + disputeId
+                                        )
+                                );
+
+                // Prevent a different PaymentIntent from overwriting
+                // an already associated payment.
+                if (payment.getStripePaymentIntentId() != null
+                        && !payment.getStripePaymentIntentId()
+                        .equals(paymentIntentId)) {
+
+                    throw new IllegalStateException(
+                            "PaymentIntent mismatch for dispute: " + disputeId
+                    );
+                }
+
+                OrderDispute orderDispute =
+                        orderDisputeRepo.findByIdForUpdate(disputeId)
+                                .orElseThrow(() ->
+                                        new IllegalStateException(
+                                                "Return dispute not found: "
+                                                        + disputeId
+                                        )
+                                );
+
+                // --------------------------------------------------------
+                // RECORD SUCCESSFUL PAYMENT
+                // --------------------------------------------------------
+
+                if (payment.getStatus() != PaymentStatus.PAID) {
+
+                    payment.setStatus(PaymentStatus.PAID);
+
+                    payment.setStripePaymentIntentId(paymentIntentId);
+
+                    payment.setStripeChargeId(chargeId);
+
+                    sellerPayoutService.updateStatus(orderDispute);
+
+                    paymentRepo.save(payment);
+                }
+
+                // --------------------------------------------------------
+                // APPROVE RETURN AFTER SELLER PAYS SHIPPING
+                // --------------------------------------------------------
+
+                if (orderDispute.getDisputeStatus()
+                        == DisputeStatus.AWAITING_RETURN_PAYMENT) {
+
+                    orderDispute.setDisputeStatus(
+                            DisputeStatus.APPROVED
+                    );
+
+                    orderDisputeRepo.save(orderDispute);
+
+                    shipmentService.createReturnShipment(orderDispute);
+                }
             }
 
+            // ============================================================
+            // UNKNOWN PAYMENT PURPOSE
+            // ============================================================
 
-        } else {
-            log.warn("Unknown payment purpose for session {}", paymentIntent.getId());
+            default -> log.warn(
+                    "Unknown payment purpose: {} for PaymentIntent: {}",
+                    purpose,
+                    paymentIntentId
+            );
         }
-
-
     }
 
 
@@ -1941,7 +2118,7 @@ public class PaymentService{
         //update dispute to approved by seller for return
         OrderDispute orderDispute = orderDisputeRepo.findByIdForUpdate(orderId).orElse(null);
         if(orderDispute!=null && orderDispute.getDisputeStatus()!=DisputeStatus.APPROVED){
-            orderDispute.setDisputeStatus(DisputeStatus.OPEN);
+            orderDispute.setDisputeStatus(DisputeStatus.AWAITING_RETURN_PAYMENT);
             orderDisputeRepo.save(orderDispute);
 
             //create shipping

@@ -8,5 +8,6 @@ public enum DisputeStatus {
     RETURN_UPHELD,
     APPROVED,
     RESOLVED,
-    REJECTED
+    REJECTED,
+    AWAITING_SELLER_DECISION
 }

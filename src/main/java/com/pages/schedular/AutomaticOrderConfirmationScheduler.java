@@ -32,7 +32,7 @@ public class AutomaticOrderConfirmationScheduler {
     private final EmailNotificationService emailNotificationService;
 
     /**
-     *  BACKEND AUTOMATION ORDER CONFIRMATION IF BUYER DOES NOT IN 3 DAYS TASK
+     *  BACKEND AUTOMATION ORDER CONFIRMATION IF BUYER DOES NOT CONFIRM
      * Patterns: "0 0 * * * *" (Executes every hour on the hour).
      * Automatically completes fulfillment and force-releases seller payments for expired tokens.
      */

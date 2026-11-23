@@ -23,6 +23,21 @@ public interface SellerPayoutRepo extends JpaRepository<SellerPayout,Long>, JpaS
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<SellerPayout> findByListingOrderItemId(Long itemId);
+
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT p
+    FROM SellerPayout p
+    WHERE p.listingOrderItem.id = :itemId
+      AND p.status = :status
+""")
+    Optional<SellerPayout> findByListingOrderItemIdAndPayoutStatusForUpdate(
+            @Param("itemId") Long itemId,
+            @Param("status") PayoutStatus status
+    );
+
+
     Page<SellerPayout> findBySellerUserId(Long id, Pageable pageable);
    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<SellerPayout> findByTransferId(String id);
@@ -33,6 +48,8 @@ public interface SellerPayoutRepo extends JpaRepository<SellerPayout,Long>, JpaS
     Optional<SellerPayout> findByIdForUpdate(@Param("id") Long id);
 
     List<SellerPayout> findAllByStatus(PayoutStatus payoutStatus);
+
+    boolean existsByListingOrderItemIdAndStatus(Long orderItemId,PayoutStatus payoutStatus);
 
 
 }

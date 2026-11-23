@@ -84,6 +84,51 @@ public class ServiceChargeService {
     }
 
     @Transactional
+    public void chargeRefundToSellerAccount(ListingOrderItem orderItem) {
+
+        if(orderItem==null){
+            return;
+        }
+
+        if(orderItem.getOrderItemStatus()!= OrderItemStatus.PAID) {
+           return;
+        }
+        // Step 1: Declare your standard Polish 23% VAT extraction parameters as explicit BigDecimals
+        BigDecimal vatNumerator = vatRate;
+        BigDecimal vatDenominator = new BigDecimal(100).add(vatNumerator);
+
+// Step 2: Calculate the tax fraction multiplier using 6 places of precision to prevent rounding leak errors
+        BigDecimal vatMultiplier = vatNumerator.divide(vatDenominator, 6, RoundingMode.HALF_UP);
+
+// Step 3: Extract the exact VAT component safely from your Order Total Gross Price
+        BigDecimal grossServiceChargeTotal = orderItem.getServiceCharge();
+
+        log.info("Billing Engine: Summed up overall gross service fee totals: {} zł for Order item ID: {}",
+                grossServiceChargeTotal, orderItem.getId());
+
+        BigDecimal vatAmount = grossServiceChargeTotal.multiply(vatMultiplier)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        log.info("Tax Engine: Extracted 23% VAT accounting component: {} zł from Gross Order item Total: {} zł",
+                vatAmount, grossServiceChargeTotal);
+
+
+        ServiceCharge serviceCharge = ServiceCharge.builder()
+                .listingOrderItem(orderItem)
+                .buyer(orderItem.getListingOrder().getBuyer())
+                .currency("PLN")
+                .description("Service charge chargeback for seller cancellation")
+                .orderNumber(orderItem.getListingOrder().getOrderNumber())
+                .grossAmount(grossServiceChargeTotal)
+                .netAmount(grossServiceChargeTotal.subtract(vatAmount))
+                .vatAmount(vatAmount)
+                .build();
+        serviceChargeRepo.save(serviceCharge);
+        log.info("Tax Engine: Service Charge ledger block successfully locked down for Order item ID: {}", orderItem.getId());
+
+    }
+
+    @Transactional
     public void reverseCharge(ListingOrderItem item) {
 
         if(item==null){

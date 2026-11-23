@@ -140,14 +140,6 @@ public class PaymentRefundLedgerService {
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
             }
 
-            shippingCost = shippingCost != null
-                    ? shippingCost
-                    : BigDecimal.ZERO;
-
-            serviceCharge = serviceCharge != null
-                    ? serviceCharge
-                    : BigDecimal.ZERO;
-
             refundAmount = requestedRefund
                     .add(shippingCost)
                     .add(serviceCharge);
@@ -274,7 +266,7 @@ public class PaymentRefundLedgerService {
     }
 
     /**
-     *  BUYER RETURN DOES NOT REFUND SERVICE CHARGE
+     *  REFUND ITEM PRICE AND SERVICE CHARGE
      * @param item
      * @throws StripeException
      */
@@ -286,11 +278,12 @@ public class PaymentRefundLedgerService {
             throw new InvalidOperationException(
                     "Cannot refund an item without an associated order."
             );
+
         }
 
-        BigDecimal requestedRefund = item.getSellerPrice();
+        BigDecimal requestedRefund = item.getSellerPrice().add(item.getServiceCharge());
 
-        if (requestedRefund == null || requestedRefund.signum() <= 0) {
+        if (requestedRefund.signum() <= 0) {
             throw new InvalidOperationException(
                     "Refund amount must be positive."
             );
@@ -326,24 +319,6 @@ public class PaymentRefundLedgerService {
             );
         }
 
-        // Calculate Stripe processing fee allocation.
-        BigDecimal stripeFee =
-                payoutProcessingService.getStripeFee(
-                        originalPayment.getStripeChargeId()
-                );
-
-        BigDecimal stripeFeeShare =
-                payoutProcessingService.getSellerStripeFeeShare(
-                        stripeFee,
-                        order.getOrderTotal(),
-                        requestedRefund,
-                        BigDecimal.ZERO
-                );
-
-        payoutProcessingService.createStripeFeeRefund(
-                item,
-                stripeFeeShare
-        );
 
         log.info(
                 "Return refund calculation: item={}, itemPrice={}, serviceCharge={}, shipping={}, totalRefund={}",
@@ -354,11 +329,6 @@ public class PaymentRefundLedgerService {
                 requestedRefund
         );
 
-        log.info(
-                "Seller Stripe fee allocation for returned item {}: {}",
-                item.getId(),
-                stripeFeeShare
-        );
 
         // Calculate remaining refundable balance.
         List<Payment> payments =
@@ -413,6 +383,138 @@ public class PaymentRefundLedgerService {
                 item.getId(),
                 requestedRefund
         );
+    }
+
+
+    /**
+     *  REFUND ITEM PRICE
+     * @param item
+     * @throws StripeException
+     */
+    @Transactional
+    public void createRefundFromReturnExcludingServiceCharge(ListingOrderItem item)
+            throws StripeException {
+
+        if (item == null || item.getListingOrder() == null) {
+            throw new InvalidOperationException(
+                    "Cannot refund an item without an associated order."
+            );
+
+        }
+
+        BigDecimal requestedRefund = item.getSellerPrice();
+
+        if (requestedRefund.signum() <= 0) {
+            throw new InvalidOperationException(
+                    "Refund amount must be positive."
+            );
+        }
+
+        ListingOrder order = item.getListingOrder();
+        Long orderId = order.getId();
+
+        List<ListingOrderItem> orderItems = order.getItems();
+
+        if (orderItems == null || orderItems.isEmpty()) {
+            throw new InvalidOperationException(
+                    "Cannot refund an order without items."
+            );
+        }
+
+        // Find the original successful payment.
+        Payment originalPayment = paymentRepo
+                .findByListingOrderIdAndStatus(
+                        orderId,
+                        PaymentStatus.PAID
+                )
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "No successful payment exists for order " + orderId
+                ));
+
+        // A return after fulfilment refunds the item price only.
+        // Kasoa service charge and completed shipping are excluded.
+
+        if (requestedRefund.signum() <= 0) {
+            throw new InvalidOperationException(
+                    "Refund amount must be positive."
+            );
+        }
+
+
+        log.info(
+                "Return refund calculation: item={}, itemPrice={}, serviceCharge={}, shipping={}, totalRefund={}",
+                item.getId(),
+                requestedRefund,
+                item.getServiceCharge(),
+                item.getShippingCost(),
+                requestedRefund
+        );
+
+
+        // Calculate remaining refundable balance.
+        List<Payment> payments =
+                paymentRepo.findByListingOrderId(orderId);
+
+        BigDecimal netPaidBalance = payments.stream()
+                .filter(p ->
+                        p.getStatus() == PaymentStatus.PAID
+                                || p.getStatus() == PaymentStatus.AWAITING_REFUND
+                                || p.getStatus() == PaymentStatus.REFUNDED
+                )
+                .map(Payment::getAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (netPaidBalance.signum() <= 0
+                || requestedRefund.compareTo(netPaidBalance) > 0) {
+
+            log.warn(
+                    "Refund rejected for item {}: requested={}, remaining={}",
+                    item.getId(),
+                    requestedRefund,
+                    netPaidBalance
+            );
+
+            throw new InvalidOperationException(
+                    "Refund exceeds the remaining refundable balance."
+            );
+        }
+
+        // Create negative refund ledger entry.
+        Payment refund = Payment.builder()
+                .listingOrder(order)
+                .status(PaymentStatus.AWAITING_REFUND)
+                .amount(requestedRefund.negate())
+                .provider(originalPayment.getProvider())
+                .currency(originalPayment.getCurrency())
+                .providerSessionId(originalPayment.getProviderSessionId())
+                .stripePaymentIntentId(
+                        originalPayment.getStripePaymentIntentId()
+                )
+                .orderNumber(originalPayment.getOrderNumber())
+                .build();
+
+        paymentRepo.save(refund);
+
+        // Adjust seller payout.
+        sellerPayoutService.createRefund(item);
+
+        log.info(
+                "Return refund ledger entry created for item {}: amount={}",
+                item.getId(),
+                requestedRefund
+        );
+    }
+
+    /**
+     * charge refunded service charge to seller
+     * @param orderItem
+     */
+
+    @Transactional
+    public void debitServiceChargeToSellerForBuyerRefund(ListingOrderItem orderItem){
+
+        sellerPayoutService.createServiceChargeDueToBuyerReturn(orderItem);
     }
 
 

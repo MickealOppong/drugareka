@@ -65,6 +65,8 @@ Optional<Payment> findByListingOrderIdAndStatus(Long orderId, PaymentStatus paym
        """)
   Optional<Payment> findByDisputeIdForUpdate(Long disputeId);
 
+  Optional<Payment> findByDisputeId(Long disputeId);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @org.springframework.data.jpa.repository.Query("""
     SELECT p

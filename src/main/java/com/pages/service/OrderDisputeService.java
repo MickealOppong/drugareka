@@ -133,193 +133,778 @@ public class OrderDisputeService {
      *  PROCESSES SELLER COMPLAINT DECISION AND RESOLUTION LIFECYCLE
      * Enforces strict transactional boundaries to handle database rollbacks safely on courier tracking faults.
      */
-    @Transactional
-    public ResponseDto<Object> executeSellerUpdate(Jwt jwt, String orderNumber, String decision, String reason) {
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseDto<Object> executeSellerUpdate(
+            Jwt jwt,
+            String orderNumber,
+            String decision,
+            String reason
+    ) {
+
         if (jwt == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_dispute.login_required"));
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    getMessage("api_errors.order_dispute.login_required")
+            );
         }
 
-        // Isolated row-level pessimistic write lock prevents simultaneous admin race conditions
-        OrderDispute orderDispute = orderDisputeRepo.findByOrderNumberForUpdate(orderNumber)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_dispute.not_found")));
+        // Validate decision before modifying anything
+        if (decision.isBlank() ||
+                (!"approve".equalsIgnoreCase(decision) &&
+                        !"reject".equalsIgnoreCase(decision))) {
 
-        AppUser appUser = appUserRepo.findByUsername(jwt.getSubject()).orElse(null);
-
-        if(!orderDispute.getListingOrderItem().getSeller().getUser().equals(appUser)){
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_dispute.access_denied"));
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_dispute.invalid_decision")
+            );
         }
+
+        String normalizedDecision = decision.trim().toLowerCase(Locale.ROOT);
+
+        // Lock dispute to prevent concurrent seller decisions
+        OrderDispute orderDispute = orderDisputeRepo
+                .findByOrderNumberForUpdate(orderNumber)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        getMessage("api_errors.order_dispute.not_found")
+                ));
+
+        AppUser appUser = appUserRepo
+                .findByUsername(jwt.getSubject())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        getMessage("api_errors.order_dispute.login_required")
+                ));
 
         ListingOrderItem orderItem = orderDispute.getListingOrderItem();
-        if(orderItem.getReceiptConfirmationStatus()==ReceiptConfirmationStatus.CONFIRMED){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.transaction_closed"));
+
+        // Verify seller ownership
+        if (!orderItem.getSeller().getUser().equals(appUser)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    getMessage("api_errors.order_dispute.access_denied")
+            );
         }
 
-        // Safeguard Guard: Stop mutations if the case has already progressed beyond actionable boundaries
-        if (orderDispute.getDisputeStatus() == DisputeStatus.RESOLVED ||
-                orderDispute.getDisputeStatus() == DisputeStatus.APPROVED)
-        {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.already_processed"));
+        // Transaction already completed
+        if (orderItem.getReceiptConfirmationStatus()
+                == ReceiptConfirmationStatus.CONFIRMED) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    getMessage("api_errors.order_dispute.transaction_closed")
+            );
+        }
+
+        // Prevent duplicate decisions and repeated Stripe operations
+        if (orderDispute.getDisputeStatus() !=
+                DisputeStatus.AWAITING_SELLER_DECISION) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    getMessage("api_errors.order_dispute.already_processed")
+            );
         }
 
         try {
-            orderDispute.setSellerComment(reason != null ? reason.trim() : "");
 
-            if ("approve".equalsIgnoreCase(decision)) {
-                log.info("Seller approved complaint return for order: {}. Upgrading tracking status rules.", orderNumber);
+            orderDispute.setSellerComment(
+                    reason == null ? "" : reason.trim()
+            );
 
-                //refund money after approval for personal pickups
-                if(orderDispute.getListingOrderItem().getShippingMethod().equalsIgnoreCase("personal_pickup")){
-                    orderDispute.setDisputeStatus(DisputeStatus.RETURN_UPHELD);
-                    OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
+            AppUser buyer = orderItem.getListingOrder().getBuyer();
+            String buyerEmail = buyer.getUsername();
 
-                    orderReturnService.executeReturnApprovalBySeller(jwt,orderDispute.getListingOrderItem().getId());
-                   return ResponseDto.builder()
-                            .data(updatedItem.getId())
+            // ==========================================
+            // SELLER REJECTS COMPLAINT
+            // ==========================================
+            if ("reject".equals(normalizedDecision)) {
+
+                log.info(
+                        "Seller rejected complaint for order {}. Escalating to admin.",
+                        orderNumber
+                );
+
+                orderDispute.setDisputeStatus(
+                        DisputeStatus.UNDER_REVIEW
+                );
+
+                orderDisputeRepo.save(orderDispute);
+
+                emailNotificationService.sendSellerResponseToBuyerComplaint(
+                        buyerEmail,
+                        orderNumber,
+                        normalizedDecision,
+                        reason
+                );
+
+                return ResponseDto.builder()
+                        .data(null)
+                        .httpStatus(HttpStatus.OK.value())
+                        .build();
+            }
+
+            // ==========================================
+            // SELLER APPROVES COMPLAINT
+            // ==========================================
+            log.info(
+                    "Seller approved complaint for order {}",
+                    orderNumber
+            );
+
+            boolean personalPickup =
+                    "personal_pickup".equalsIgnoreCase(
+                            orderItem.getShippingMethod()
+                    );
+
+            // ==========================================
+            // PERSONAL PICKUP - IMMEDIATE REFUND
+            // ==========================================
+            if (personalPickup) {
+
+                log.info(
+                        "Personal pickup complaint approved. Initiating refund for order {}",
+                        orderNumber
+                );
+
+                orderDispute.setDisputeStatus(
+                        DisputeStatus.RETURN_UPHELD
+                );
+
+                orderDisputeRepo.save(orderDispute);
+
+                // Buyer never collected the product.
+                // No return shipping is required.
+                orderReturnService.executeReturnApprovalBySeller(
+                        jwt,
+                        orderItem.getId()
+                );
+
+                return ResponseDto.builder()
+                        .data(orderDispute.getId())
+                        .httpStatus(HttpStatus.ACCEPTED.value())
+                        .build();
+            }
+
+            // ==========================================
+            // COURIER - SELLER PAYS RETURN SHIPPING
+            // ==========================================
+            orderDispute.setDisputeStatus(
+                    DisputeStatus.AWAITING_RETURN_PAYMENT
+            );
+
+            orderDisputeRepo.save(orderDispute);
+
+            Session session =
+                    stripePaymentProviderService
+                            .createEmbeddedConnectCheckoutSessionShipmentCost(
+                                    orderDispute,
+                                    LocaleContextHolder
+                                            .getLocale()
+                                            .getLanguage()
+                            );
+
+            String paymentURL = paymentService
+                    .createReturnShippingPayment(
+                            session,
+                            orderDispute
+                    )
+                    .getData();
+
+            if (paymentURL == null || paymentURL.isBlank()) {
+                throw new IllegalStateException(
+                        "Return shipping payment URL was not generated"
+                );
+            }
+
+            emailNotificationService.sendSellerResponseToBuyerComplaint(
+                    buyerEmail,
+                    orderNumber,
+                    normalizedDecision,
+                    reason
+            );
+
+            return ResponseDto.builder()
+                    .data(paymentURL)
+                    .httpStatus(HttpStatus.ACCEPTED.value())
+                    .build();
+
+        } catch (ResponseStatusException e) {
+            throw e;
+
+        } catch (Exception e) {
+
+            log.error(
+                    "Failed to process seller complaint decision for order {}",
+                    orderNumber,
+                    e
+            );
+
+            throw new RuntimeException(
+                    getMessage("api_errors.order_dispute.processing_failed"),
+                    e
+            );
+        }
+    }
+
+
+
+
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseDto<Object> executeAdminReview(
+            Jwt jwt,
+            String orderNumber,
+            String decision,
+            String reason
+    ) {
+        try {
+
+            // =====================================================
+            // 1. AUTHENTICATION AND VALIDATION
+            // =====================================================
+
+            if (jwt == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        getMessage("api_errors.order_dispute.login_required")
+                );
+            }
+
+            List<String> roles = jwt.getClaimAsStringList("ROLE");
+
+            boolean isAdmin = roles != null
+                    && roles.contains("ROLE_ADMIN");
+
+            if (!isAdmin) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        getMessage("api_errors.order_cancellation.unauthorized")
+                );
+            }
+
+            boolean approve = "approve".equalsIgnoreCase(decision);
+            boolean reject = "reject".equalsIgnoreCase(decision);
+            boolean notJustified =
+                    "not_justified".equalsIgnoreCase(decision);
+
+            if (!approve && !reject && !notJustified) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        getMessage("api_errors.order_dispute.invalid_decision")
+                );
+            }
+
+            // =====================================================
+            // 2. LOCK AND VALIDATE DISPUTE
+            // =====================================================
+
+            OrderDispute orderDispute = orderDisputeRepo
+                    .findByOrderNumberForUpdate(orderNumber)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            getMessage("api_errors.order_dispute.not_found")
+                    ));
+
+            ListingOrderItem orderItem =
+                    orderDispute.getListingOrderItem();
+
+            if (orderItem == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Missing order item for dispute: " + orderNumber
+                );
+            }
+
+            if (orderDispute.getDisputeStatus()
+                    != DisputeStatus.UNDER_REVIEW) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        getMessage("api_errors.order_dispute.already_processed")
+                );
+            }
+
+            if (orderItem.getReceiptConfirmationStatus()
+                    == ReceiptConfirmationStatus.CONFIRMED) {
+
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        getMessage("api_errors.order_dispute.transaction_closed")
+                );
+            }
+
+            if (reason == null || reason.isBlank()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Administrative justification is required."
+                );
+            }
+
+            // =====================================================
+            // 3. VALIDATE BUYER COMPLAINT REASON
+            // =====================================================
+
+            if (orderDispute.getReturnReason() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Complaint reason is missing."
+                );
+            }
+
+            String complaintReason =
+                    orderDispute.getReturnReason().name();
+
+            switch (complaintReason) {
+                case "DAMAGED_GOODS",
+                     "WRONG_ITEM",
+                     "NOT_AS_DESCRIBED",
+                     "OTHER" -> {
+                    // Supported complaint reasons.
+                }
+
+                default -> throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Unsupported complaint reason: " + complaintReason
+                );
+            }
+
+            // =====================================================
+            // 4. DETERMINE DELIVERY METHOD
+            // =====================================================
+
+            String shippingMethod = sellerShipmentRepo
+                    .findByListingOrderItemId(orderItem.getId())
+                    .map(SellerShipment::getShippingMethod)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "Shipment information not found for order: "
+                                    + orderNumber
+                    ));
+
+            boolean personalPickup =
+                    "PERSONAL_PICKUP".equalsIgnoreCase(shippingMethod);
+
+            if (notJustified && !personalPickup) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Unjustified refusal of collection applies "
+                                + "only to personal pickup."
+                );
+            }
+
+            String buyerEmail = orderItem.getListingOrder()
+                    .getBuyer()
+                    .getUsername();
+
+            String sellerEmail = orderItem.getSeller()
+                    .getUser()
+                    .getUsername();
+
+            orderDispute.setAdminNotes(reason.trim());
+
+            // =====================================================
+            // 5. SERVICE CHARGE BASED ON ADMIN DECISION
+            // =====================================================
+
+            // The buyer's selected complaint reason does not
+            // determine the service-charge refund.
+            //
+            // APPROVE:
+            //     Refund service charge under the upheld
+            //     complaint policy.
+            //
+            // REJECT:
+            //     Do not automatically cancel personal pickup.
+            //
+            // NOT_JUSTIFIED:
+            //     Buyer refused personal collection without
+            //     established grounds. Retain service charge
+            //     under the applicable fee agreement.
+
+            log.info(
+                    "Admin review. Order: {}, Decision: {}, "
+                            + "Complaint reason: {}, "
+                            + "Personal pickup: {}, "
+                            + "Refund service charge: {}",
+                    orderNumber,
+                    decision,
+                    complaintReason,
+                    personalPickup,
+                    approve
+            );
+
+            // =====================================================
+            // 6. ADMIN APPROVES COMPLAINT
+            // =====================================================
+
+            if (approve) {
+
+                // =================================================
+                // 6A. PERSONAL PICKUP
+                // =================================================
+
+                if (personalPickup) {
+
+                    orderDispute.setDisputeStatus(
+                            DisputeStatus.APPROVED
+                    );
+
+                    orderDisputeRepo.save(orderDispute);
+
+                    // Admin upheld the complaint.
+                    // Refund item price and service charge.
+                    // Existing admin method handles seller
+                    // liability according to your refund rules.
+
+                    orderReturnService.executeReturnApprovalByAdmin(
+                            jwt,
+                            orderItem.getId()
+                    );
+
+                    emailNotificationService
+                            .sendAdminResponseToBuyerComplaint(
+                                    buyerEmail,
+                                    orderNumber,
+                                    decision,
+                                    reason
+                            );
+
+                    return ResponseDto.builder()
+                            .data(orderDispute.getId())
                             .httpStatus(HttpStatus.ACCEPTED.value())
                             .build();
                 }
 
-                orderDispute.setDisputeStatus(DisputeStatus.AWAITING_RETURN_PAYMENT);
-                OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
+                // =================================================
+                // 6B. COURIER DELIVERY
+                // =================================================
 
-                AppUser buyer = orderDispute.getListingOrderItem().getListingOrder().getBuyer();
-                String email = buyer.getUsername();
+                // Seller pays return shipping first.
+                // The subsequent refund workflow must use
+                // the approved service-charge refund policy.
 
-                emailNotificationService.sendSellerResponseToBuyerComplaint(email,orderNumber,decision, reason);
-                return ResponseDto.builder()
-                        .data(updatedItem.getId())
-                        .httpStatus(HttpStatus.ACCEPTED.value())
-                        .build();
+                orderDispute.setDisputeStatus(
+                        DisputeStatus.AWAITING_RETURN_PAYMENT
+                );
 
-            }
-            else if ("reject".equalsIgnoreCase(decision)) {
-                log.info("Seller rejected complaint counter-offer for order: {}. Escalating to platform moderator view.", orderNumber);
-                // Escalates the case to platform administrators for formal mediation review
-                orderDispute.setDisputeStatus(DisputeStatus.UNDER_REVIEW);
                 orderDisputeRepo.save(orderDispute);
 
-                AppUser buyer = orderDispute.getListingOrderItem().getListingOrder().getBuyer();
-                String email = buyer.getUsername();
+                Session session = stripePaymentProviderService
+                        .createEmbeddedConnectCheckoutSessionShipmentCost(
+                                orderDispute,
+                                LocaleContextHolder.getLocale().getLanguage()
+                        );
 
-                emailNotificationService.sendSellerResponseToBuyerComplaint(email,orderNumber,decision, reason);
-
-                return ResponseDto.builder()
-                        .data(null)
-                        .httpStatus(HttpStatus.OK.value())
-                        .build();
-            }
-            else {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.invalid_decision"));
-            }
-
-
-        } catch (ResponseStatusException e) {
-            // Rethrow specific API exceptions to pass your customized error message headers straight down to your React alerts
-            throw e;
-        } catch (Exception e) {
-
-            // to ensure Spring's transaction interceptor executes a 100% clean database rollback!
-            log.error("Fatal failure executing seller transaction update for dispute on order {}: {}", orderNumber, e.getMessage(), e);
-            throw new RuntimeException(getMessage("api_errors.order_dispute.processing_failed"), e);
-        }
-    }
-
-
-
-    /**
-     *  PROCESSES BUYER COMPLAINT DECISION AND RESOLUTION LIFECYCLE
-     * Enforces strict transactional boundaries to handle database rollbacks safely on courier tracking faults.
-     */
-    @Transactional
-    public ResponseDto<Object> executeAdminReview(Jwt jwt, String orderNumber, String decision, String reason) {
-        if (jwt == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, getMessage("api_errors.order_dispute.login_required"));
-        }
-
-        // Isolated row-level pessimistic write lock prevents simultaneous admin race conditions
-        OrderDispute orderDispute = orderDisputeRepo.findByOrderNumberForUpdate(orderNumber)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, getMessage("api_errors.order_dispute.not_found")));
-
-        ListingOrderItem orderItem = orderDispute.getListingOrderItem();
-        if(orderItem.getReceiptConfirmationStatus()==ReceiptConfirmationStatus.CONFIRMED){
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.transaction_closed"));
-        }
-
-        // Safeguard Guard: Stop mutations if the case has already progressed beyond actionable boundaries
-        if (orderDispute.getDisputeStatus() == DisputeStatus.RESOLVED ||
-                orderDispute.getDisputeStatus() == DisputeStatus.APPROVED)
-        {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.already_processed"));
-        }
-
-        try {
-            orderDispute.setAdminNotes(reason != null ? reason.trim() : "");
-
-            if ("approve".equalsIgnoreCase(decision)) {
-                log.info("Admin approved complaint return for order: {}. Upgrading tracking status rules.", orderNumber);
-                orderDispute.setDisputeStatus(DisputeStatus.RETURN_UPHELD);
-                OrderDispute updatedItem= orderDisputeRepo.save(orderDispute);
-
-                //CONFIRM ITEM RECEIPT IF RETURN NOT JUSTIFIED
-                ListingOrderItem item = orderDispute.getListingOrderItem();
-                item.setReceiptConfirmationStatus(ReceiptConfirmationStatus.CONFIRMED);
-                listingOrderItemRepo.save(item);
-
-                //  CREATE REVERSE SHIPPING ORDER TRAILER
-                // shippingService.createReverseReturnLabel(orderDispute);
-                Session session = stripePaymentProviderService.createEmbeddedConnectCheckoutSessionShipmentCostURL(orderDispute,
-                        LocaleContextHolder.getLocale().getLanguage());
-                String paymentURL = paymentService.createReturnShippingPayment(session,orderDispute).getData();
-                //notify seller
-                String email = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
-                emailNotificationService.sendReturnShippingPaymentRequest(email,orderNumber, orderDispute.getTicketId(),paymentURL);
-
-                String buyerEmail = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
-                emailNotificationService.sendAdminResponseToBuyerComplaint(buyerEmail,orderNumber,decision,reason);
-
-                return ResponseDto.builder()
-                        .data(updatedItem.getId())
-                        .httpStatus(HttpStatus.ACCEPTED.value())
-                        .build();
-
-            }
-            else if ("reject".equalsIgnoreCase(decision)) {
-                log.info("Admin rejected complaint counter-offer for order: {}. seller payout cleared.", orderNumber);
-                // Escalates the case to platform administrators for formal mediation review
-                orderDispute.setDisputeStatus(DisputeStatus.REJECTED);
-                orderDisputeRepo.save(orderDispute);
-
-                //clear seller for payment
-                SellerPayout sellerPayout= sellerPayoutRepo.findByListingOrderItemId(orderDispute.getListingOrderItem().getId())
-                        .orElse(null);
-
-                if(sellerPayout!=null){
-                    sellerPayout.setStatus(PayoutStatus.APPROVED);
-                    sellerPayoutRepo.save(sellerPayout);
+                if (session == null || session.getId() == null) {
+                    throw new IllegalStateException(
+                            "Stripe return shipping session creation failed"
+                    );
                 }
 
-                String buyerEmail = orderDispute.getListingOrderItem().getSeller().getUser().getUsername();
-                emailNotificationService.sendAdminResponseToBuyerComplaint(buyerEmail,orderNumber,decision,reason);
+                ResponseDto<String> paymentResponse =
+                        paymentService.createReturnShippingPayment(
+                                session,
+                                orderDispute
+                        );
+
+                if (paymentResponse == null
+                        || paymentResponse.getData() == null
+                        || paymentResponse.getData().isBlank()) {
+
+                    throw new IllegalStateException(
+                            "Return shipping payment URL is unavailable"
+                    );
+                }
+
+                emailNotificationService
+                        .sendReturnShippingPaymentRequest(
+                                sellerEmail,
+                                orderNumber,
+                                orderDispute.getTicketId(),
+                                paymentResponse.getData()
+                        );
+
+                emailNotificationService
+                        .sendAdminResponseToBuyerComplaint(
+                                buyerEmail,
+                                orderNumber,
+                                decision,
+                                reason
+                        );
+
                 return ResponseDto.builder()
-                        .data(null)
+                        .data(orderDispute.getId())
+                        .httpStatus(HttpStatus.ACCEPTED.value())
+                        .build();
+            }
+
+            // =====================================================
+            // 7. NOT JUSTIFIED — BUYER REFUSED COLLECTION
+            // =====================================================
+
+            if (notJustified) {
+
+                // Admin established:
+                // 1. The complaint is not substantiated.
+                // 2. The seller made the item available.
+                // 3. Buyer refused personal collection.
+                // 4. The cancellation requirements are met.
+                //
+                // Existing cancellation method must:
+                // - refund item price only
+                // - retain service charge
+                // - avoid seller service-charge debit
+                // - avoid seller payout
+                // - leave the item with the seller
+
+                orderDispute.setDisputeStatus(
+                        DisputeStatus.REJECTED
+                );
+
+                orderDisputeRepo.save(orderDispute);
+
+                orderReturnService.executeBuyerPickupCancellation(
+                        jwt,
+                        orderItem.getId()
+                );
+
+                log.info(
+                        "Unjustified buyer refusal of personal collection. "
+                                + "Order: {}. Service charge retained.",
+                        orderNumber
+                );
+
+                emailNotificationService
+                        .sendAdminResponseToBuyerComplaint(
+                                buyerEmail,
+                                orderNumber,
+                                decision,
+                                reason
+                        );
+
+                return ResponseDto.builder()
+                        .data(orderDispute.getId())
                         .httpStatus(HttpStatus.OK.value())
                         .build();
             }
-            else {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, getMessage("api_errors.order_dispute.invalid_decision"));
+
+            // =====================================================
+            // 8. REJECT — COMPLAINT NOT UPHELD
+            // =====================================================
+
+            orderDispute.setDisputeStatus(
+                    DisputeStatus.REJECTED
+            );
+
+            orderDisputeRepo.save(orderDispute);
+
+            if (personalPickup) {
+
+                // Rejected complaint does not automatically
+                // establish buyer refusal of collection.
+                //
+                // The buyer may still complete collection.
+                // Do not cancel, refund or approve payout here.
+
+                log.info(
+                        "Personal pickup complaint rejected. "
+                                + "Collection remains unresolved. Order: {}",
+                        orderNumber
+                );
+
+            } else {
+
+                // Courier delivered the item.
+                // Complaint rejected.
+                // Confirm receipt and approve seller payout.
+
+                orderItem.setReceiptConfirmationStatus(
+                        ReceiptConfirmationStatus.CONFIRMED
+                );
+
+                listingOrderItemRepo.save(orderItem);
+
+                sellerPayoutRepo
+                        .findByListingOrderItemIdAndPayoutStatusForUpdate(
+                                orderItem.getId(),
+                                PayoutStatus.CREATED
+                        )
+                        .ifPresent(payout -> {
+
+                            payout.setStatus(
+                                    PayoutStatus.APPROVED
+                            );
+
+                            sellerPayoutRepo.save(payout);
+                        });
             }
 
+            // =====================================================
+            // 9. NOTIFY BUYER
+            // =====================================================
 
-        } catch (ResponseStatusException e) {
-            // Rethrow specific API exceptions to pass your customized error message headers straight down to your React alerts
-            throw e;
-        } catch (Exception e) {
+            emailNotificationService
+                    .sendAdminResponseToBuyerComplaint(
+                            buyerEmail,
+                            orderNumber,
+                            decision,
+                            reason
+                    );
 
-            // to ensure Spring's transaction interceptor executes a 100% clean database rollback!
-            log.error("Fatal failure executing seller transaction update for dispute on order {}: {}", orderNumber, e.getMessage(), e);
-            throw new RuntimeException(getMessage("api_errors.order_dispute.processing_failed"), e);
+            return ResponseDto.builder()
+                    .data(orderDispute.getId())
+                    .httpStatus(HttpStatus.OK.value())
+                    .build();
+
+        } catch (ResponseStatusException ex) {
+
+            throw ex;
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Admin dispute review failed for order {}",
+                    orderNumber,
+                    ex
+            );
+
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    getMessage("api_errors.order_dispute.processing_failed"),
+                    ex
+            );
         }
     }
+
+
+
+    @Transactional
+    public void sendPaymentLinkToSellerForReturnShipment() {
+
+        List<OrderDispute> disputes =
+                orderDisputeRepo.findAllByDisputeStatus(DisputeStatus.AWAITING_RETURN_PAYMENT);
+
+        log.info(
+                "Found {} disputes awaiting return-shipping payment",
+                disputes.size()
+        );
+
+        for (OrderDispute dispute : disputes) {
+
+            try {
+                Long disputeId = dispute.getId();
+
+                // The payment record must already exist.
+                // It is created when the seller or admin approves the return.
+                String sessionId = paymentService.getSession(disputeId);
+
+                if (sessionId == null || sessionId.isBlank()) {
+                    log.error(
+                            "Dispute {} is awaiting return payment but has no payment session",
+                            disputeId
+                    );
+                    continue;
+                }
+
+                // Retrieve the existing Stripe Checkout Session.
+                Session session = Session.retrieve(sessionId);
+
+                if ("expired".equalsIgnoreCase(session.getStatus())) {
+
+                    // Replace only the expired Checkout Session.
+                    session = stripePaymentProviderService
+                            .createEmbeddedConnectCheckoutSessionShipmentCost(
+                                    dispute,
+                                    "pl"
+                            );
+
+                    if (session == null
+                            || session.getId() == null
+                            || session.getUrl() == null
+                            || session.getUrl().isBlank()) {
+
+                        log.error(
+                                "Failed to create replacement Checkout Session for dispute {}",
+                                disputeId
+                        );
+                        continue;
+                    }
+
+                    // Update the existing Payment record.
+                    // Do not create another payment obligation.
+                    paymentService.updateSession(
+                            disputeId,
+                            session.getId()
+                    );
+
+                    log.info(
+                            "Replaced expired Checkout Session for dispute {} with {}",
+                            disputeId,
+                            session.getId()
+                    );
+
+                } else if (!"open".equalsIgnoreCase(session.getStatus())
+                        || !"unpaid".equalsIgnoreCase(session.getPaymentStatus())) {
+
+                    log.info(
+                            "Skipping dispute {}. Session status: {}, Payment status: {}",
+                            disputeId,
+                            session.getStatus(),
+                            session.getPaymentStatus()
+                    );
+                    continue;
+                }
+
+                String paymentUrl = session.getUrl();
+
+                if (paymentUrl == null || paymentUrl.isBlank()) {
+                    log.warn(
+                            "Checkout Session has no payment URL. Dispute: {}",
+                            disputeId
+                    );
+                    continue;
+                }
+
+                ListingOrderItem orderItem =
+                        dispute.getListingOrderItem();
+
+                String sellerEmail =
+                        orderItem.getSeller()
+                                .getUser()
+                                .getUsername();
+
+                String sellerName =
+                        orderItem.getSeller()
+                                .getFullLegalName();
+
+                emailNotificationService.sendPaymentLink(
+                        sellerEmail,
+                        sellerName,
+                        paymentUrl
+                );
+
+                log.info(
+                        "Return-shipping payment reminder sent. Dispute: {}, Seller: {}",
+                        disputeId,
+                        sellerEmail
+                );
+
+            } catch (Exception ex) {
+
+                log.error(
+                        "Failed to process return-shipping payment reminder. Dispute: {}",
+                        dispute.getId(),
+                        ex
+                );
+            }
+        }
+    }
+
+
+
+
+
+
 
     @Transactional
     public DisputeResponse getOrderDispute(Jwt jwt,String orderNumber){
@@ -515,7 +1100,7 @@ public class OrderDisputeService {
                 .buyerComment(request.getBuyerComment())
                 .listingOrderItem(orderItem)
                 .returnReason(getReturnReason(request.getReturnReason()))
-                .disputeStatus(DisputeStatus.OPEN)
+                .disputeStatus(DisputeStatus.AWAITING_SELLER_DECISION)
                 .orderNumber(parentOrder.getOrderNumber())
                 .user(appUser)
                 .ticketId(ticketNumber)
@@ -544,6 +1129,7 @@ public class OrderDisputeService {
         );
 
         listingOrderItemRepo.save(orderItem);
+
 
         // 13. Notify seller
         String email = orderItem.getSeller()

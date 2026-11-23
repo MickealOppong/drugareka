@@ -1540,48 +1540,143 @@ public class EmailNotificationService {
             String orderNumber,
             String reason
     ) {
+
         String safeOrderNumber = escapeHtml(
                 orderNumber != null ? orderNumber : ""
         );
 
-        String safeReason = escapeHtml(
-                reason != null && !reason.isBlank()
-                        ? reason
-                        : "Nie podano powodu reklamacji."
-        );
+        // Translate complaint reason: Polish first, English in brackets.
+        String reasonLabel = switch (
+                reason == null
+                        ? ""
+                        : reason.trim().toUpperCase(Locale.ROOT)
+                ) {
+            case "DAMAGED_GOODS" ->
+                    "Uszkodzony produkt (Damaged goods)";
+
+            case "WRONG_ITEM" ->
+                    "Niewłaściwy produkt (Wrong item)";
+
+            case "NOT_AS_DESCRIBED" ->
+                    "Produkt niezgodny z opisem (Not as described)";
+
+            case "OTHER" ->
+                    "Inny powód (Other)";
+
+            default ->
+                    "Nie podano powodu reklamacji (Complaint reason not provided)";
+        };
+
+        String safeReason = escapeHtml(reasonLabel);
 
         String complaintUrl = frontEndUrl + "/account/orders";
 
         String subject =
-                "Kasoa.pl — Zgłoszenie reklamacji zwrotu #" + safeOrderNumber;
+                "Kasoa.pl — Zgłoszenie reklamacji (Complaint notification) #"
+                        + (orderNumber != null ? orderNumber : "");
 
         String htmlContent =
-                badge("⚠ Wymagana odpowiedź", Tone.ALERT)
-                        + h1("Otrzymano reklamację zwrotu")
-                        + lead("Kupujący zgłosił reklamację dotyczącą przedmiotu z zamówienia " + strong("#" + safeOrderNumber)
-                        + ". Zaloguj się na swoje konto Kasoa.pl, zapoznaj się ze zgłoszeniem i zdjęciami kupującego, "
-                        + "a następnie zaakceptuj reklamację lub ją odrzuć, podając uzasadnienie.")
-                        + panel(Tone.NEUTRAL, label("Numer zamówienia") + orderNumber(safeOrderNumber))
-                        + quotePanel("Powód reklamacji", safeReason)
-                        + section("Co należy zrobić?", steps(
-                        "Zaloguj się na swoje konto Kasoa.pl i otwórz szczegóły zamówienia.",
-                        "Dokładnie sprawdź opis reklamacji oraz zdjęcia załączone przez kupującego.",
-                        "Zaakceptuj reklamację, jeśli uznajesz ją za zasadną. Jeśli się nie zgadzasz, odrzuć ją i podaj "
-                                + "uzasadnienie. Sprawa zostanie wówczas przekazana do oceny administracji Kasoa.pl."))
+
+                badge(
+                        "⚠ Wymagana odpowiedź",
+                        Tone.ALERT
+                )
+
+                        + h1("Otrzymano reklamację (Complaint received)")
+
+                        + lead(
+                        "Kupujący zgłosił reklamację dotyczącą przedmiotu "
+                                + "z zamówienia "
+                                + strong("#" + safeOrderNumber)
+                                + ". Zaloguj się na swoje konto Kasoa.pl, "
+                                + "zapoznaj się ze zgłoszeniem i zdjęciami "
+                                + "kupującego, a następnie zaakceptuj "
+                                + "reklamację lub ją odrzuć, podając uzasadnienie."
+                )
+
+                        + panel(
+                        Tone.NEUTRAL,
+                        label("Numer zamówienia (Order number)")
+                                + orderNumber(safeOrderNumber)
+                )
+
+                        + quotePanel(
+                        "Powód reklamacji (Complaint reason)",
+                        safeReason
+                )
+
+                        + section(
+                        "Co należy zrobić? (Next steps)",
+
+                        steps(
+                                "Zaloguj się na swoje konto Kasoa.pl "
+                                        + "i otwórz szczegóły zamówienia.",
+
+                                "Dokładnie sprawdź opis reklamacji "
+                                        + "oraz zdjęcia załączone przez kupującego.",
+
+                                "Zaakceptuj reklamację, jeśli uznajesz ją "
+                                        + "za zasadną. Jeśli się nie zgadzasz, "
+                                        + "odrzuć ją i podaj uzasadnienie. "
+                                        + "Sprawa zostanie wówczas przekazana "
+                                        + "do oceny administracji Kasoa.pl."
+                        )
+                )
+
                         + spacer(24)
-                        + panel(Tone.ALERT,
-                        el("div", "margin:0 0 8px;font-size:15px;line-height:22px;font-weight:700;color:" + Tone.ALERT.fg + ";",
-                                "⚖️ Co się stanie po odrzuceniu reklamacji?")
-                                + el("div", "margin:0 0 10px;font-size:13px;line-height:21px;color:" + BODY + ";",
-                                "Jeśli odrzucisz reklamację, administracja Kasoa.pl przeanalizuje zgłoszenie oraz Twoje "
-                                        + "uzasadnienie i podejmie decyzję.")
-                                + el("div", "margin:0 0 10px;font-size:13px;line-height:21px;color:" + BODY + ";",
-                                "Jeśli administracja uzna, że reklamacja jest zasadna, otrzymasz informację o konieczności "
-                                        + "opłacenia przesyłki kurierskiej w celu odebrania przedmiotu od kupującego i zwrócenia go Tobie.")
-                                + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";",
-                                "Kupujący otrzyma pełny zwrot ceny zakupu przedmiotu. Koszt przesyłki zwrotnej od kupującego "
-                                        + "do Ciebie poniesiesz Ty jako sprzedający."))
-                        + button(complaintUrl, "Otwórz swoje zamówienia →");
+
+                        + panel(
+                        Tone.ALERT,
+
+                        el(
+                                "div",
+                                "margin:0 0 8px;font-size:15px;"
+                                        + "line-height:22px;font-weight:700;color:"
+                                        + Tone.ALERT.fg + ";",
+
+                                "⚖️ Co się stanie po odrzuceniu reklamacji?"
+                        )
+
+                                + el(
+                                "div",
+                                "margin:0 0 10px;font-size:13px;"
+                                        + "line-height:21px;color:" + BODY + ";",
+
+                                "Jeśli odrzucisz reklamację, administracja "
+                                        + "Kasoa.pl przeanalizuje zgłoszenie "
+                                        + "oraz Twoje uzasadnienie i podejmie decyzję."
+                        )
+
+                                + el(
+                                "div",
+                                "margin:0 0 10px;font-size:13px;"
+                                        + "line-height:21px;color:" + BODY + ";",
+
+                                "Jeśli administracja uzna, że reklamacja "
+                                        + "jest zasadna, a przedmiot został "
+                                        + "dostarczony kurierem, otrzymasz "
+                                        + "informację o konieczności opłacenia "
+                                        + "przesyłki zwrotnej w celu odebrania "
+                                        + "przedmiotu od kupującego."
+                        )
+
+                                + el(
+                                "div",
+                                "font-size:13px;line-height:21px;color:"
+                                        + BODY + ";",
+
+                                "W przypadku uznania reklamacji kupujący "
+                                        + "otrzyma zwrot należności zgodnie "
+                                        + "z zasadami Kasoa.pl. Koszt przesyłki "
+                                        + "zwrotnej w przypadku reklamacji "
+                                        + "uzasadnionej ponosi sprzedający."
+                        )
+                )
+
+                        + button(
+                        complaintUrl,
+                        "Otwórz swoje zamówienia →"
+                );
 
         sendHtmlEmail(
                 sellerEmail,
@@ -1602,51 +1697,92 @@ public class EmailNotificationService {
             String decision,
             String reason
     ) {
-        String subject = "Aktualizacja dotycząca zwrotu lub reklamacji - zamówienie nr "
-                + orderNumber;
+        boolean approved = "approve".equalsIgnoreCase(decision);
+        boolean rejected = "reject".equalsIgnoreCase(decision);
+
+        if (!approved && !rejected) {
+            throw new IllegalArgumentException(
+                    "Invalid seller decision: " + decision
+            );
+        }
+
+        String decisionLabel = approved
+                ? "Uznano reklamację (Complaint approved)"
+                : "Odrzucono reklamację (Complaint rejected)";
+
+        String reasonLabel = switch (
+                reason == null ? "" : reason.trim().toUpperCase(Locale.ROOT)
+                ) {
+            case "DAMAGED_GOODS" ->
+                    "Uszkodzony produkt (Damaged goods)";
+            case "WRONG_ITEM" ->
+                    "Niewłaściwy produkt (Wrong item)";
+            case "NOT_AS_DESCRIBED" ->
+                    "Produkt niezgodny z opisem (Not as described)";
+            case "OTHER" ->
+                    "Inny powód (Other)";
+            default -> throw new IllegalArgumentException(
+                    "Unsupported complaint reason: " + reason
+            );
+        };
 
         String safeOrderNumber = escapeHtml(
-                orderNumber == null || orderNumber.isBlank() ? "-" : orderNumber
-        );
-
-        String safeDecision = escapeHtml(
-                decision == null || decision.isBlank()
-                        ? "Odrzucono wniosek"
-                        : decision
-        );
-
-        String safeReason = escapeHtml(
-                reason == null || reason.isBlank()
-                        ? "Sprzedający nie podał uzasadnienia."
-                        : reason
+                orderNumber == null || orderNumber.isBlank()
+                        ? "-" : orderNumber
         );
 
         String html =
-                h1("Aktualizacja dotycząca zwrotu lub reklamacji")
-                        + lead("Sprzedający rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go odrzucił. "
-                        + "Poniżej znajdziesz odpowiedź sprzedającego.")
+                h1("Aktualizacja dotycząca reklamacji (Complaint update)")
+                        + lead(approved
+                        ? "Sprzedający uznał Twoją reklamację."
+                        : "Sprzedający odrzucił Twoją reklamację.")
+
                         + panel(Tone.NEUTRAL,
-                        label("Numer zamówienia")
+                        label("Numer zamówienia (Order number)")
                                 + orderNumber(safeOrderNumber)
                                 + divider()
-                                + label("Decyzja sprzedającego")
-                                + el("div", "font-size:15px;line-height:23px;font-weight:700;color:" + Tone.ALERT.fg + ";", safeDecision)
+                                + label("Powód reklamacji (Complaint reason)")
+                                + el("div",
+                                "font-size:14px;line-height:23px;color:" + BODY + ";",
+                                escapeHtml(reasonLabel))
                                 + divider()
-                                + label("Uzasadnienie sprzedającego")
-                                + el("div", "font-size:14px;line-height:23px;color:" + BODY + ";white-space:pre-line;overflow-wrap:anywhere;", safeReason))
-                        + section("Sprawa jest w trakcie weryfikacji",
-                        p("Twoja sprawa została przekazana administratorowi Kasoa.pl do dalszego rozpatrzenia.")
-                                + p("Administrator przeanalizuje uzasadnienie sprzedającego, przesłane przez Ciebie zdjęcia "
-                                + "dowodowe oraz pierwotne ogłoszenie produktu przed podjęciem ostatecznej decyzji.")
-                                + muted("Powiadomimy Cię po zakończeniu weryfikacji. Odrzucenie wniosku przez sprzedającego "
-                                + "nie oznacza, że Kasoa.pl podjęło już ostateczną decyzję w Twojej sprawie."))
+                                + label("Decyzja sprzedającego (Seller's decision)")
+                                + el("div",
+                                "font-size:15px;line-height:23px;font-weight:700;color:"
+                                        + (rejected ? Tone.ALERT.fg : BODY) + ";",
+                                escapeHtml(decisionLabel))
+                )
+
+                        + (rejected
+                        ? section(
+                        "Sprawa w trakcie weryfikacji (Under review)",
+                        p("Reklamacja została przekazana administratorowi Kasoa.pl.")
+                                + p("Administrator przeanalizuje dostępne dowody "
+                                + "i podejmie ostateczną decyzję.")
+                                + muted("Powiadomimy Cię o wyniku weryfikacji.")
+                )
+                        : section(
+                        "Reklamacja uznana (Complaint approved)",
+                        p("Sprzedający zaakceptował Twoją reklamację.")
+                                + p("Informacje dotyczące dalszych kroków "
+                                + "otrzymasz w osobnej wiadomości.")
+                )
+                )
+
                         + spacer(24)
-                        + p("Dziękujemy za cierpliwość podczas rozpatrywania sprawy.")
-                        + el("p", "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
+                        + p("Dziękujemy za cierpliwość.")
+                        + el("p",
+                        "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
                         "Pozdrawiamy,<br>" + strong("Zespół Kasoa.pl"));
+
+        String subject =
+                "Aktualizacja reklamacji (Complaint update) – zamówienie nr "
+                        + (orderNumber == null ? "-" : orderNumber);
 
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
+
+
 
 
 
@@ -1660,65 +1796,243 @@ public class EmailNotificationService {
             String decision,
             String reason
     ) {
+
+        // =====================================================
+        // 1. VALIDATE ADMIN DECISION
+        // =====================================================
+
         String normalizedDecision = decision == null
                 ? ""
                 : decision.trim().toUpperCase(Locale.ROOT);
 
-        boolean approved = normalizedDecision.equals("APPROVED")
-                || normalizedDecision.equals("APPROVE");
+        boolean approved = normalizedDecision.equals("APPROVE")
+                || normalizedDecision.equals("APPROVED");
 
-        String subject = approved
-                ? "Zwrot lub reklamacja zostały zatwierdzone - zamówienie nr " + orderNumber
-                : "Decyzja dotycząca zwrotu lub reklamacji - zamówienie nr " + orderNumber;
+        boolean rejected = normalizedDecision.equals("REJECT")
+                || normalizedDecision.equals("REJECTED");
 
-        String safeOrderNumber = escapeHtml(orderNumber);
-        String safeDecision = approved ? "Zatwierdzono (Approved)" : "Odrzucono (Rejected)";
+        boolean notJustified =
+                normalizedDecision.equals("NOT_JUSTIFIED");
 
-        String safeReason = escapeHtml(
-                reason == null || reason.isBlank()
-                        ? "Nie podano dodatkowego uzasadnienia."
-                        : reason
+        if (!approved && !rejected && !notJustified) {
+            throw new IllegalArgumentException(
+                    "Invalid administrator decision: " + decision
+            );
+        }
+
+        // =====================================================
+        // 2. TRANSLATE COMPLAINT REASON
+        // =====================================================
+
+        String reasonLabel = switch (
+                reason == null
+                        ? ""
+                        : reason.trim().toUpperCase(Locale.ROOT)
+                ) {
+            case "DAMAGED_GOODS" ->
+                    "Uszkodzony produkt (Damaged goods)";
+
+            case "WRONG_ITEM" ->
+                    "Niewłaściwy produkt (Wrong item)";
+
+            case "NOT_AS_DESCRIBED" ->
+                    "Produkt niezgodny z opisem (Not as described)";
+
+            case "OTHER" ->
+                    "Inny powód (Other)";
+
+            default -> throw new IllegalArgumentException(
+                    "Unsupported complaint reason: " + reason
+            );
+        };
+
+        // =====================================================
+        // 3. PREPARE EMAIL CONTENT
+        // =====================================================
+
+        String safeOrderNumber = escapeHtml(
+                orderNumber == null || orderNumber.isBlank()
+                        ? "-"
+                        : orderNumber
         );
 
-        String decisionMessage = approved
-                ? "Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go zatwierdził."
-                : "Administrator Kasoa.pl rozpatrzył Twój wniosek dotyczący zwrotu lub reklamacji i go odrzucił.";
+        String decisionLabel = approved
+                ? "Reklamacja uzasadniona (Complaint justified)"
+                : notJustified
+                ? "Nieuzasadniona odmowa odbioru "
+                + "(Unjustified refusal of collection)"
+                : "Reklamacja odrzucona (Complaint rejected)";
 
-        String nextSteps = approved
-                ? section("Co dalej?",
-                p("Przygotuj produkt do zwrotu i zapakuj go w sposób zapewniający odpowiednią ochronę podczas transportu.")
-                        + p("Kurier odbierze przesyłkę spod tego samego adresu, na który produkt został pierwotnie dostarczony. "
-                        + "Koszt odbioru przesyłki przez kuriera pokrywa sprzedający.")
-                        + el("p", "margin:0;font-size:15px;line-height:24px;color:" + BODY + ";",
-                        "Poczekaj na dalsze instrukcje od Kasoa.pl dotyczące odbioru. Nie wysyłaj produktu samodzielnie, "
-                                + "chyba że otrzymasz takie polecenie."))
-                : el("p", "margin:20px 0 0;font-size:15px;line-height:24px;color:" + BODY + ";",
-                "Jeśli masz pytania dotyczące tej decyzji, skontaktuj się z obsługą Kasoa.pl, podając numer zamówienia.");
+        String subject = approved
+                ? "Reklamacja uznana (Complaint approved) – zamówienie nr "
+                + safeOrderNumber
+                : "Decyzja dotycząca reklamacji (Complaint decision) – zamówienie nr "
+                + safeOrderNumber;
+
+        String decisionMessage = approved
+                ? "Administrator Kasoa.pl uznał Twoją reklamację."
+                : notJustified
+                ? "Administrator Kasoa.pl ustalił, że odmowa odbioru "
+                + "osobistego produktu była nieuzasadniona."
+                : "Administrator Kasoa.pl odrzucił Twoją reklamację.";
+
+        // =====================================================
+        // 4. NEXT STEPS BASED ON ADMIN DECISION
+        // =====================================================
+
+        String nextSteps;
+
+        if (approved) {
+
+            nextSteps = section(
+                    "Co dalej? (Next steps)",
+
+                    p("Twoja reklamacja została uznana. "
+                            + "Kasoa.pl poinformuje Cię o dalszych "
+                            + "krokach dotyczących zwrotu lub rozliczenia.")
+
+                            + p("Jeżeli produkt został dostarczony kurierem "
+                            + "i wymaga odesłania, otrzymasz osobne "
+                            + "instrukcje dotyczące odbioru przesyłki.")
+
+                            + muted(
+                            "Nie wysyłaj produktu samodzielnie, "
+                                    + "chyba że otrzymasz takie polecenie."
+                    )
+            );
+
+        } else if (notJustified) {
+
+            nextSteps = section(
+                    "Nieuzasadniona odmowa odbioru "
+                            + "(Unjustified refusal of collection)",
+
+                    p("Po przeanalizowaniu dostępnych informacji "
+                            + "administrator nie potwierdził "
+                            + "zasadności zgłoszonej reklamacji.")
+
+                            + p("Stwierdzono, że odmowa odbioru osobistego "
+                            + "produktu nie miała uzasadnionych podstaw.")
+
+                            + p("Transakcja zostanie rozliczona zgodnie "
+                            + "z Regulaminem Kasoa.pl. "
+                            + "Jeżeli transakcja zostanie anulowana, "
+                            + "otrzymasz osobne potwierdzenie "
+                            + "rozliczenia płatności.")
+
+                            + muted(
+                            "Opłata serwisowa podlega zasadom "
+                                    + "określonym w Regulaminie Kasoa.pl."
+                    )
+            );
+
+        } else {
+
+            nextSteps = section(
+                    "Reklamacja odrzucona (Complaint rejected)",
+
+                    p("Administrator przeanalizował dostępne "
+                            + "informacje i nie znalazł podstaw "
+                            + "do uznania reklamacji.")
+
+                            + p("Dalsza realizacja zamówienia odbywa się "
+                            + "zgodnie z Regulaminem Kasoa.pl.")
+
+                            + muted(
+                            "Jeśli masz pytania dotyczące decyzji, "
+                                    + "skontaktuj się z obsługą Kasoa.pl, "
+                                    + "podając numer zamówienia."
+                    )
+            );
+        }
+
+        // =====================================================
+        // 5. BUILD EMAIL
+        // =====================================================
 
         String html =
-                badge(approved ? "✓ ZATWIERDZONO" : "ODRZUCONO", approved ? Tone.NEUTRAL : Tone.ALERT)
-                        + h1("Decyzja dotycząca zwrotu lub reklamacji")
-                        + lead(escapeHtml(decisionMessage))
-                        + panel(Tone.NEUTRAL,
-                        label("Numer zamówienia")
-                                + orderNumber(safeOrderNumber)
-                                + divider()
-                                + label("Decyzja administratora")
-                                + el("div", "font-size:15px;line-height:23px;font-weight:700;color:"
-                                + (approved ? BRAND : Tone.ALERT.fg) + ";", safeDecision)
-                                + divider()
-                                + label("Uzasadnienie decyzji")
-                                + el("div", "font-size:14px;line-height:23px;color:" + BODY + ";white-space:pre-line;overflow-wrap:anywhere;", safeReason))
-                        + nextSteps
-                        + spacer(24)
-                        + el("p", "margin:0;font-size:14px;line-height:22px;color:" + BODY + ";",
-                        "Pozdrawiamy,<br>" + strong("Zespół Kasoa.pl"))
-                        + divider()
-                        + muted("Kasoa.pl — prostszy sposób na kupowanie i sprzedawanie.<br>"
-                        + "To automatyczne powiadomienie dotyczące Twojego zamówienia.");
+                badge(
+                        approved
+                                ? "✓ UZASADNIONA"
+                                : notJustified
+                                ? "NIEUZASADNIONA ODMOWA ODBIORU"
+                                : "ODRZUCONA",
+                        approved ? Tone.NEUTRAL : Tone.ALERT
+                )
 
-        sendHtmlEmail(email, subject, buildEmailLayout(html));
+                        + h1(
+                        "Decyzja administratora "
+                                + "(Administrator's decision)"
+                )
+
+                        + lead(escapeHtml(decisionMessage))
+
+                        + panel(
+                        Tone.NEUTRAL,
+
+                        label("Numer zamówienia (Order number)")
+                                + orderNumber(safeOrderNumber)
+
+                                + divider()
+
+                                + label("Powód reklamacji (Complaint reason)")
+                                + el(
+                                "div",
+                                "font-size:14px;line-height:23px;color:"
+                                        + BODY + ";",
+                                escapeHtml(reasonLabel)
+                        )
+
+                                + divider()
+
+                                + label(
+                                "Decyzja administratora "
+                                        + "(Administrator's decision)"
+                        )
+                                + el(
+                                "div",
+                                "font-size:15px;line-height:23px;"
+                                        + "font-weight:700;color:"
+                                        + (approved
+                                        ? BRAND
+                                        : Tone.ALERT.fg)
+                                        + ";",
+                                escapeHtml(decisionLabel)
+                        )
+                )
+
+                        + nextSteps
+
+                        + spacer(24)
+
+                        + el(
+                        "p",
+                        "margin:0;font-size:14px;line-height:22px;color:"
+                                + BODY + ";",
+                        "Pozdrawiamy,<br>"
+                                + strong("Zespół Kasoa.pl")
+                )
+
+                        + divider()
+
+                        + muted(
+                        "Kasoa.pl — prostszy sposób na kupowanie "
+                                + "i sprzedawanie.<br>"
+                                + "To automatyczne powiadomienie "
+                                + "dotyczące Twojego zamówienia."
+                );
+
+        // =====================================================
+        // 6. SEND EMAIL
+        // =====================================================
+
+        sendHtmlEmail(
+                email,
+                subject,
+                buildEmailLayout(html)
+        );
     }
+
 
 
 
@@ -1898,34 +2212,8 @@ public class EmailNotificationService {
         }
     }
 
-    /**
-     * Legacy variant kept for existing callers. Prefer {@link #sendShipmentStatusToBuyer}.
-     */
-    public void sendShipmentStatusToBuyerx(
-            String buyerEmail,
-            String buyerName,
-            String orderNumber,
-            String productName,
-            String shipmentStatus,
-            String trackingNumber,
-            String shippingMethod,
-            String receiptConfirmationToken
-    ) {
-        String subject = shipmentSubject(shipmentStatus, orderNumber);
 
-        String html = buildShipmentStatusHtml(
-                escapeHtml(buyerName),
-                escapeHtml(formatShipmentStatus(shipmentStatus)),
-                escapeHtml(orderNumber),
-                escapeHtml(productName),
-                escapeHtml(trackingNumber),
-                escapeHtml(shippingMethod),
-                legacyReceiptCard(shipmentStatus, deliveryConfirmationUrl, receiptConfirmationToken),
-                escapeHtml(getNextStepText(shipmentStatus))
-        );
 
-        sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
-    }
 
 
     @Async
@@ -2057,6 +2345,65 @@ public class EmailNotificationService {
         sendHtmlEmail(email, subject, buildEmailLayout(html));
     }
 
+
+    /**
+     * SSEND LINK TO SELLER TO PAY FOR RETURN SHIPPING
+     * @param email
+     * @param sellerName
+     * @param paymentUrl
+     */
+    @Async
+    public void sendPaymentLink(
+            String email,
+            String sellerName,
+            String paymentUrl
+    ) {
+        String subject = "Przypomnienie o opłacie za przesyłkę zwrotną – Kasoa.pl";
+
+        String safeSellerName = escapeHtml(sellerName);
+
+        String html =
+                h1("Opłata za przesyłkę zwrotną")
+                        + lead("Przypominamy, że oczekujemy na opłacenie przesyłki zwrotnej "
+                        + "związanej z reklamacją produktu sprzedanego za pośrednictwem Kasoa.pl.")
+
+                        + panel(
+                        Tone.NEUTRAL,
+                        label("Sprzedający")
+                                + el(
+                                "div",
+                                "font-size:17px;line-height:24px;font-weight:700;color:"
+                                        + INK
+                                        + ";overflow-wrap:anywhere;",
+                                safeSellerName
+                        )
+                )
+
+                        + p("Aby umożliwić kupującemu odesłanie produktu, "
+                        + "należy opłacić koszt przesyłki zwrotnej.")
+
+                        + p("Kliknij poniższy przycisk, aby przejść do bezpiecznej "
+                        + "płatności obsługiwanej przez Stripe.")
+
+                        + button(paymentUrl, "Opłać przesyłkę zwrotną")
+
+                        + spacer(24)
+
+                        + muted("Jeśli opłata została już uregulowana, "
+                        + "prosimy zignorować tę wiadomość.")
+
+                        + spacer(12)
+
+                        + muted("Dziękujemy za korzystanie z Kasoa!");
+
+        sendHtmlEmail(
+                email,
+                subject,
+                buildEmailLayout(html)
+        );
+    }
+
+
     /**
      * Order confirmation reminder
      * @param buyerEmail
@@ -2156,7 +2503,6 @@ public class EmailNotificationService {
         );
     }
 
-    @Async
     public void sendShipmentStatusToBuyer(
             String buyerEmail,
             String buyerName,
@@ -2167,6 +2513,7 @@ public class EmailNotificationService {
             String shippingMethod,
             String receiptConfirmationToken
     ) {
+
         String status = shipmentStatus == null
                 ? "UNKNOWN"
                 : shipmentStatus.trim().toUpperCase(Locale.ROOT);
@@ -2182,6 +2529,10 @@ public class EmailNotificationService {
             case "DELIVERED" -> {
                 statusLabel = "Dostarczono (Delivered)";
                 subject = "Twoje zamówienie #" + orderNumber + " zostało dostarczone ✓";
+            }
+            case "RETURNED" -> {
+                statusLabel = "Zwrócono (Returned)";
+                subject = "Aktualizacja zwrotu zamówienia #" + orderNumber;
             }
             case "RECEIVED" -> {
                 statusLabel = "Odbiór potwierdzony (Received)";
@@ -2204,16 +2555,43 @@ public class EmailNotificationService {
                 subject = "Aktualizacja zamówienia #" + orderNumber;
             }
             default -> {
-                statusLabel = formatShipmentStatus(status);
+                statusLabel = "Nieznany status (Unknown status)";
                 subject = "Aktualizacja zamówienia #" + orderNumber;
             }
         }
 
+        // Translate shipping method for display only.
+        String shippingMethodLabel = switch (
+                shippingMethod == null
+                        ? ""
+                        : shippingMethod.trim().toUpperCase(Locale.ROOT)
+                ) {
+            case "INPOST_COURIER" ->
+                    "Kurier InPost (InPost courier)";
+            case "INPOST_LOCKER" ->
+                    "Paczkomat InPost (InPost parcel locker)";
+            case "DPD" ->
+                    "Kurier DPD (DPD courier)";
+            case "PERSONAL_PICKUP" ->
+                    "Odbiór osobisty (Personal pickup)";
+            case "OTHER" ->
+                    "Inna metoda dostawy (Other delivery method)";
+            default ->
+                    shippingMethod == null || shippingMethod.isBlank()
+                            ? "Nie określono (Not specified)"
+                            : shippingMethod;
+        };
+
         String safeBuyerName = escapeHtml(
-                buyerName == null || buyerName.isBlank() ? "Kliencie" : buyerName
+                buyerName == null || buyerName.isBlank()
+                        ? "Kliencie"
+                        : buyerName
         );
 
-        // Receipt confirmation is available only after delivery.
+        // =====================================================
+        // RECEIPT CONFIRMATION - DELIVERED ONLY
+        // =====================================================
+
         String receiptConfirmationHtml = "";
 
         boolean isDelivered = "DELIVERED".equals(status);
@@ -2232,37 +2610,91 @@ public class EmailNotificationService {
                             StandardCharsets.UTF_8
                     );
 
-            String deadlineBox = panel(Tone.ALERT,
-                    el("div", "margin:0 0 8px;font-size:14px;line-height:21px;font-weight:700;color:" + Tone.ALERT.fg + ";text-align:left;",
-                            "⏰ Masz 24 godziny od dostawy")
-                            + el("div", "font-size:13px;line-height:21px;color:" + BODY + ";text-align:left;overflow-wrap:anywhere;",
-                            strong("Jeśli wszystko jest w porządku:") + "<br>"
-                                    + "Kliknij przycisk poniżej, aby potwierdzić odbiór przedmiotu. Nie musisz logować się na swoje konto."
+            String deadlineBox = panel(
+                    Tone.ALERT,
+
+                    el(
+                            "div",
+                            "margin:0 0 8px;font-size:14px;line-height:21px;"
+                                    + "font-weight:700;color:"
+                                    + Tone.ALERT.fg
+                                    + ";text-align:left;",
+                            "⏰ Masz 24 godziny od dostawy"
+                    )
+
+                            + el(
+                            "div",
+                            "font-size:13px;line-height:21px;color:"
+                                    + BODY
+                                    + ";text-align:left;overflow-wrap:anywhere;",
+
+                            strong("Jeśli wszystko jest w porządku:")
+                                    + "<br>"
+                                    + "Kliknij przycisk poniżej, aby potwierdzić "
+                                    + "odbiór przedmiotu. Nie musisz logować się "
+                                    + "na swoje konto."
+
                                     + "<br><br>"
-                                    + strong("Jeśli zauważysz istotne rozbieżności:") + "<br>"
-                                    + "Nie potwierdzaj odbioru. Zaloguj się na swoje konto Kasoa.pl, przejdź do "
-                                    + strong("Konto → Zamówienia") + ", wybierz konkretne zamówienie i złóż wniosek o zwrot, "
-                                    + "dołączając zdjęcia lub inne dowody."
+
+                                    + strong("Jeśli zauważysz istotne rozbieżności:")
+                                    + "<br>"
+                                    + "Nie potwierdzaj odbioru. Zaloguj się na "
+                                    + "swoje konto Kasoa.pl, przejdź do "
+                                    + strong("Konto → Zamówienia")
+                                    + ", wybierz konkretne zamówienie i złóż "
+                                    + "wniosek o zwrot, dołączając zdjęcia "
+                                    + "lub inne dowody."
+
                                     + "<br><br>"
-                                    + "Drobne różnice wynikające na przykład z oświetlenia lub sposobu wykonania zdjęć nie stanowią "
-                                    + "same w sobie podstawy do zwrotu. Zgłoszenie powinno dotyczyć istotnych rozbieżności między "
-                                    + "ofertą a otrzymanym przedmiotem."
+
+                                    + "Drobne różnice wynikające na przykład "
+                                    + "z oświetlenia lub sposobu wykonania zdjęć "
+                                    + "nie stanowią same w sobie podstawy do zwrotu. "
+                                    + "Zgłoszenie powinno dotyczyć istotnych "
+                                    + "rozbieżności między ofertą a otrzymanym "
+                                    + "przedmiotem."
+
                                     + "<br><br>"
-                                    + strong("Jak rozpatrywany jest wniosek?") + "<br>"
-                                    + "Wniosek nie oznacza automatycznej akceptacji zwrotu. Sprzedawca przeanalizuje zgłoszenie "
-                                    + "i przedstawione dowody. Jeśli odrzuci wniosek, sprawa zostanie przekazana administratorowi "
-                                    + "Kasoa.pl do ostatecznej oceny oferty i zgromadzonych dowodów."));
+
+                                    + strong("Jak rozpatrywany jest wniosek?")
+                                    + "<br>"
+                                    + "Wniosek nie oznacza automatycznej akceptacji "
+                                    + "zwrotu. Sprzedawca przeanalizuje zgłoszenie "
+                                    + "i przedstawione dowody. Jeśli odrzuci "
+                                    + "wniosek, sprawa zostanie przekazana "
+                                    + "administratorowi Kasoa.pl do ostatecznej "
+                                    + "oceny oferty i zgromadzonych dowodów."
+                    )
+            );
 
             receiptConfirmationHtml = receiptCard(
                     "Otrzymałeś przesyłkę?",
-                    "Sprawdź otrzymany przedmiot i porównaj go z zamówieniem oraz opisem sprzedawcy.",
+                    "Sprawdź otrzymany przedmiot i porównaj go "
+                            + "z zamówieniem oraz opisem sprzedawcy.",
                     deadlineBox,
                     receiptConfirmationUrl,
-                    "Kliknij przycisk tylko wtedy, gdy otrzymany przedmiot jest zgodny z zamówieniem i opisem."
-            ) + el("p", "margin:-8px 0 24px;font-size:12px;line-height:20px;color:" + MUTED + ";",
-                    strong("Ważne:") + " Jeśli w ciągu 24 godzin od dostawy nie potwierdzisz odbioru ani nie złożysz wniosku "
-                            + "o zwrot, odbiór zostanie automatycznie potwierdzony, a wypłata środków sprzedawcy zostanie uruchomiona.");
+                    "Kliknij przycisk tylko wtedy, gdy otrzymany "
+                            + "przedmiot jest zgodny z zamówieniem i opisem."
+            )
+
+                    + el(
+                    "p",
+                    "margin:-8px 0 24px;font-size:12px;"
+                            + "line-height:20px;color:"
+                            + MUTED + ";",
+
+                    strong("Ważne:")
+                            + " Jeśli w ciągu 24 godzin od dostawy "
+                            + "nie potwierdzisz odbioru ani nie złożysz "
+                            + "wniosku o zwrot, odbiór zostanie "
+                            + "automatycznie potwierdzony, a wypłata "
+                            + "środków sprzedawcy zostanie uruchomiona."
+            );
         }
+
+        // =====================================================
+        // BUILD EMAIL
+        // =====================================================
 
         String html = buildShipmentStatusHtml(
                 safeBuyerName,
@@ -2270,12 +2702,20 @@ public class EmailNotificationService {
                 escapeHtml(orderNumber),
                 escapeHtml(productName),
                 escapeHtml(trackingNumber),
-                escapeHtml(shippingMethod),
+                escapeHtml(shippingMethodLabel),
                 receiptConfirmationHtml,
                 escapeHtml(getNextStepText(status))
         );
 
-        sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
+        // =====================================================
+        // SEND EMAIL
+        // =====================================================
+
+        sendHtmlEmail(
+                buyerEmail,
+                subject,
+                buildEmailLayout(html)
+        );
     }
 
     /**
@@ -2349,6 +2789,7 @@ public class EmailNotificationService {
      * Legacy variant kept for existing callers. Note: despite the name it addresses
      * the buyer and uses the return confirmation URL, exactly as before.
      */
+    @Async
     public void sendShipmentStatusToSeller(
             String buyerEmail,
             String buyerName,
@@ -2359,21 +2800,57 @@ public class EmailNotificationService {
             String shippingMethod,
             String receiptConfirmationToken
     ) {
-        String subject = shipmentSubject(shipmentStatus, orderNumber);
 
+        // Normalize shipment status
+        String normalizedStatus = shipmentStatus == null
+                ? ""
+                : shipmentStatus.trim().toUpperCase(Locale.ROOT);
+
+        // Polish first, English in brackets
+        String formattedStatus = switch (normalizedStatus) {
+            case "SHIPPED" ->
+                    "Wysłano (Shipped)";
+
+            case "DELIVERED" ->
+                    "Dostarczono (Delivered)";
+
+            case "RETURNED" ->
+                    "Zwrócono (Returned)";
+
+            default ->
+                    "Nieznany status (Unknown status)";
+        };
+
+        // Preserve existing subject generation
+        String subject = shipmentSubject(
+                shipmentStatus,
+                orderNumber
+        );
+
+        // Build email using the translated status
         String html = buildShipmentStatusHtml(
                 escapeHtml(buyerName),
-                escapeHtml(formatShipmentStatus(shipmentStatus)),
+                escapeHtml(formattedStatus),
                 escapeHtml(orderNumber),
                 escapeHtml(productName),
                 escapeHtml(trackingNumber),
                 escapeHtml(shippingMethod),
-                legacyReceiptCard(shipmentStatus, returnConfirmationUrl, receiptConfirmationToken),
+                legacyReceiptCard(
+                        shipmentStatus,
+                        returnConfirmationUrl,
+                        receiptConfirmationToken
+                ),
                 escapeHtml(getNextStepText(shipmentStatus))
         );
 
-        sendHtmlEmail(buyerEmail, subject, buildEmailLayout(html));
+        // Send using the standard Kasoa email layout
+        sendHtmlEmail(
+                buyerEmail,
+                subject,
+                buildEmailLayout(html)
+        );
     }
+
 
 
     public void notifySellerToStartVerification(String email, String name, String accountUrl) {
