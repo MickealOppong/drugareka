@@ -147,9 +147,9 @@ public class EmailNotificationService {
                                     style="padding:26px 36px;background-color:#66704A;border-radius:16px 16px 0 0;text-align:center;">
                                     <a href="https://www.kasoa.pl"
                                        style="display:inline-block;font-family:__FONT__;font-size:28px;line-height:34px;font-weight:800;letter-spacing:-0.5px;color:#FFFFFF;text-decoration:none;">kasoa.pl</a>
-                                    <div style="margin-top:4px;font-family:__FONT__;font-size:12px;line-height:18px;font-weight:600;letter-spacing:0.6px;color:#E6EAD8;">
-                                        Dobre rzeczy. Drugie życie.
-                                    </div>
+                                <div style="margin-top:4px;font-family:__FONT__;font-size:12px;line-height:18px;font-weight:600;letter-spacing:0.6px;color:#E6EAD8;">
+                                            Kupuj. Sprzedawaj.<br>Nowe i używane produkty.
+                                        </div>
                                 </td>
                             </tr>
                             <tr>

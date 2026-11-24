@@ -268,7 +268,7 @@ public class ListingTransactionService {
                         appUser.getUsername(), productData.getId());
             } else {
 
-                if (!inventoryItem.getSeller().getId().equals(sellerProfile.getId())) {
+                if (sellerProfile !=null && !inventoryItem.getSeller().getId().equals(sellerProfile.getId())) {
                     log.warn("Security Shield: Unauthorized modification attempt on Listing [{}] by Vendor [{}]",
                             inventoryItem.getId(), sellerProfile.getId());
                     String msg = messageSource.getMessage("api.listing.edit.unauthorized", null, "You are not authorized to edit this listing.", locale);
