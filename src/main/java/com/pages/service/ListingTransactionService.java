@@ -1243,7 +1243,7 @@ public class ListingTransactionService {
     public List<ListTransResponse> getSellerListings(Long sellerId) {
         if (sellerId != null) {
 
-            return listingTransactionRepo.findAllByInventorySellerId(sellerId).stream()
+            return listingTransactionRepo.findAllByInventorySellerIdAndInventoryStatusNot(sellerId,InventoryStatus.SOLD).stream()
                     .map(listing -> {
                         InventoryItemPrice price = inventoryItemPriceService.getPrices(listing.getInventory().getId());
                         List<MediaResponse> mediaList = mediaService.getImageList(listing.getInventory().getId());
