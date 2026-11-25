@@ -202,6 +202,12 @@ public class MediaService {
             }
 
             String hash = calculateSHA256(file);
+
+            // Keep only the first occurrence of each image in this request.
+            if (retainedHashes.contains(hash)) {
+                continue;
+            }
+
             int sortOrder = resolveSortOrder(sortOrders, i);
 
             Media matching = existingByHash.get(hash);
@@ -300,6 +306,12 @@ public class MediaService {
             }
 
             String hash = calculateSHA256(file);
+
+            // Keep only the first occurrence of each image in this request.
+            if (retainedHashes.contains(hash)) {
+                continue;
+            }
+
             int sortOrder = resolveSortOrder(sortOrders, i);
 
             Media matching = existingByHash.get(hash);
