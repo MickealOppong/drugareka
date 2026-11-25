@@ -199,7 +199,7 @@ public class ListingSpecs {
                     inventoryJoin.join("productCatalog");
 
             return cb.equal(
-                    cb.lower(product.get("brand").get("slug")),
+                    cb.lower(product.get("brand").get("name")),
                     brand.trim().toLowerCase(Locale.ROOT)
             );
         };
@@ -220,7 +220,7 @@ public class ListingSpecs {
                     inventoryJoin.join("productCondition");
 
             return cb.equal(
-                    cb.lower(conditionJoin.get("name")),
+                    cb.lower(conditionJoin.get("slug")),
                     condition.trim().toLowerCase(Locale.ROOT)
             );
         };
